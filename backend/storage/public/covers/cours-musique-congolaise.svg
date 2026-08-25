@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" role="img" aria-label="Cours de musique congolaise">
+  <rect width="600" height="800" fill="#062718"/>
+  <rect x="38" y="38" width="524" height="724" rx="18" fill="none" stroke="#c89b2d" stroke-width="3"/>
+  <text x="300" y="150" text-anchor="middle" font-family="Arial" font-size="58" font-weight="700" fill="#f6e4a6">COURS DE</text>
+  <text x="300" y="220" text-anchor="middle" font-family="Arial" font-size="58" font-weight="700" fill="#f6e4a6">MUSIQUE</text>
+  <text x="300" y="290" text-anchor="middle" font-family="Arial" font-size="58" font-weight="700" fill="#f6e4a6">CONGOLAISE</text>
+  <path d="M140 560c120-60 250 35 360-42" fill="none" stroke="#316d40" stroke-width="8"/>
+  <path d="M140 610c120-60 250 35 360-42" fill="none" stroke="#316d40" stroke-width="8"/>
+  <text x="205" y="560" font-family="Arial" font-size="155" fill="#d89013">♪</text>
+  <text x="340" y="535" font-family="Arial" font-size="180" fill="#f4a51c">♪</text>
+  <text x="300" y="710" text-anchor="middle" font-family="Arial" font-size="28" fill="#f6e4a6">Mampouya Mam'sy</text>
+</svg>

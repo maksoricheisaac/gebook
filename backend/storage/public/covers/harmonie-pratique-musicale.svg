@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" role="img" aria-label="Harmonie et pratique musicale">
+  <rect width="600" height="800" fill="#17120d"/>
+  <rect x="42" y="42" width="516" height="716" rx="18" fill="none" stroke="#8f6426" stroke-width="3"/>
+  <text x="300" y="170" text-anchor="middle" font-family="Arial" font-size="52" font-weight="700" fill="#f6e4a6">HARMONIE</text>
+  <text x="300" y="235" text-anchor="middle" font-family="Arial" font-size="52" font-weight="700" fill="#f6e4a6">ET PRATIQUE</text>
+  <text x="300" y="300" text-anchor="middle" font-family="Arial" font-size="52" font-weight="700" fill="#f6e4a6">MUSICALE</text>
+  <text x="210" y="570" font-family="Arial" font-size="160" fill="#9a6526">♫</text>
+  <text x="330" y="610" font-family="Arial" font-size="130" fill="#d69b38">♪</text>
+  <text x="300" y="710" text-anchor="middle" font-family="Arial" font-size="28" fill="#f6e4a6">Mampouya Mam'sy</text>
+</svg>

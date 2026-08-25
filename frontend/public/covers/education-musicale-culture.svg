@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" role="img" aria-label="Éducation musicale et culture">
+  <rect width="600" height="800" fill="#701b15"/>
+  <rect x="42" y="42" width="516" height="716" rx="18" fill="none" stroke="#f3c66b" stroke-width="3"/>
+  <text x="300" y="165" text-anchor="middle" font-family="Arial" font-size="50" font-weight="700" fill="#fff0bc">ÉDUCATION</text>
+  <text x="300" y="232" text-anchor="middle" font-family="Arial" font-size="50" font-weight="700" fill="#fff0bc">MUSICALE</text>
+  <text x="300" y="299" text-anchor="middle" font-family="Arial" font-size="50" font-weight="700" fill="#fff0bc">ET CULTURE</text>
+  <text x="195" y="575" font-family="Arial" font-size="155" fill="#f6b31a">♫</text>
+  <text x="340" y="590" font-family="Arial" font-size="120" fill="#f0d17c">♪</text>
+  <text x="300" y="710" text-anchor="middle" font-family="Arial" font-size="28" fill="#fff0bc">Mampouya Mam'sy</text>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" role="img" aria-label="Théorie musicale simplifiée">
+  <rect width="600" height="800" fill="#0b2b31"/>
+  <rect x="40" y="40" width="520" height="720" rx="18" fill="none" stroke="#d6a23a" stroke-width="3"/>
+  <text x="300" y="160" text-anchor="middle" font-family="Arial" font-size="54" font-weight="700" fill="#f6e4a6">THÉORIE</text>
+  <text x="300" y="230" text-anchor="middle" font-family="Arial" font-size="54" font-weight="700" fill="#f6e4a6">MUSICALE</text>
+  <text x="300" y="300" text-anchor="middle" font-family="Arial" font-size="54" font-weight="700" fill="#f6e4a6">SIMPLIFIÉE</text>
+  <text x="155" y="555" font-family="Arial" font-size="130" fill="#d6a23a">♪</text>
+  <text x="285" y="600" font-family="Arial" font-size="150" fill="#f6b31a">♫</text>
+  <text x="300" y="710" text-anchor="middle" font-family="Arial" font-size="28" fill="#f6e4a6">Mampouya Mam'sy</text>
+</svg>

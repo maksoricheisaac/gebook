@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role="img" aria-hidden="true">
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="38%" r="60%">
+      <stop offset="0%" stop-color="#f6b51d" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#f6b51d" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="coverNavy" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a3a6e" />
+      <stop offset="100%" stop-color="#04182f" />
+    </linearGradient>
+    <linearGradient id="coverLeaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#078b45" />
+      <stop offset="100%" stop-color="#05603a" />
+    </linearGradient>
+    <linearGradient id="pageStack" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fdfcf9" />
+      <stop offset="100%" stop-color="#e5dfd2" />
+    </linearGradient>
+    <linearGradient id="openPageLeft" x1="100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f1ede4" />
+    </linearGradient>
+    <linearGradient id="openPageRight" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f1ede4" />
+    </linearGradient>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#04182f" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <rect width="640" height="640" fill="url(#halo)" />
+
+  <ellipse cx="320" cy="560" rx="230" ry="26" fill="#04182f" opacity="0.08" />
+
+  <g filter="url(#softShadow)">
+    <!-- Base stack: two closed volumes, slightly fanned -->
+    <g transform="translate(150,360) rotate(-6)">
+      <rect x="0" y="0" width="270" height="42" rx="6" fill="url(#coverNavy)" />
+      <rect x="6" y="6" width="258" height="6" rx="3" fill="#f6b51d" opacity="0.85" />
+    </g>
+    <g transform="translate(175,320) rotate(4)">
+      <rect x="0" y="0" width="250" height="38" rx="6" fill="url(#coverLeaf)" />
+      <rect x="248" y="4" width="10" height="30" rx="3" fill="#fdfcf9" opacity="0.9" />
+    </g>
+
+    <!-- Open book on top -->
+    <g transform="translate(320,300)">
+      <!-- pages beneath, giving thickness -->
+      <path d="M -190 34 L 0 60 L 190 34 L 190 42 L 0 68 L -190 42 Z" fill="url(#pageStack)" />
+
+      <!-- left page -->
+      <path d="M -190 24 C -140 4, -60 -6, 0 4 L 0 44 C -60 34, -140 44, -190 64 Z" fill="url(#openPageLeft)" stroke="#e5dfd2" stroke-width="1.5" />
+      <!-- right page -->
+      <path d="M 190 24 C 140 4, 60 -6, 0 4 L 0 44 C 60 34, 140 44, 190 64 Z" fill="url(#openPageRight)" stroke="#e5dfd2" stroke-width="1.5" />
+
+      <!-- text lines, left -->
+      <g stroke="#a7bacf" stroke-width="2.4" stroke-linecap="round" opacity="0.8">
+        <line x1="-165" y1="14" x2="-70" y2="6" />
+        <line x1="-165" y1="24" x2="-55" y2="17" />
+        <line x1="-165" y1="34" x2="-65" y2="28" />
+        <line x1="-165" y1="44" x2="-45" y2="39" />
+      </g>
+      <!-- text lines, right -->
+      <g stroke="#a7bacf" stroke-width="2.4" stroke-linecap="round" opacity="0.8">
+        <line x1="165" y1="14" x2="70" y2="6" />
+        <line x1="165" y1="24" x2="55" y2="17" />
+        <line x1="165" y1="34" x2="65" y2="28" />
+        <line x1="165" y1="44" x2="45" y2="39" />
+      </g>
+
+      <!-- spine crease -->
+      <path d="M 0 4 L 0 44" stroke="#cfc7b6" stroke-width="2" />
+
+      <!-- gold ribbon bookmark, draped over the spine -->
+      <path d="M -14 -4 L 14 -4 L 14 92 L 0 76 L -14 92 Z" fill="#d99b12" />
+      <path d="M -14 -4 L 14 -4 L 14 6 L -14 6 Z" fill="#f6b51d" />
+    </g>
+  </g>
+
+  <!-- a few loose petals of "leaf" green, echoing the wordmark's leaf without literalizing it -->
+  <g opacity="0.5">
+    <circle cx="500" cy="150" r="4" fill="#078b45" />
+    <circle cx="522" cy="176" r="3" fill="#f6b51d" />
+    <circle cx="120" cy="180" r="3.5" fill="#078b45" />
+  </g>
+</svg>

@@ -1,0 +1,1020 @@
+// Schéma GeBook — transposition fidèle de `database/schema.sql` (MySQL 8) vers PostgreSQL.
+//
+// Règles de transposition appliquées (audit §29) :
+//   - la source de vérité est le SQL réel, jamais `PROJECT_CONTEXT.md` ;
+//   - les noms de tables et de colonnes d'origine sont conservés via `@@map` / `@map` ;
+//   - les contraintes et index gardent leurs noms d'origine via `map:` ;
+//   - tous les montants sont en `Decimal`, jamais en `Float` ;
+//   - les dates passent en `timestamptz`, ce qui lève l'ambiguïté de fuseau du dump MySQL ;
+//   - `onUpdate` est omis : la valeur par défaut de Prisma (`Cascade`) correspond déjà
+//     à l'`ON UPDATE CASCADE` de toutes les clés étrangères d'origine.
+//
+// Un écart assumé par rapport au SQL d'origine : les clés primaires passent de
+// `BIGINT UNSIGNED AUTO_INCREMENT` à des UUID v7. Trois conséquences recherchées —
+// un identifiant exposé dans une URL ne révèle plus le volume ni l'ordre de création,
+// un identifiant peut être généré côté application avant l'écriture, et la version 7
+// reste ordonnée dans le temps, ce qui préserve la localité des index.
+//
+// Les 7 contraintes `CHECK` du schéma MySQL n'ont pas d'équivalent Prisma : elles sont
+// ajoutées à la main dans `migrations/.../check_constraints`. Ne jamais les supprimer.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  // Imports internes sans extension : `ts-node` charge le client généré en CommonJS
+  // et ne saurait pas résoudre un `./internal/class.js` qui n'existe qu'en `.ts`.
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Énumérations
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  active
+  inactive
+  blocked
+
+  @@map("user_status")
+}
+
+enum AuthorStatus {
+  draft
+  active
+  inactive
+
+  @@map("author_status")
+}
+
+enum CategoryStatus {
+  active
+  inactive
+
+  @@map("category_status")
+}
+
+enum WorkStatus {
+  draft
+  submitted
+  under_review
+  approved
+  published
+  rejected
+  inactive
+  archived
+
+  @@map("work_status")
+}
+
+enum WorkVisibility {
+  private
+  tenant_only
+  public
+
+  @@map("work_visibility")
+}
+
+enum TenantType {
+  independent_author
+  publishing_house
+  collective
+  cultural_organization
+
+  @@map("tenant_type")
+}
+
+enum TenantStatus {
+  active
+  suspended
+  archived
+
+  @@map("tenant_status")
+}
+
+enum TenantMemberRole {
+  owner
+  admin
+  editor
+  author
+  marketing
+  finance
+  viewer
+
+  @@map("tenant_member_role")
+}
+
+enum TenantMemberStatus {
+  active
+  invited
+  suspended
+
+  @@map("tenant_member_status")
+}
+
+enum FormatType {
+  pdf
+  paper
+  epub
+  audio
+
+  @@map("format_type")
+}
+
+enum DeliveryType {
+  digital_download
+  physical_delivery
+  pickup
+
+  @@map("delivery_type")
+}
+
+enum FileType {
+  full
+  sample
+  cover
+  supplement
+
+  @@map("file_type")
+}
+
+/// Langue d'une traduction de contenu éditorial (`WorkTranslation`, `AuthorTranslation`,
+/// `CategoryTranslation`) — distinct de la locale d'interface pilotée par next-intl côté
+/// frontend, même si les deux partagent aujourd'hui les deux mêmes valeurs.
+enum ContentLocale {
+  fr
+  en
+
+  @@map("content_locale")
+}
+
+enum OrderStatus {
+  pending
+  awaiting_payment
+  paid
+  processing
+  shipped
+  delivered
+  cancelled
+  refunded
+  failed
+
+  @@map("order_status")
+}
+
+enum ProviderEnvironment {
+  sandbox
+  production
+
+  @@map("provider_environment")
+}
+
+enum ProviderStatus {
+  active
+  inactive
+  maintenance
+
+  @@map("provider_status")
+}
+
+enum SynchronizationStatus {
+  not_synced
+  pending
+  synced
+  failed
+
+  @@map("synchronization_status")
+}
+
+enum PaymentStatus {
+  initialized
+  pending
+  successful
+  failed
+  cancelled
+  refunded
+
+  @@map("payment_status")
+}
+
+enum EventProcessingStatus {
+  received
+  processed
+  ignored
+  failed
+
+  @@map("event_processing_status")
+}
+
+enum AccessStatus {
+  active
+  revoked
+  expired
+
+  @@map("access_status")
+}
+
+enum CommissionType {
+  percentage
+  fixed
+
+  @@map("commission_type")
+}
+
+enum CalculationBase {
+  gross_amount
+  after_provider_fee
+
+  @@map("calculation_base")
+}
+
+enum CommissionRuleStatus {
+  active
+  inactive
+
+  @@map("commission_rule_status")
+}
+
+enum PayoutStatus {
+  pending
+  available
+  partially_paid
+  paid
+  cancelled
+
+  @@map("payout_status")
+}
+
+enum SettingValueType {
+  string
+  integer
+  decimal
+  boolean
+  json
+
+  @@map("setting_value_type")
+}
+
+// ---------------------------------------------------------------------------
+// Multi-tenant (V2) — GeBook fournit l'infrastructure, chaque tenant possède
+// et administre son propre espace éditorial (auteur indépendant, maison
+// d'édition, collectif...). Voir new_stack/AUDIT_V2_MULTI_TENANT.md.
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  slug        String       @unique(map: "uq_tenants_slug") @db.VarChar(120)
+  name        String       @db.VarChar(150)
+  type        TenantType
+  description String?      @db.Text
+  logoPath    String?      @map("logo_path") @db.VarChar(255)
+  coverPath   String?      @map("cover_path") @db.VarChar(255)
+  website     String?      @db.VarChar(255)
+  socialLinks Json?        @map("social_links")
+  status      TenantStatus @default(active)
+  /// Nullable : le tenant historique créé par la migration V2 et les tenants de
+  /// démonstration créés par `seed.ts` n'ont pas de créateur réel (aucun compte
+  /// utilisateur n'y est rattaché — `database/README.md`). Un tenant créé via
+  /// l'onboarding applicatif (Phase 6) renseigne toujours cette valeur.
+  createdBy   String?      @map("created_by") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  creator      User?           @relation(fields: [createdBy], references: [id], onDelete: SetNull, map: "fk_tenants_created_by")
+  members      TenantMember[]
+  settings     TenantSetting[]
+  authors      Author[]
+  works        Work[]
+  orderItems   OrderItem[]
+  activityLogs ActivityLog[]
+
+  @@index([status], map: "idx_tenants_status")
+  @@index([createdBy], map: "idx_tenants_created_by")
+  @@map("tenants")
+}
+
+/// Appartenance d'un utilisateur à un tenant, avec son rôle *dans ce tenant*.
+/// Un même utilisateur peut appartenir à plusieurs tenants avec des rôles
+/// différents (brief §3) — c'est l'entité qui remplace le rôle global
+/// `author`/`admin` pour tout ce qui touche à la gestion d'un catalogue.
+model TenantMember {
+  id        String             @id @default(uuid(7)) @db.Uuid
+  tenantId  String             @map("tenant_id") @db.Uuid
+  userId    String             @map("user_id") @db.Uuid
+  role      TenantMemberRole
+  status    TenantMemberStatus @default(active)
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "fk_tenant_members_tenant")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_tenant_members_user")
+
+  @@unique([tenantId, userId], map: "uq_tenant_members")
+  @@index([userId], map: "idx_tenant_members_user")
+  @@map("tenant_members")
+}
+
+/// Réglages propres à un tenant (branding, préférences...), distincts des
+/// réglages plateforme portés par `Setting`.
+model TenantSetting {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  settingKey   String   @map("setting_key") @db.VarChar(150)
+  settingValue String?  @map("setting_value") @db.Text
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "fk_tenant_settings_tenant")
+
+  @@unique([tenantId, settingKey], map: "uq_tenant_settings")
+  @@map("tenant_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Identité
+// ---------------------------------------------------------------------------
+
+model User {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  firstName       String     @map("first_name") @db.VarChar(100)
+  lastName        String?    @map("last_name") @db.VarChar(100)
+  email           String     @unique(map: "uq_users_email") @db.VarChar(190)
+  phone           String?    @db.VarChar(30)
+  // Ne doit apparaître dans aucun DTO de réponse : toute lecture destinée à l'API
+  // passe par un `select` explicite (audit S-08).
+  passwordHash    String     @map("password_hash") @db.VarChar(255)
+  status          UserStatus @default(active)
+  emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz(6)
+  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Pluriel depuis le V2 : un même utilisateur peut avoir un profil auteur dans
+  /// plusieurs tenants (brief §3, §7). Voir la contrainte `[tenantId, userId]` sur
+  /// `Author` — au plus un profil auteur par tenant pour un même utilisateur.
+  authors           Author[]
+  userRoles         UserRole[]
+  sessions          Session[]
+  orders            Order[]
+  library           ReaderLibrary[]
+  downloads         Download[]
+  activityLogs      ActivityLog[]
+  tenantMemberships TenantMember[]
+  createdTenants    Tenant[]
+
+  @@index([status], map: "idx_users_status")
+  @@index([phone], map: "idx_users_phone")
+  @@map("users")
+}
+
+model Role {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @unique(map: "uq_roles_name") @db.VarChar(50)
+  label     String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+/// Table de liaison explicite plutôt que la relation N-N implicite de Prisma :
+/// elle porte sa propre date de création, que Prisma ne saurait pas exposer autrement.
+model UserRole {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_user_roles_user")
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict, map: "fk_user_roles_role")
+
+  @@unique([userId, roleId], map: "uq_user_roles")
+  @@index([roleId], map: "idx_user_roles_role")
+  @@map("user_roles")
+}
+
+/// Session serveur révocable (audit §32) : le cookie ne porte qu'un jeton opaque,
+/// jamais l'identifiant utilisateur. `tokenHash` stocke le hachage SHA-256 du jeton,
+/// jamais le jeton lui-même — une fuite de la base ne suffit pas à rejouer une session,
+/// exactement comme un mot de passe n'y est jamais stocké en clair.
+model Session {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique(map: "uq_sessions_token_hash") @map("token_hash") @db.VarChar(64)
+  userAgent String?  @map("user_agent") @db.VarChar(255)
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_sessions_user")
+
+  @@index([userId], map: "idx_sessions_user")
+  @@map("sessions")
+}
+
+/// Limitation des tentatives de connexion, à double compteur (audit §32, corrige S-05) :
+/// une ligne par compte, une autre par IP, chacune avec sa propre fenêtre glissante.
+/// Un attaquant qui change d'IP reste bloqué par le compteur du compte visé.
+model LoginAttempt {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  /// SHA-256 de `scope:identifiant` — l'e-mail ou l'IP en clair n'a pas à vivre ici.
+  key       String   @db.VarChar(64)
+  count     Int      @default(0)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([key], map: "uq_login_attempts_key")
+  @@map("login_attempts")
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+model Author {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  /// Chaque profil auteur appartient à exactement un tenant. Un même `User` peut
+  /// avoir un profil `Author` distinct dans plusieurs tenants (brief §3, §7) — d'où
+  /// l'unicité composite `[tenantId, userId]` plutôt qu'une unicité globale sur `userId`.
+  tenantId       String       @map("tenant_id") @db.Uuid
+  /// Nullable : un auteur peut exister sans compte (auteur décédé, auteur qui
+  /// n'ouvrira jamais de session).
+  userId         String?      @map("user_id") @db.Uuid
+  penName        String       @map("pen_name") @db.VarChar(150)
+  legalName      String?      @map("legal_name") @db.VarChar(150)
+  slug           String       @unique(map: "uq_authors_slug") @db.VarChar(180)
+  biography      String?      @db.Text
+  shortBiography String?      @map("short_biography") @db.VarChar(500)
+  photoPath      String?      @map("photo_path") @db.VarChar(255)
+  birthDate      DateTime?    @map("birth_date") @db.Date
+  country        String?      @db.VarChar(100)
+  city           String?      @db.VarChar(100)
+  publicEmail    String?      @map("public_email") @db.VarChar(190)
+  publicPhone    String?      @map("public_phone") @db.VarChar(30)
+  payoutPhone    String?      @map("payout_phone") @db.VarChar(30)
+  payoutMethod   String?      @map("payout_method") @db.VarChar(100)
+  status         AuthorStatus @default(draft)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict, map: "fk_authors_tenant")
+  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_authors_user")
+  works             Work[]
+  orderItems        OrderItem[]
+  commissionRules   CommissionRule[]
+  saleDistributions SaleDistribution[]
+  translations      AuthorTranslation[]
+
+  @@unique([tenantId, userId], map: "uq_authors_tenant_user")
+  @@index([tenantId], map: "idx_authors_tenant")
+  @@index([status], map: "idx_authors_status")
+  @@index([penName], map: "idx_authors_pen_name")
+  @@map("authors")
+}
+
+model Category {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  name        String         @db.VarChar(100)
+  slug        String         @unique(map: "uq_categories_slug") @db.VarChar(120)
+  description String?        @db.Text
+  parentId    String?        @map("parent_id") @db.Uuid
+  status      CategoryStatus @default(active)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parent       Category?             @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull, map: "fk_categories_parent")
+  children     Category[]            @relation("CategoryHierarchy")
+  works        Work[]
+  translations CategoryTranslation[]
+
+  @@index([status], map: "idx_categories_status")
+  @@index([parentId], map: "idx_categories_parent")
+  @@map("categories")
+}
+
+/// Traduction FR/EN d'une œuvre. Une ligne par `(workId, locale)` — le français
+/// existant migre en ligne `fr`, l'anglais est ajouté au fur et à mesure. Pas de
+/// `tenant_id` propre : la RLS de cette table passe par une jointure `EXISTS`
+/// vers `works`, exactement comme `work_formats` (précédent déjà établi), pas
+/// par la dénormalisation utilisée pour `order_items` (qui répond à un problème
+/// de récursion bidirectionnelle qui ne se pose pas ici).
+model WorkTranslation {
+  id               String        @id @default(uuid(7)) @db.Uuid
+  workId           String        @map("work_id") @db.Uuid
+  locale           ContentLocale
+  title            String        @db.VarChar(255)
+  subtitle         String?       @db.VarChar(255)
+  shortDescription String?       @map("short_description") @db.VarChar(500)
+  description      String?       @db.Text
+  tableOfContents  String?       @map("table_of_contents") @db.Text
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade, map: "fk_work_translations_work")
+
+  @@unique([workId, locale], map: "uq_work_translations_work_locale")
+  @@map("work_translations")
+}
+
+/// Traduction FR/EN d'un auteur (biographie). Même pattern que `WorkTranslation`.
+model AuthorTranslation {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  authorId       String        @map("author_id") @db.Uuid
+  locale         ContentLocale
+  biography      String?       @db.Text
+  shortBiography String?       @map("short_biography") @db.VarChar(500)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  author Author @relation(fields: [authorId], references: [id], onDelete: Cascade, map: "fk_author_translations_author")
+
+  @@unique([authorId, locale], map: "uq_author_translations_author_locale")
+  @@map("author_translations")
+}
+
+/// Traduction FR/EN d'une catégorie. `categories` n'a ni `tenant_id` ni RLS
+/// (catalogue de référence global de la plateforme) — cette table non plus,
+/// par parité : ce n'est pas un oubli.
+model CategoryTranslation {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  categoryId  String        @map("category_id") @db.Uuid
+  locale      ContentLocale
+  name        String        @db.VarChar(100)
+  description String?       @db.Text
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade, map: "fk_category_translations_category")
+
+  @@unique([categoryId, locale], map: "uq_category_translations_category_locale")
+  @@map("category_translations")
+}
+
+/// Porte l'éditorial d'un ouvrage. Le prix, le stock et le mode de livraison
+/// appartiennent à `WorkFormat` : les informations de l'œuvre ne sont jamais
+/// dupliquées par format (règle métier n° 1 de l'audit §35).
+model Work {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  /// Dénormalisé depuis `author.tenantId` au moment de la création (même tenant
+  /// que l'auteur, toujours) : filtrer un catalogue par tenant ne doit jamais
+  /// nécessiter une jointure vers `authors`.
+  tenantId         String         @map("tenant_id") @db.Uuid
+  authorId         String         @map("author_id") @db.Uuid
+  categoryId       String?        @map("category_id") @db.Uuid
+  title            String         @db.VarChar(255)
+  subtitle         String?        @db.VarChar(255)
+  slug             String         @unique(map: "uq_works_slug") @db.VarChar(280)
+  shortDescription String?        @map("short_description") @db.VarChar(500)
+  description      String?        @db.Text
+  tableOfContents  String?        @map("table_of_contents") @db.Text
+  coverPath        String?        @map("cover_path") @db.VarChar(255)
+  isbn             String?        @db.VarChar(50)
+  language         String         @default("Français") @db.VarChar(50)
+  pageCount        Int?           @map("page_count")
+  /// MySQL utilisait le type `YEAR`, sans équivalent PostgreSQL : un entier borné
+  /// par une contrainte `CHECK` le remplace.
+  publicationYear  Int?           @map("publication_year")
+  publicationDate  DateTime?      @map("publication_date") @db.Date
+  edition          String?        @db.VarChar(100)
+  status           WorkStatus     @default(draft)
+  /// Contrôle la visibilité indépendamment du statut de publication (brief §14) :
+  /// une œuvre `published` peut rester `tenant_only` (catalogue interne) sans
+  /// apparaître dans le catalogue public agrégé de GeBook.
+  visibility       WorkVisibility @default(private)
+  featured         Boolean        @default(false)
+  publishedAt      DateTime?      @map("published_at") @db.Timestamptz(6)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, map: "fk_works_tenant")
+  author       Author            @relation(fields: [authorId], references: [id], onDelete: Restrict, map: "fk_works_author")
+  category     Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull, map: "fk_works_category")
+  formats      WorkFormat[]
+  orderItems   OrderItem[]
+  library      ReaderLibrary[]
+  translations WorkTranslation[]
+
+  @@index([tenantId], map: "idx_works_tenant")
+  @@index([authorId], map: "idx_works_author")
+  @@index([categoryId], map: "idx_works_category")
+  @@index([status], map: "idx_works_status")
+  @@index([visibility], map: "idx_works_visibility")
+  @@index([featured], map: "idx_works_featured")
+  @@index([title], map: "idx_works_title")
+  @@map("works")
+}
+
+/// Une manière d'acheter une œuvre, avec son propre prix et son propre mode de livraison.
+model WorkFormat {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  workId         String       @map("work_id") @db.Uuid
+  formatType     FormatType   @map("format_type")
+  label          String?      @db.VarChar(100)
+  price          Decimal      @db.Decimal(12, 2)
+  currency       String       @default("XAF") @db.Char(3)
+  stockQuantity  Int?         @map("stock_quantity")
+  unlimitedStock Boolean      @default(false) @map("unlimited_stock")
+  isAvailable    Boolean      @default(true) @map("is_available")
+  deliveryType   DeliveryType @map("delivery_type")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  work             Work              @relation(fields: [workId], references: [id], onDelete: Cascade, map: "fk_work_formats_work")
+  files            WorkFile[]
+  orderItems       OrderItem[]
+  library          ReaderLibrary[]
+  providerProducts ProviderProduct[]
+
+  /// Une œuvre ne peut avoir qu'un seul format de chaque type (règle n° 2).
+  @@unique([workId, formatType], map: "uq_work_format")
+  @@index([isAvailable], map: "idx_work_formats_available")
+  @@map("work_formats")
+}
+
+model WorkFile {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  workFormatId String   @map("work_format_id") @db.Uuid
+  fileType     FileType @map("file_type")
+  originalName String?  @map("original_name") @db.VarChar(255)
+  /// Nom aléatoire sur le disque : un chemin deviné ne mène nulle part.
+  storedName   String   @map("stored_name") @db.VarChar(255)
+  /// Ne doit apparaître dans aucun DTO de réponse (audit §71).
+  storagePath  String   @map("storage_path") @db.VarChar(500)
+  mimeType     String?  @map("mime_type") @db.VarChar(100)
+  /// Taille en octets. `Int` suffit largement : le réglage `max_pdf_size_mb` plafonne
+  /// les téléversements à 100 Mo, très loin des 2 Go que couvre un entier signé.
+  fileSize     Int?     @map("file_size")
+  checksum     String?  @db.VarChar(255)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workFormat WorkFormat @relation(fields: [workFormatId], references: [id], onDelete: Cascade, map: "fk_work_files_format")
+  downloads  Download[]
+
+  @@index([workFormatId], map: "idx_work_files_format")
+  @@index([fileType, isActive], map: "idx_work_files_type_active")
+  @@index([checksum], map: "idx_work_files_checksum")
+  @@map("work_files")
+}
+
+// ---------------------------------------------------------------------------
+// Commande
+// ---------------------------------------------------------------------------
+
+model Order {
+  id               String      @id @default(uuid(7)) @db.Uuid
+  orderNumber      String      @unique(map: "uq_orders_number") @map("order_number") @db.VarChar(50)
+  userId           String      @map("user_id") @db.Uuid
+  status           OrderStatus @default(pending)
+  subtotal         Decimal     @default(0) @db.Decimal(12, 2)
+  deliveryFee      Decimal     @default(0) @map("delivery_fee") @db.Decimal(12, 2)
+  discountAmount   Decimal     @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  totalAmount      Decimal     @default(0) @map("total_amount") @db.Decimal(12, 2)
+  currency         String      @default("XAF") @db.Char(3)
+  // Adresse de livraison volontairement dénormalisée : c'est un instantané de
+  // commande, il ne doit pas changer si le client modifie son profil.
+  recipientName    String?     @map("recipient_name") @db.VarChar(150)
+  deliveryPhone    String?     @map("delivery_phone") @db.VarChar(30)
+  deliveryCountry  String?     @map("delivery_country") @db.VarChar(100)
+  deliveryCity     String?     @map("delivery_city") @db.VarChar(100)
+  deliveryDistrict String?     @map("delivery_district") @db.VarChar(100)
+  deliveryAddress  String?     @map("delivery_address") @db.Text
+  deliveryLandmark String?     @map("delivery_landmark") @db.VarChar(255)
+  paidAt           DateTime?   @map("paid_at") @db.Timestamptz(6)
+  cancelledAt      DateTime?   @map("cancelled_at") @db.Timestamptz(6)
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Restrict, map: "fk_orders_user")
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([userId], map: "idx_orders_user")
+  @@index([status], map: "idx_orders_status")
+  @@index([createdAt], map: "idx_orders_created_at")
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  orderId      String   @map("order_id") @db.Uuid
+  /// Instantané du tenant vendeur au moment de l'achat, dans le même esprit que
+  /// `workTitle`/`authorName`/`unitPrice` ci-dessous. Une commande (`Order`) peut
+  /// donc contenir des lignes de plusieurs tenants (brief §17) : le tenant vit sur
+  /// la ligne, jamais sur la commande. C'est aussi ce qui permet à
+  /// `SaleDistribution` — déjà rattachée à `OrderItem` — de calculer la commission
+  /// et le revenu par tenant sans changer sa propre forme.
+  tenantId     String   @map("tenant_id") @db.Uuid
+  workId       String   @map("work_id") @db.Uuid
+  workFormatId String   @map("work_format_id") @db.Uuid
+  authorId     String   @map("author_id") @db.Uuid
+  // Les champs ci-dessous sont des instantanés obligatoires : ils figent le
+  // libellé et le prix au moment de l'achat. Une facture passée ne doit jamais être
+  // recalculée depuis le catalogue actuel (règle n° 6).
+  workTitle    String   @map("work_title") @db.VarChar(255)
+  authorName   String   @map("author_name") @db.VarChar(150)
+  formatType   String   @map("format_type") @db.VarChar(30)
+  unitPrice    Decimal  @map("unit_price") @db.Decimal(12, 2)
+  quantity     Int      @default(1)
+  lineTotal    Decimal  @map("line_total") @db.Decimal(12, 2)
+  /// Instantané du numéro de commande (Phase 4, RLS). `orders` et `order_items`
+  /// ont des policies RLS qui se référencent mutuellement dans l'autre sens
+  /// (l'acheteur vu depuis `orders`, la ligne vue depuis `order_items`) ;
+  /// PostgreSQL refuse une policy qui interroge `orders` depuis
+  /// `order_items_select` (récursion infinie, corrigée en 20260823020100).
+  /// Dupliquer le numéro ici — dans le même esprit que `workTitle`/`unitPrice`
+  /// — permet à un auteur de voir le numéro de commande de sa propre vente
+  /// sans jamais avoir besoin de lire `orders`.
+  orderNumber  String   @map("order_number") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order            Order             @relation(fields: [orderId], references: [id], onDelete: Cascade, map: "fk_order_items_order")
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, map: "fk_order_items_tenant")
+  work             Work              @relation(fields: [workId], references: [id], onDelete: Restrict, map: "fk_order_items_work")
+  workFormat       WorkFormat        @relation(fields: [workFormatId], references: [id], onDelete: Restrict, map: "fk_order_items_format")
+  author           Author            @relation(fields: [authorId], references: [id], onDelete: Restrict, map: "fk_order_items_author")
+  libraryEntry     ReaderLibrary?
+  saleDistribution SaleDistribution?
+
+  @@index([orderId], map: "idx_order_items_order")
+  @@index([tenantId], map: "idx_order_items_tenant")
+  @@index([workId], map: "idx_order_items_work")
+  @@index([workFormatId], map: "idx_order_items_format")
+  @@index([authorId], map: "idx_order_items_author")
+  @@map("order_items")
+}
+
+// ---------------------------------------------------------------------------
+// Paiement
+// ---------------------------------------------------------------------------
+
+/// Décrit les capacités et l'état d'un prestataire. Les clés d'API et les secrets
+/// de signature n'y figurent volontairement pas : ils vivent dans l'environnement.
+model PaymentProvider {
+  id                  String              @id @default(uuid(7)) @db.Uuid
+  code                String              @unique(map: "uq_payment_providers_code") @db.VarChar(50)
+  name                String              @db.VarChar(100)
+  driver              String              @db.VarChar(150)
+  environment         ProviderEnvironment @default(sandbox)
+  status              ProviderStatus      @default(inactive)
+  supportsMobileMoney Boolean             @default(false) @map("supports_mobile_money")
+  supportsCard        Boolean             @default(false) @map("supports_card")
+  supportsRefund      Boolean             @default(false) @map("supports_refund")
+  priority            Int                 @default(1)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payments Payment[]
+  events   PaymentEvent[]
+  products ProviderProduct[]
+
+  @@index([status, priority], map: "idx_payment_providers_status_priority")
+  @@map("payment_providers")
+}
+
+/// Correspondance entre un format GeBook et un produit chez le prestataire,
+/// pour les prestataires qui hébergent leur propre catalogue (Chariow).
+model ProviderProduct {
+  id                    String                @id @default(uuid(7)) @db.Uuid
+  paymentProviderId     String                @map("payment_provider_id") @db.Uuid
+  workFormatId          String                @map("work_format_id") @db.Uuid
+  externalProductId     String?               @map("external_product_id") @db.VarChar(190)
+  externalPriceId       String?               @map("external_price_id") @db.VarChar(190)
+  externalCheckoutUrl   String?               @map("external_checkout_url") @db.Text
+  synchronizationStatus SynchronizationStatus @default(not_synced) @map("synchronization_status")
+  lastSyncedAt          DateTime?             @map("last_synced_at") @db.Timestamptz(6)
+  rawData               Json?                 @map("raw_data")
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  paymentProvider PaymentProvider @relation(fields: [paymentProviderId], references: [id], onDelete: Cascade, map: "fk_provider_products_provider")
+  workFormat      WorkFormat      @relation(fields: [workFormatId], references: [id], onDelete: Cascade, map: "fk_provider_products_format")
+
+  @@unique([paymentProviderId, workFormatId], map: "uq_provider_product")
+  @@index([workFormatId], map: "idx_provider_products_format")
+  @@index([synchronizationStatus], map: "idx_provider_products_sync_status")
+  @@index([externalProductId], map: "idx_provider_products_external_product")
+  @@map("provider_products")
+}
+
+/// Une commande peut porter plusieurs paiements : une tentative peut échouer,
+/// le lecteur en relance une autre. Chaque tentative garde sa trace (règle n° 7).
+model Payment {
+  id                    String        @id @default(uuid(7)) @db.Uuid
+  orderId               String        @map("order_id") @db.Uuid
+  paymentProviderId     String        @map("payment_provider_id") @db.Uuid
+  providerTransactionId String?       @unique(map: "uq_payments_provider_tx") @map("provider_transaction_id") @db.VarChar(190)
+  providerReference     String?       @map("provider_reference") @db.VarChar(190)
+  /// Clé d'idempotence propre à GeBook, absente du schéma MySQL d'origine.
+  /// `providerTransactionId` est nullable tant que le prestataire n'a pas répondu :
+  /// sans cette clé, rien n'empêche deux paiements `initialized` concurrents sur la
+  /// même commande (défaut relevé à l'audit §12).
+  idempotencyKey        String?       @unique(map: "uq_payments_idempotency_key") @map("idempotency_key") @db.VarChar(190)
+  checkoutUrl           String?       @map("checkout_url") @db.Text
+  expectedAmount        Decimal       @map("expected_amount") @db.Decimal(12, 2)
+  paidAmount            Decimal?      @map("paid_amount") @db.Decimal(12, 2)
+  providerFee           Decimal?      @map("provider_fee") @db.Decimal(12, 2)
+  currency              String        @default("XAF") @db.Char(3)
+  paymentMethod         String?       @map("payment_method") @db.VarChar(100)
+  status                PaymentStatus @default(initialized)
+  rawResponse           Json?         @map("raw_response")
+  paidAt                DateTime?     @map("paid_at") @db.Timestamptz(6)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order           Order           @relation(fields: [orderId], references: [id], onDelete: Restrict, map: "fk_payments_order")
+  paymentProvider PaymentProvider @relation(fields: [paymentProviderId], references: [id], onDelete: Restrict, map: "fk_payments_provider")
+  events          PaymentEvent[]
+
+  @@index([orderId], map: "idx_payments_order")
+  @@index([paymentProviderId], map: "idx_payments_provider")
+  @@index([status], map: "idx_payments_status")
+  @@index([providerReference], map: "idx_payments_provider_reference")
+  @@map("payments")
+}
+
+/// Trace brute de chaque notification reçue d'un prestataire, enregistrée **avant**
+/// tout traitement métier — même lorsque la signature est invalide, seule façon de
+/// diagnostiquer une attaque ou une panne côté prestataire.
+model PaymentEvent {
+  id                String                @id @default(uuid(7)) @db.Uuid
+  paymentId         String?               @map("payment_id") @db.Uuid
+  paymentProviderId String                @map("payment_provider_id") @db.Uuid
+  eventId           String?               @map("event_id") @db.VarChar(190)
+  eventType         String?               @map("event_type") @db.VarChar(100)
+  payload           Json
+  signatureValid    Boolean               @default(false) @map("signature_valid")
+  processingStatus  EventProcessingStatus @default(received) @map("processing_status")
+  errorMessage      String?               @map("error_message") @db.Text
+  receivedAt        DateTime              @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt       DateTime?             @map("processed_at") @db.Timestamptz(6)
+
+  payment         Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull, map: "fk_payment_events_payment")
+  paymentProvider PaymentProvider @relation(fields: [paymentProviderId], references: [id], onDelete: Restrict, map: "fk_payment_events_provider")
+
+  /// Garantie d'idempotence des webhooks : un même événement du même prestataire ne
+  /// peut être inséré qu'une fois. La règle est portée par la base, pas par le code,
+  /// parce que la contrainte est atomique et qu'une vérification applicative ne l'est
+  /// pas (règle n° 8).
+  @@unique([paymentProviderId, eventId], map: "uq_payment_events_provider_event")
+  @@index([paymentId], map: "idx_payment_events_payment")
+  @@index([paymentProviderId], map: "idx_payment_events_provider")
+  @@index([processingStatus], map: "idx_payment_events_status")
+  @@map("payment_events")
+}
+
+// ---------------------------------------------------------------------------
+// Accès au contenu
+// ---------------------------------------------------------------------------
+
+/// Le droit d'accès d'un lecteur à un format. Il est matérialisé ici et nulle part
+/// ailleurs : un contrôle de téléchargement interroge cette table, jamais `orders`
+/// (règle n° 17). Un remboursement révoque l'accès sans toucher à l'historique.
+model ReaderLibrary {
+  id           String       @id @default(uuid(7)) @db.Uuid
+  userId       String       @map("user_id") @db.Uuid
+  /// Unicité ajoutée par rapport au SQL d'origine, qui ne portait que la contrainte
+  /// composée `(user_id, order_item_id)`. Une ligne de commande appartient à un seul
+  /// acheteur : sans cette contrainte, deux utilisateurs différents pourraient
+  /// revendiquer le même `order_item_id`. Elle rend aussi la relation réellement 1:1.
+  orderItemId  String       @unique(map: "uq_library_order_item") @map("order_item_id") @db.Uuid
+  workId       String       @map("work_id") @db.Uuid
+  workFormatId String       @map("work_format_id") @db.Uuid
+  accessStatus AccessStatus @default(active) @map("access_status")
+  grantedAt    DateTime     @default(now()) @map("granted_at") @db.Timestamptz(6)
+  revokedAt    DateTime?    @map("revoked_at") @db.Timestamptz(6)
+  expiresAt    DateTime?    @map("expires_at") @db.Timestamptz(6)
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_library_user")
+  orderItem  OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Restrict, map: "fk_library_order_item")
+  work       Work       @relation(fields: [workId], references: [id], onDelete: Restrict, map: "fk_library_work")
+  workFormat WorkFormat @relation(fields: [workFormatId], references: [id], onDelete: Restrict, map: "fk_library_format")
+  downloads  Download[]
+
+  /// Un même achat ne crée qu'un seul droit d'accès (règle n° 21).
+  @@unique([userId, orderItemId], map: "uq_library_user_order_item")
+  @@index([userId, accessStatus], map: "idx_library_user_status")
+  @@index([workId], map: "idx_library_work")
+  @@index([workFormatId], map: "idx_library_format")
+  @@map("reader_library")
+}
+
+model Download {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  libraryId         String   @map("library_id") @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  workFileId        String   @map("work_file_id") @db.Uuid
+  ipAddress         String?  @map("ip_address") @db.VarChar(45)
+  userAgent         String?  @map("user_agent") @db.Text
+  downloadTokenHash String?  @map("download_token_hash") @db.VarChar(255)
+  downloadedAt      DateTime @default(now()) @map("downloaded_at") @db.Timestamptz(6)
+
+  library  ReaderLibrary @relation(fields: [libraryId], references: [id], onDelete: Cascade, map: "fk_downloads_library")
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_downloads_user")
+  workFile WorkFile      @relation(fields: [workFileId], references: [id], onDelete: Restrict, map: "fk_downloads_file")
+
+  @@index([libraryId], map: "idx_downloads_library")
+  @@index([userId], map: "idx_downloads_user")
+  @@index([workFileId], map: "idx_downloads_file")
+  @@index([downloadedAt], map: "idx_downloads_date")
+  @@map("downloads")
+}
+
+// ---------------------------------------------------------------------------
+// Finance auteur
+// ---------------------------------------------------------------------------
+
+model CommissionRule {
+  id              String               @id @default(uuid(7)) @db.Uuid
+  /// `null` désigne la règle générale, applicable à tous les auteurs.
+  authorId        String?              @map("author_id") @db.Uuid
+  name            String               @db.VarChar(150)
+  commissionType  CommissionType       @default(percentage) @map("commission_type")
+  commissionValue Decimal              @map("commission_value") @db.Decimal(12, 4)
+  calculationBase CalculationBase      @default(after_provider_fee) @map("calculation_base")
+  effectiveFrom   DateTime             @map("effective_from") @db.Timestamptz(6)
+  effectiveTo     DateTime?            @map("effective_to") @db.Timestamptz(6)
+  status          CommissionRuleStatus @default(active)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  author            Author?            @relation(fields: [authorId], references: [id], onDelete: Cascade, map: "fk_commission_rules_author")
+  saleDistributions SaleDistribution[]
+
+  @@index([authorId], map: "idx_commission_rules_author")
+  @@index([status, effectiveFrom, effectiveTo], map: "idx_commission_rules_status_dates")
+  @@map("commission_rules")
+}
+
+/// Répartition d'une vente, figée au moment du paiement. Les montants sont stockés,
+/// jamais recalculés : changer une règle n'affecte aucune vente passée (règle n° 13).
+model SaleDistribution {
+  id                     String       @id @default(uuid(7)) @db.Uuid
+  orderItemId            String       @unique(map: "uq_sale_distribution_order_item") @map("order_item_id") @db.Uuid
+  authorId               String       @map("author_id") @db.Uuid
+  /// `SetNull` : supprimer une règle ne doit jamais détruire les montants
+  /// historiques qu'elle a servi à calculer (règle n° 14).
+  commissionRuleId       String?      @map("commission_rule_id") @db.Uuid
+  grossAmount            Decimal      @map("gross_amount") @db.Decimal(12, 2)
+  providerFee            Decimal      @default(0) @map("provider_fee") @db.Decimal(12, 2)
+  netAfterProviderFee    Decimal      @map("net_after_provider_fee") @db.Decimal(12, 2)
+  gebookCommissionRate   Decimal?     @map("gebook_commission_rate") @db.Decimal(8, 4)
+  gebookCommissionAmount Decimal      @map("gebook_commission_amount") @db.Decimal(12, 2)
+  authorNetAmount        Decimal      @map("author_net_amount") @db.Decimal(12, 2)
+  payoutStatus           PayoutStatus @default(pending) @map("payout_status")
+  calculatedAt           DateTime     @default(now()) @map("calculated_at") @db.Timestamptz(6)
+
+  orderItem      OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Restrict, map: "fk_distributions_order_item")
+  author         Author          @relation(fields: [authorId], references: [id], onDelete: Restrict, map: "fk_distributions_author")
+  commissionRule CommissionRule? @relation(fields: [commissionRuleId], references: [id], onDelete: SetNull, map: "fk_distributions_rule")
+
+  @@index([authorId], map: "idx_sale_distributions_author")
+  @@index([payoutStatus], map: "idx_sale_distributions_payout_status")
+  @@index([commissionRuleId], map: "idx_sale_distributions_rule")
+  @@map("sale_distributions")
+}
+
+// ---------------------------------------------------------------------------
+// Exploitation
+// ---------------------------------------------------------------------------
+
+/// Réglages qu'un administrateur peut modifier sans redéploiement. Ce qui relève de
+/// l'infrastructure (URL, secrets, ports) reste dans l'environnement — la frontière
+/// est nette, ce qui lève la double source de vérité relevée à l'audit §12.
+model Setting {
+  id           String           @id @default(uuid(7)) @db.Uuid
+  settingKey   String           @unique(map: "uq_settings_key") @map("setting_key") @db.VarChar(150)
+  settingValue String?          @map("setting_value") @db.Text
+  valueType    SettingValueType @default(string) @map("value_type")
+  isPublic     Boolean          @default(false) @map("is_public")
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("settings")
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  /// Nullable : une action strictement plateforme (ex. suspension d'un tenant par
+  /// un `platform_admin`) n'appartient à aucun tenant.
+  tenantId    String?  @map("tenant_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  action      String   @db.VarChar(150)
+  entityType  String?  @map("entity_type") @db.VarChar(100)
+  entityId    String?  @map("entity_id") @db.Uuid
+  description String?  @db.Text
+  oldValues   Json?    @map("old_values")
+  newValues   Json?    @map("new_values")
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull, map: "fk_activity_logs_tenant")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_activity_logs_user")
+
+  @@index([tenantId], map: "idx_activity_logs_tenant")
+  @@index([userId], map: "idx_activity_logs_user")
+  @@index([entityType, entityId], map: "idx_activity_logs_entity")
+  @@index([createdAt], map: "idx_activity_logs_created_at")
+  @@map("activity_logs")
+}
