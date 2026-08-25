@@ -1,0 +1,6 @@
+# Les scripts joués dans un conteneur Linux doivent garder des fins de ligne LF.
+# Sur un poste Windows, une conversion CRLF les rend inexécutables : le noyau
+# cherche alors un interpréteur nommé "/bin/bash\r", qui n'existe pas.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

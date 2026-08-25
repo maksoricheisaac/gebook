@@ -1,0 +1,28 @@
+# Surcouche de vérification locale, sans Traefik ni domaine.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# À quoi elle sert : constater que les trois images se construisent, que les
+# migrations passent et que les services deviennent « healthy ».
+#
+# À quoi elle ne sert pas : se connecter à l'application. En production le cookie
+# de session s'appelle `__Host-gebook_session`, et ce préfixe est refusé par le
+# navigateur sur une origine en clair. Comme Next.js fige `NODE_ENV` au moment du
+# `build`, ce nom ne peut pas être ramené à sa variante de développement par une
+# simple variable d'exécution. Pour travailler sur l'application, `pnpm dev`
+# reste le bon outil.
+
+services:
+  backend:
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+
+  frontend:
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
+networks:
+  # Hors Dokploy, ce réseau n'existe pas : il est créé localement plutôt
+  # qu'attendu de l'extérieur.
+  dokploy-network:
+    external: false

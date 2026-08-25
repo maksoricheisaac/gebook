@@ -2,3 +2,9 @@
 graphify-out/.graphify_python
 graphify-out/.graphify_root
 graphify-out/cache/
+
+# Secrets du déploiement Docker : docker compose lit ce fichier à la racine.
+# `.env.docker.example` en est le modèle, sans valeurs.
+.env
+.env.local
+!.env.docker.example

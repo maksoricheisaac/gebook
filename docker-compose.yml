@@ -1,0 +1,186 @@
+# Déploiement GeBook sur Dokploy (Traefik + Let's Encrypt).
+#
+# Dokploy place Traefik devant les conteneurs et termine TLS lui-même. Deux
+# conséquences qui expliquent la forme de ce fichier :
+#   - aucun `ports:` publié. Traefik joint les conteneurs par le réseau interne ;
+#     publier un port sur l'hôte n'apporte rien et entre en conflit dès qu'une
+#     autre application du serveur veut le même numéro.
+#   - les domaines sont déclarés en labels Traefik plutôt que dans l'interface,
+#     pour que la configuration vive dans le dépôt et se relise.
+#
+# Variables à renseigner dans Dokploy (onglet Environment) : voir .env.docker.example.
+#
+# Cette pile est de forme « production » : le cookie de session porte le préfixe
+# `__Host-`, que le navigateur refuse hors HTTPS. Elle n'est donc pas un
+# substitut au développement local (`pnpm dev`), où le cookie prend son nom sans
+# préfixe. `docker-compose.local.yml` sert uniquement à vérifier que les images
+# se construisent et que les services démarrent — pas à s'y connecter.
+
+name: gebook
+
+services:
+  # ---------------------------------------------------------------------------
+  # Base de données
+  # ---------------------------------------------------------------------------
+  database:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      # Superuser d'administration. L'application ne s'en sert JAMAIS : elle se
+      # connecte avec APP_DB_USER, qui n'a ni SUPERUSER ni BYPASSRLS, faute de
+      # quoi les policies RLS seraient contournées sans bruit.
+      POSTGRES_USER: ${POSTGRES_USER:-gebook_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}
+      POSTGRES_DB: ${POSTGRES_DB:-gebook_db}
+      APP_DB_USER: ${APP_DB_USER:-gebook_user}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD est obligatoire}
+    volumes:
+      - database-data:/var/lib/postgresql/data
+      # Scripts joués une seule fois, à la création du volume.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - internal
+    healthcheck:
+      # `-d` sur la base réelle : sans elle, `pg_isready` répond « prêt » pendant
+      # que les scripts d'initialisation tournent encore.
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-gebook_admin} -d ${POSTGRES_DB:-gebook_db}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Migrations Prisma — service éphémère, joué avant chaque démarrage de l'API
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: ./backend
+      target: migrator
+    restart: "no"
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est obligatoire}
+    networks:
+      - internal
+    # `migrate deploy` applique les migrations en attente et ne fait rien s'il
+    # n'y en a aucune : rejouer la commande à chaque déploiement est sans effet
+    # de bord. Le seed, lui, n'est pas idempotent — il reste manuel.
+    command: ["pnpm", "run", "db:deploy"]
+
+  # ---------------------------------------------------------------------------
+  # API NestJS  —  https://${BACKEND_DOMAIN}
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      # Doit valoir « production » ici ET sur le frontend : les deux services
+      # calculent le nom du cookie de session depuis leur propre NODE_ENV
+      # (`__Host-gebook_session` en production, `gebook_session` sinon). Deux
+      # valeurs différentes et le relais transmet un cookie que l'API ne lit pas.
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est obligatoire}
+      # Origine publique du frontend, schéma compris. Les relais `app/api/*`
+      # renvoient cette valeur dans l'en-tête `Origin`, qu'`OriginGuard` recoupe
+      # avec cette liste sur toute écriture — une valeur inexacte se traduit par
+      # un 403 « Origine de la requête non autorisée » à la connexion.
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS est obligatoire (ex. https://gebook.exemple.com)}
+      # Refusé au démarrage si NODE_ENV vaut « production ».
+      APP_DEBUG: "false"
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET est obligatoire (32 caracteres minimum)}
+      SETUP_TOKEN: ${SETUP_TOKEN:?SETUP_TOKEN est obligatoire (32 caracteres minimum)}
+    volumes:
+      # `LocalStorageDriver` écrit sous `process.cwd()/storage`. Sans ce volume,
+      # toute couverture et tout fichier téléversé disparaîtrait au redéploiement.
+      # `storage/private` contient les ouvrages eux-mêmes : il n'est servi par
+      # aucune route statique, seul `LibraryController` y donne accès après
+      # vérification du droit de lecture.
+      - backend-storage:/app/storage
+    networks:
+      - internal
+      - dokploy-network
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.services.gebook-backend.loadbalancer.server.port: "3001"
+      # HTTPS
+      traefik.http.routers.gebook-backend.rule: Host(`${BACKEND_DOMAIN}`)
+      traefik.http.routers.gebook-backend.entrypoints: websecure
+      traefik.http.routers.gebook-backend.tls: "true"
+      traefik.http.routers.gebook-backend.tls.certresolver: letsencrypt
+      traefik.http.routers.gebook-backend.service: gebook-backend
+      # HTTP → HTTPS. Le cookie de session porte le préfixe `__Host-`, que le
+      # navigateur refuse hors HTTPS : laisser une porte en clair ne ferait que
+      # produire des connexions qui échouent sans message.
+      traefik.http.routers.gebook-backend-http.rule: Host(`${BACKEND_DOMAIN}`)
+      traefik.http.routers.gebook-backend-http.entrypoints: web
+      traefik.http.routers.gebook-backend-http.middlewares: gebook-https-redirect
+      traefik.http.middlewares.gebook-https-redirect.redirectscheme.scheme: https
+      traefik.http.middlewares.gebook-https-redirect.redirectscheme.permanent: "true"
+
+  # ---------------------------------------------------------------------------
+  # Frontend Next.js  —  https://${FRONTEND_DOMAIN}
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      target: runtime
+      args:
+        # Figée dans le bundle au moment du build (voir frontend/Dockerfile).
+        #
+        # Le nom de service Docker suffit et reste préférable au domaine public :
+        # le navigateur n'appelle jamais l'API directement — `resolveAssetUrl()`
+        # renvoie des chemins relatifs et tous les appels passent par les relais
+        # `app/api/*`, exécutés côté serveur Next.js. Le trafic serveur-à-serveur
+        # reste ainsi sur le réseau interne au lieu de ressortir par Traefik.
+        NEXT_PUBLIC_API_URL: ${INTERNAL_API_URL:-http://backend:3001}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Voir la note sur le nom du cookie dans le service `backend`.
+      NODE_ENV: production
+    networks:
+      - internal
+      - dokploy-network
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.services.gebook-frontend.loadbalancer.server.port: "3000"
+      # HTTPS
+      traefik.http.routers.gebook-frontend.rule: Host(`${FRONTEND_DOMAIN}`)
+      traefik.http.routers.gebook-frontend.entrypoints: websecure
+      traefik.http.routers.gebook-frontend.tls: "true"
+      traefik.http.routers.gebook-frontend.tls.certresolver: letsencrypt
+      traefik.http.routers.gebook-frontend.service: gebook-frontend
+      # HTTP → HTTPS
+      traefik.http.routers.gebook-frontend-http.rule: Host(`${FRONTEND_DOMAIN}`)
+      traefik.http.routers.gebook-frontend-http.entrypoints: web
+      traefik.http.routers.gebook-frontend-http.middlewares: gebook-https-redirect
+
+networks:
+  # Réseau privé de l'application : la base n'y est jointe que par l'API et le
+  # migrateur, et n'est exposée à Traefik d'aucune manière.
+  internal:
+  # Réseau créé par Dokploy à son installation, sur lequel Traefik écoute.
+  dokploy-network:
+    external: true
+
+volumes:
+  database-data:
+  backend-storage:
