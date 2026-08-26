@@ -65,7 +65,14 @@ services:
       database:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est obligatoire}
+      # Assemblée depuis les mêmes variables que le service `database`, pour que
+      # le mot de passe applicatif ne s'écrive qu'à un seul endroit. Le recopier
+      # dans une URL séparée était une invitation à l'oubli — et un oubli s'y
+      # traduit par un échec d'authentification opaque au moment des migrations.
+      # DATABASE_URL reste prioritaire si elle est fournie : c'est la porte de
+      # sortie quand le mot de passe contient des caractères à encoder (`@`,
+      # `:`, `/`, `?`, `#`) ou quand la base est hébergée ailleurs.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${APP_DB_USER:-gebook_user}:${APP_DB_PASSWORD:?APP_DB_PASSWORD est obligatoire}@database:5432/${POSTGRES_DB:-gebook_db}?schema=public}
     networks:
       - internal
     # `migrate deploy` applique les migrations en attente et ne fait rien s'il
@@ -93,7 +100,14 @@ services:
       # valeurs différentes et le relais transmet un cookie que l'API ne lit pas.
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est obligatoire}
+      # Assemblée depuis les mêmes variables que le service `database`, pour que
+      # le mot de passe applicatif ne s'écrive qu'à un seul endroit. Le recopier
+      # dans une URL séparée était une invitation à l'oubli — et un oubli s'y
+      # traduit par un échec d'authentification opaque au moment des migrations.
+      # DATABASE_URL reste prioritaire si elle est fournie : c'est la porte de
+      # sortie quand le mot de passe contient des caractères à encoder (`@`,
+      # `:`, `/`, `?`, `#`) ou quand la base est hébergée ailleurs.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${APP_DB_USER:-gebook_user}:${APP_DB_PASSWORD:?APP_DB_PASSWORD est obligatoire}@database:5432/${POSTGRES_DB:-gebook_db}?schema=public}
       # Origine publique du frontend, schéma compris. Les relais `app/api/*`
       # renvoient cette valeur dans l'en-tête `Origin`, qu'`OriginGuard` recoupe
       # avec cette liste sur toute écriture — une valeur inexacte se traduit par
