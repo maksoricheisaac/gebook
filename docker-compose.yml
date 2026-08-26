@@ -81,6 +81,21 @@ services:
       # évite que des œuvres supprimées à la main ne réapparaissent au
       # déploiement suivant.
       RUN_SEED: ${RUN_SEED:-true}
+      # Le seed écrit dans `tenants`, `authors` et `works`, toutes sous
+      # `FORCE ROW LEVEL SECURITY`, en ouvrant une connexion Prisma nue — sans
+      # les variables de session `app.*` que `PrismaService.withRlsContext()`
+      # positionne pour le trafic applicatif. Sous le rôle applicatif, la policy
+      # `tenants_insert` (created_by = app_current_user_id() OR
+      # app_is_platform_admin()) rejette donc l'écriture, et le seed échoue.
+      #
+      # Le seed tourne pour cette raison sous le rôle d'administration, qui
+      # traverse RLS. C'est une opération d'installation, pas du trafic
+      # applicatif : cette connexion ne vit que le temps de ce conteneur
+      # éphémère et n'est jamais transmise à l'API.
+      #
+      # Les migrations, elles, restent sous le rôle applicatif : c'est ce qui le
+      # rend PROPRIÉTAIRE des tables, condition que la migration RLS documente.
+      ADMIN_DATABASE_URL: ${ADMIN_DATABASE_URL:-postgresql://${POSTGRES_USER:-gebook_admin}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}@database:5432/${POSTGRES_DB:-gebook_db}?schema=public}
       # Assemblée depuis les mêmes variables que le service `database`, pour que
       # le mot de passe applicatif ne s'écrive qu'à un seul endroit. Le recopier
       # dans une URL séparée était une invitation à l'oubli — et un oubli s'y
@@ -97,7 +112,7 @@ services:
     command:
       - sh
       - -c
-      - pnpm run db:deploy && if [ "$$RUN_SEED" != "false" ]; then pnpm run db:seed; fi
+      - pnpm run db:deploy && if [ "$$RUN_SEED" != "false" ]; then DATABASE_URL="$$ADMIN_DATABASE_URL" pnpm run db:seed; fi
 
   # ---------------------------------------------------------------------------
   # API NestJS  —  https://${BACKEND_DOMAIN}
