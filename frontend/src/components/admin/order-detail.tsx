@@ -94,9 +94,9 @@ export function OrderDetail({ orderId }: { orderId: string }) {
 
   const hasDeliveryInfo = Boolean(
     order.recipientName ||
-      order.deliveryPhone ||
-      order.deliveryAddress ||
-      order.deliveryCity,
+    order.deliveryPhone ||
+    order.deliveryAddress ||
+    order.deliveryCity,
   );
   const transitions = allowedTransitions(order.status);
 
@@ -153,7 +153,7 @@ export function OrderDetail({ orderId }: { orderId: string }) {
             </div>
             <div>
               <dt className="type-label text-muted-foreground">E-mail</dt>
-              <dd className="text-secondary mt-0.5">{order.user.email}</dd>
+              <dd className="text-secondary mt-0.5 break-all">{order.user.email}</dd>
             </div>
           </dl>
         </AdminPanel>
@@ -258,7 +258,9 @@ export function OrderDetail({ orderId }: { orderId: string }) {
           )}
           <div className="border-border flex justify-between border-t pt-2 font-semibold">
             <dt className="text-secondary">Total</dt>
-            <dd className="text-secondary tabular-nums">{formatPrice(order.totalAmount)}</dd>
+            <dd className="text-secondary tabular-nums">
+              {formatPrice(order.totalAmount)}
+            </dd>
           </div>
         </dl>
       </AdminPanel>

@@ -8,7 +8,11 @@ import { z } from "zod";
 import { Globe, ImagePlus, Link2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
-import { AdminPanel, AdminStatCard, AdminStatGrid } from "@/src/components/admin/admin-page";
+import {
+  AdminPanel,
+  AdminStatCard,
+  AdminStatGrid,
+} from "@/src/components/admin/admin-page";
 import { Button } from "@/src/components/ui/button";
 import {
   Dialog,
@@ -87,7 +91,13 @@ export function TenantSettingsManager() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: profile, isLoading, isError, error, refetch } = useQuery({
+  const {
+    data: profile,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ["admin", "tenant-settings"],
     queryFn: () => adminFetch<TenantProfile>("/tenant"),
   });
@@ -211,13 +221,20 @@ export function TenantSettingsManager() {
   return (
     <div className="space-y-6">
       <AdminStatGrid>
-        <AdminStatCard label="Site web" value={profile.website ? "Renseigné" : "Absent"} icon={Globe} />
+        <AdminStatCard
+          label="Site web"
+          value={profile.website ? "Renseigné" : "Absent"}
+          icon={Globe}
+        />
         <AdminStatCard label="Réseaux sociaux" value={socialCount} />
         <AdminStatCard label="Logo" value={profile.logoPath ? "Oui" : "Non"} />
         <AdminStatCard label="Couverture" value={profile.coverPath ? "Oui" : "Non"} />
       </AdminStatGrid>
 
-      <AdminPanel title="Images de marque" description="Utilisées sur la fiche publique de l’espace.">
+      <AdminPanel
+        title="Images de marque"
+        description="Utilisées sur la fiche publique de l’espace."
+      >
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="flex items-center gap-4">
             {profile.logoPath ? (
@@ -330,9 +347,9 @@ export function TenantSettingsManager() {
                   href={profile.website}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-primary inline-flex items-center gap-1.5 hover:underline"
+                  className="text-primary inline-flex items-start gap-1.5 break-all hover:underline"
                 >
-                  <Globe aria-hidden className="size-3.5" />
+                  <Globe aria-hidden className="mt-0.5 size-3.5 shrink-0" />
                   {profile.website}
                 </a>
               ) : (
@@ -343,7 +360,9 @@ export function TenantSettingsManager() {
           <div className="sm:col-span-2">
             <dt className="type-label text-muted-foreground">Description</dt>
             <dd className="text-secondary mt-1 text-sm text-pretty">
-              {profile.description || <span className="text-muted-foreground">Non renseignée</span>}
+              {profile.description || (
+                <span className="text-muted-foreground">Non renseignée</span>
+              )}
             </dd>
           </div>
           <div className="sm:col-span-2">
@@ -355,11 +374,15 @@ export function TenantSettingsManager() {
               {profile.socialLinks?.instagram && (
                 <SocialLink href={profile.socialLinks.instagram} label="Instagram" />
               )}
-              {profile.socialLinks?.x && <SocialLink href={profile.socialLinks.x} label="X" />}
+              {profile.socialLinks?.x && (
+                <SocialLink href={profile.socialLinks.x} label="X" />
+              )}
               {profile.socialLinks?.youtube && (
                 <SocialLink href={profile.socialLinks.youtube} label="YouTube" />
               )}
-              {socialCount === 0 && <span className="text-muted-foreground text-sm">Aucun</span>}
+              {socialCount === 0 && (
+                <span className="text-muted-foreground text-sm">Aucun</span>
+              )}
             </dd>
           </div>
         </dl>
@@ -389,7 +412,12 @@ export function TenantSettingsManager() {
                 <Textarea rows={3} {...register("description")} />
               </Field>
 
-              <Field id="tenant-website" label="Site web" optional error={errors.website?.message}>
+              <Field
+                id="tenant-website"
+                label="Site web"
+                optional
+                error={errors.website?.message}
+              >
                 <Input type="url" placeholder="https://…" {...register("website")} />
               </Field>
 
@@ -400,7 +428,11 @@ export function TenantSettingsManager() {
                   optional
                   error={errors.socialLinks?.facebook?.message}
                 >
-                  <Input type="url" placeholder="https://…" {...register("socialLinks.facebook")} />
+                  <Input
+                    type="url"
+                    placeholder="https://…"
+                    {...register("socialLinks.facebook")}
+                  />
                 </Field>
                 <Field
                   id="tenant-social-instagram"
@@ -408,7 +440,11 @@ export function TenantSettingsManager() {
                   optional
                   error={errors.socialLinks?.instagram?.message}
                 >
-                  <Input type="url" placeholder="https://…" {...register("socialLinks.instagram")} />
+                  <Input
+                    type="url"
+                    placeholder="https://…"
+                    {...register("socialLinks.instagram")}
+                  />
                 </Field>
                 <Field
                   id="tenant-social-x"
@@ -416,7 +452,11 @@ export function TenantSettingsManager() {
                   optional
                   error={errors.socialLinks?.x?.message}
                 >
-                  <Input type="url" placeholder="https://…" {...register("socialLinks.x")} />
+                  <Input
+                    type="url"
+                    placeholder="https://…"
+                    {...register("socialLinks.x")}
+                  />
                 </Field>
                 <Field
                   id="tenant-social-youtube"
@@ -424,7 +464,11 @@ export function TenantSettingsManager() {
                   optional
                   error={errors.socialLinks?.youtube?.message}
                 >
-                  <Input type="url" placeholder="https://…" {...register("socialLinks.youtube")} />
+                  <Input
+                    type="url"
+                    placeholder="https://…"
+                    {...register("socialLinks.youtube")}
+                  />
                 </Field>
               </div>
             </DialogBody>

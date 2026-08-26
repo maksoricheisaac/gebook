@@ -30,7 +30,7 @@ export function Pagination({
 
   return (
     <nav
-      className="flex items-center justify-center gap-1.5 pt-12"
+      className="flex flex-wrap items-center justify-center gap-x-1 gap-y-2 pt-12 sm:gap-1.5"
       aria-label="Pages du catalogue"
     >
       <Step
@@ -40,7 +40,7 @@ export function Pagination({
         icon={<ChevronLeft aria-hidden className="size-4" />}
       />
 
-      <ul className="flex items-center gap-1">
+      <ul className="flex flex-wrap items-center justify-center gap-1">
         {condense(page, totalPages).map((entry, index) =>
           entry === "gap" ? (
             <li
@@ -57,7 +57,7 @@ export function Pagination({
                 aria-current={entry === page ? "page" : undefined}
                 aria-label={`Page ${entry}`}
                 className={cn(
-                  "tnum grid size-10 place-items-center rounded-md text-sm transition-colors duration-[--duration-fast]",
+                  "tnum grid size-9 place-items-center rounded-md text-sm transition-colors duration-[--duration-fast] sm:size-10",
                   entry === page
                     ? "bg-secondary text-secondary-foreground font-semibold"
                     : "text-secondary hover:bg-muted",
@@ -97,7 +97,7 @@ function Step({
     return (
       <span
         aria-hidden
-        className="text-ink-300 grid size-10 place-items-center rounded-md"
+        className="text-ink-300 grid size-9 place-items-center rounded-md sm:size-10"
       >
         {icon}
       </span>
@@ -108,7 +108,7 @@ function Step({
     <Link
       href={href}
       aria-label={label}
-      className="text-secondary hover:bg-muted grid size-10 place-items-center rounded-md transition-colors duration-[--duration-fast]"
+      className="text-secondary hover:bg-muted grid size-9 place-items-center rounded-md transition-colors duration-[--duration-fast] sm:size-10"
     >
       {icon}
     </Link>

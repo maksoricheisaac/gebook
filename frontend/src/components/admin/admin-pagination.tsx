@@ -26,7 +26,7 @@ export function AdminPagination({
 
   return (
     <nav
-      className="border-border flex items-center justify-center gap-1.5 border-t px-4 py-4"
+      className="border-border flex flex-wrap items-center justify-center gap-x-1 gap-y-2 border-t px-4 py-4 sm:gap-1.5"
       aria-label="Pages de la liste"
     >
       <Step
@@ -36,7 +36,7 @@ export function AdminPagination({
         onClick={() => onPageChange(page - 1)}
       />
 
-      <ul className="flex items-center gap-1">
+      <ul className="flex flex-wrap items-center justify-center gap-1">
         {condense(page, totalPages).map((entry, index) =>
           entry === "gap" ? (
             <li
@@ -54,7 +54,7 @@ export function AdminPagination({
                 aria-label={`Page ${entry}`}
                 onClick={() => onPageChange(entry)}
                 className={cn(
-                  "tnum grid size-9 cursor-pointer place-items-center rounded-md text-sm transition-colors duration-[--duration-fast]",
+                  "tnum grid size-8 cursor-pointer place-items-center rounded-md text-sm transition-colors duration-[--duration-fast] sm:size-9",
                   entry === page
                     ? "bg-secondary text-secondary-foreground font-semibold"
                     : "text-secondary hover:bg-muted",
@@ -95,7 +95,7 @@ function Step({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "grid size-9 place-items-center rounded-md transition-colors duration-[--duration-fast]",
+        "grid size-8 place-items-center rounded-md transition-colors duration-[--duration-fast] sm:size-9",
         disabled
           ? "text-ink-300 cursor-not-allowed"
           : "text-secondary hover:bg-muted cursor-pointer",
