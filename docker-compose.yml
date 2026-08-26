@@ -65,6 +65,22 @@ services:
       database:
         condition: service_healthy
     environment:
+      # Le seed n'est pas une commodité de démonstration : `seedRoles()` crée la
+      # ligne `admin` de la table `roles`, sans laquelle la création du premier
+      # superadmin échoue sur « Le rôle administrateur est absent de la base de
+      # données » (setup.service.ts). Idem pour les prestataires de paiement,
+      # les réglages et les règles de commission : les migrations créent le
+      # schéma, jamais ces données de référence.
+      #
+      # Le rejouer à chaque déploiement est sans danger — le seed est idempotent
+      # par construction, chaque écriture passant par un `upsert` sur une clé
+      # unique (prisma/seed.ts).
+      #
+      # Il insère aussi le tenant « Mampouya Éditions » et son catalogue initial.
+      # Une fois le catalogue réel géré depuis le back-office, RUN_SEED=false
+      # évite que des œuvres supprimées à la main ne réapparaissent au
+      # déploiement suivant.
+      RUN_SEED: ${RUN_SEED:-true}
       # Assemblée depuis les mêmes variables que le service `database`, pour que
       # le mot de passe applicatif ne s'écrive qu'à un seul endroit. Le recopier
       # dans une URL séparée était une invitation à l'oubli — et un oubli s'y
@@ -76,9 +92,12 @@ services:
     networks:
       - internal
     # `migrate deploy` applique les migrations en attente et ne fait rien s'il
-    # n'y en a aucune : rejouer la commande à chaque déploiement est sans effet
-    # de bord. Le seed, lui, n'est pas idempotent — il reste manuel.
-    command: ["pnpm", "run", "db:deploy"]
+    # n'y en a aucune. `$$RUN_SEED` est doublé pour que la variable soit lue par
+    # le shell du conteneur, et non par Compose au moment du rendu.
+    command:
+      - sh
+      - -c
+      - pnpm run db:deploy && if [ "$$RUN_SEED" != "false" ]; then pnpm run db:seed; fi
 
   # ---------------------------------------------------------------------------
   # API NestJS  —  https://${BACKEND_DOMAIN}
