@@ -49,13 +49,20 @@ export function AdminShell({
 
   return (
     <div
-      className="flex min-h-dvh flex-col lg:grid lg:items-start"
-      style={{ gridTemplateColumns: collapsed ? "5rem minmax(0,1fr)" : "16rem minmax(0,1fr)" }}
+      className="flex min-h-dvh flex-col lg:grid lg:items-start lg:transition-[grid-template-columns] lg:duration-[var(--duration-base)] lg:ease-[var(--ease-out)]"
+      style={{
+        gridTemplateColumns: collapsed ? "5rem minmax(0,1fr)" : "16rem minmax(0,1fr)",
+      }}
     >
       <AdminSidebar isPlatformAdmin={isPlatformAdmin} collapsed={collapsed} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminTopbar user={user} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
+        <AdminTopbar
+          user={user}
+          isPlatformAdmin={isPlatformAdmin}
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapsed}
+        />
 
         <main id="contenu" className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:py-10">
           <div className="mx-auto w-full max-w-6xl">{children}</div>

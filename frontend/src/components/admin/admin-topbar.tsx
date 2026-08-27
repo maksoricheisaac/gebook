@@ -11,6 +11,7 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { AdminMobileNav } from "@/src/components/admin/admin-mobile-nav";
 import { logoutAction } from "@/src/lib/auth-actions";
 import type { CurrentUser } from "@/src/lib/auth-shared";
 import { cn } from "@/src/lib/utils";
@@ -26,10 +27,12 @@ import { cn } from "@/src/lib/utils";
  */
 export function AdminTopbar({
   user,
+  isPlatformAdmin,
   collapsed,
   onToggleCollapse,
 }: {
   user: CurrentUser;
+  isPlatformAdmin: boolean;
   collapsed: boolean;
   onToggleCollapse: () => void;
 }) {
@@ -60,10 +63,14 @@ export function AdminTopbar({
 
   return (
     <header className="border-border bg-card sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b px-5 sm:px-8">
+      <AdminMobileNav isPlatformAdmin={isPlatformAdmin} />
+
       <button
         type="button"
         onClick={onToggleCollapse}
-        aria-label={collapsed ? "Agrandir la barre latérale" : "Réduire la barre latérale"}
+        aria-label={
+          collapsed ? "Agrandir la barre latérale" : "Réduire la barre latérale"
+        }
         className={cn(
           "text-muted-foreground hover:bg-muted hover:text-secondary hidden cursor-pointer place-items-center rounded-md",
           "size-9 transition-colors duration-[--duration-fast] lg:grid",
