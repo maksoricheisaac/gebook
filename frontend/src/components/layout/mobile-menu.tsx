@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { LogOut, Menu, X } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
@@ -27,6 +28,16 @@ export function MobileMenu({ user }: { user: CurrentUser | null }) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const [previousPathname, setPreviousPathname] = useState(pathname);
+
+  // `document.body` n'existe pas côté serveur : le portail n'est monté
+  // qu'une fois le composant hydraté côté client. useSyncExternalStore plutôt
+  // qu'un effet + setState : rien à souscrire, seul l'instantané diffère
+  // entre serveur (false) et client (true).
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   // Un changement de page doit refermer le panneau, sinon il reste ouvert
   // par-dessus le contenu demandé. Ajusté pendant le rendu plutôt que dans un
@@ -73,93 +84,107 @@ export function MobileMenu({ user }: { user: CurrentUser | null }) {
         )}
       </Button>
 
-      {isOpen && (
-        <div
-          id="menu-mobile"
-          className="bg-background fixed inset-x-0 top-18 bottom-0 z-40 overflow-y-auto overscroll-contain"
-        >
-          <div className="flex min-h-full flex-col px-5 pt-5 pb-10 sm:px-8">
-            <SearchField size="lg" onSubmitted={() => setIsOpen(false)} />
+      {/*
+       * Portail vers <body> : <header> a un fond flouté (backdrop-blur), ce
+       * qui en fait un containing block CSS pour tout descendant en position
+       * fixed. Rendu ici, le panneau (fixed, top-18, bottom-0) se calait donc
+       * sur les 72px du header plutôt que sur le viewport — hauteur nulle,
+       * invisible sur téléphone et tablette.
+       */}
+      {mounted &&
+        createPortal(
+          <div
+            id="menu-mobile"
+            inert={!isOpen}
+            className={cn(
+              "bg-background fixed inset-x-0 top-18 bottom-0 z-40 overflow-y-auto overscroll-contain",
+              "transition-[opacity,transform] duration-[var(--duration-base)] ease-[var(--ease-out)]",
+              isOpen ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0",
+            )}
+          >
+            <div className="flex min-h-full flex-col px-5 pt-5 pb-10 sm:px-8">
+              <SearchField size="lg" onSubmitted={() => setIsOpen(false)} />
 
-            <nav aria-label="Navigation principale" className="mt-6">
-              <ul className="divide-border divide-y">
-                {MAIN_NAVIGATION.map((item) => {
-                  const active = isActivePath(pathname, item.href);
+              <nav aria-label="Navigation principale" className="mt-6">
+                <ul className="divide-border divide-y">
+                  {MAIN_NAVIGATION.map((item) => {
+                    const active = isActivePath(pathname, item.href);
 
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        aria-current={active ? "page" : undefined}
-                        className="flex min-h-14 flex-col justify-center gap-0.5 py-3"
-                      >
-                        <span
-                          className={cn(
-                            "type-h3",
-                            active ? "text-primary" : "text-secondary",
-                          )}
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          aria-current={active ? "page" : undefined}
+                          className="flex min-h-14 flex-col justify-center gap-0.5 py-3"
                         >
-                          {item.label}
-                        </span>
-                        {item.hint && <span className="type-caption">{item.hint}</span>}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </nav>
+                          <span
+                            className={cn(
+                              "type-h3",
+                              active ? "text-primary" : "text-secondary",
+                            )}
+                          >
+                            {item.label}
+                          </span>
+                          {item.hint && <span className="type-caption">{item.hint}</span>}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </nav>
 
-            <div className="border-border mt-auto border-t pt-6">
-              {user ? (
-                <div className="space-y-3">
-                  <p className="type-label text-muted-foreground">
-                    {user.firstName} {user.lastName ?? ""}
-                  </p>
+              <div className="border-border mt-auto border-t pt-6">
+                {user ? (
+                  <div className="space-y-3">
+                    <p className="type-label text-muted-foreground">
+                      {user.firstName} {user.lastName ?? ""}
+                    </p>
 
-                  <div className="grid gap-2">
-                    {user.roles.includes("admin") && (
-                      <Button asChild variant="secondary" size="lg">
-                        <Link href="/admin">Administration</Link>
+                    <div className="grid gap-2">
+                      {user.roles.includes("admin") && (
+                        <Button asChild variant="secondary" size="lg">
+                          <Link href="/admin">Administration</Link>
+                        </Button>
+                      )}
+                      <Button asChild variant="outline" size="lg">
+                        <Link href={destinationFor(user.roles)}>Mon espace</Link>
                       </Button>
-                    )}
-                    <Button asChild variant="outline" size="lg">
-                      <Link href={destinationFor(user.roles)}>Mon espace</Link>
-                    </Button>
-                    {READER_NAVIGATION.filter((item) => item.href !== "/mon-espace").map(
-                      (item) => (
+                      {READER_NAVIGATION.filter(
+                        (item) => item.href !== "/mon-espace",
+                      ).map((item) => (
                         <Button key={item.href} asChild variant="outline" size="lg">
                           <Link href={item.href}>{item.label}</Link>
                         </Button>
-                      ),
-                    )}
-                  </div>
+                      ))}
+                    </div>
 
-                  <form action={logoutAction}>
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      size="lg"
-                      className="text-muted-foreground w-full"
-                    >
-                      <LogOut aria-hidden />
-                      Se déconnecter
+                    <form action={logoutAction}>
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        size="lg"
+                        className="text-muted-foreground w-full"
+                      >
+                        <LogOut aria-hidden />
+                        Se déconnecter
+                      </Button>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="grid gap-2.5">
+                    <Button asChild size="lg">
+                      <Link href="/inscription">Créer un compte</Link>
                     </Button>
-                  </form>
-                </div>
-              ) : (
-                <div className="grid gap-2.5">
-                  <Button asChild size="lg">
-                    <Link href="/inscription">Créer un compte</Link>
-                  </Button>
-                  <Button asChild variant="outline" size="lg">
-                    <Link href="/connexion">Se connecter</Link>
-                  </Button>
-                </div>
-              )}
+                    <Button asChild variant="outline" size="lg">
+                      <Link href="/connexion">Se connecter</Link>
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
