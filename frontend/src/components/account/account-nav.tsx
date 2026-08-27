@@ -60,7 +60,7 @@ export function AccountNav({
   ];
 
   return (
-    <nav aria-label="Navigation de mon espace" className="lg:sticky lg:top-24">
+    <nav aria-label="Navigation de mon espace" className="min-w-0 lg:sticky lg:top-24">
       <ul className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
         {items.map((item) => {
           const active = isActivePath(pathname, item.href);
