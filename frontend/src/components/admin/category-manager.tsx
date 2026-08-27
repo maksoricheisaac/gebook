@@ -5,11 +5,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { BookText, CheckCircle2, FolderTree, Pencil, Plus, Search, Trash2, XCircle } from "lucide-react";
+import {
+  BookText,
+  CheckCircle2,
+  FolderTree,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPagination } from "@/src/components/admin/admin-pagination";
-import { AdminStatCard, AdminStatGrid, AdminTablePanel } from "@/src/components/admin/admin-page";
+import {
+  AdminStatCard,
+  AdminStatGrid,
+  AdminTablePanel,
+} from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
 import { Badge } from "@/src/components/ui/badge";
@@ -276,14 +289,26 @@ export function CategoryManager() {
   return (
     <div className="space-y-6">
       <AdminStatGrid>
-        <AdminStatCard label="Catégories" value={stats?.total ?? data?.meta.total ?? 0} icon={FolderTree} />
+        <AdminStatCard
+          label="Catégories"
+          value={stats?.total ?? data?.meta.total ?? 0}
+          icon={FolderTree}
+        />
         <AdminStatCard label="Actives" value={stats?.active ?? 0} icon={CheckCircle2} />
         <AdminStatCard label="Inactives" value={stats?.inactive ?? 0} icon={XCircle} />
         <AdminStatCard
           label="Livres / catégorie"
-          value={stats?.avgWorksPerCategory != null ? stats.avgWorksPerCategory.toFixed(1) : "—"}
+          value={
+            stats?.avgWorksPerCategory != null
+              ? stats.avgWorksPerCategory.toFixed(1)
+              : "—"
+          }
           icon={BookText}
-          hint={stats ? `${stats.totalWorks} œuvre${stats.totalWorks > 1 ? "s" : ""} au total` : undefined}
+          hint={
+            stats
+              ? `${stats.totalWorks} œuvre${stats.totalWorks > 1 ? "s" : ""} au total`
+              : undefined
+          }
         />
       </AdminStatGrid>
 
@@ -291,8 +316,8 @@ export function CategoryManager() {
         title="Catégories"
         description={data ? `${data.meta.total} au total.` : undefined}
         actions={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative">
+          <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
+            <div className="relative min-w-0 flex-1 sm:flex-none">
               <Search
                 aria-hidden
                 className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
@@ -302,7 +327,7 @@ export function CategoryManager() {
                 placeholder="Rechercher…"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="h-9 w-48 pl-8"
+                className="h-9 w-full pl-8 sm:w-48"
                 aria-label="Rechercher une catégorie"
               />
             </div>
@@ -336,7 +361,9 @@ export function CategoryManager() {
             >
               {categories.length === 0 ? (
                 <DataRowFull colSpan={5}>
-                  {search ? "Aucune catégorie ne correspond à cette recherche." : "Aucune catégorie pour le moment."}
+                  {search
+                    ? "Aucune catégorie ne correspond à cette recherche."
+                    : "Aucune catégorie pour le moment."}
                 </DataRowFull>
               ) : (
                 categories.map((category) => (
@@ -344,7 +371,9 @@ export function CategoryManager() {
                     <td className="text-secondary font-medium">{category.name}</td>
                     <td className="text-muted-foreground">/{category.slug}</td>
                     <td>
-                      <Badge variant={category.status === "active" ? "success" : "neutral"}>
+                      <Badge
+                        variant={category.status === "active" ? "success" : "neutral"}
+                      >
                         {category.status === "active" ? "Active" : "Inactive"}
                       </Badge>
                     </td>
@@ -401,7 +430,9 @@ export function CategoryManager() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? `Modifier « ${editing.name} »` : "Nouvelle catégorie"}</DialogTitle>
+            <DialogTitle>
+              {editing ? `Modifier « ${editing.name} »` : "Nouvelle catégorie"}
+            </DialogTitle>
           </DialogHeader>
 
           <form

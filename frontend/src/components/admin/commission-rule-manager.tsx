@@ -5,10 +5,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { CheckCircle2, Percent, Pencil, Plus, Search, Trash2, UserSquare2 } from "lucide-react";
+import {
+  CheckCircle2,
+  Percent,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  UserSquare2,
+} from "lucide-react";
 import { toast } from "sonner";
 
-import { AdminStatCard, AdminStatGrid, AdminTablePanel } from "@/src/components/admin/admin-page";
+import {
+  AdminStatCard,
+  AdminStatGrid,
+  AdminTablePanel,
+} from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
@@ -213,12 +225,20 @@ export function CommissionRuleManager() {
   return (
     <div className="space-y-6">
       <AdminStatGrid>
-        <AdminStatCard label="Règles" value={data?.meta.total ?? rules.length} icon={Percent} />
+        <AdminStatCard
+          label="Règles"
+          value={data?.meta.total ?? rules.length}
+          icon={Percent}
+        />
         <AdminStatCard label="Actives" value={activeCount} icon={CheckCircle2} />
         <AdminStatCard
           label="Générales"
           value={generalCount}
-          hint={rules.length - generalCount > 0 ? `${rules.length - generalCount} propres à un auteur` : undefined}
+          hint={
+            rules.length - generalCount > 0
+              ? `${rules.length - generalCount} propres à un auteur`
+              : undefined
+          }
           icon={UserSquare2}
         />
       </AdminStatGrid>
@@ -227,8 +247,8 @@ export function CommissionRuleManager() {
         title="Règles en place"
         description="Modifier ou supprimer une règle ne change aucune vente déjà conclue : les montants sont figés au moment du paiement."
         actions={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative">
+          <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
+            <div className="relative min-w-0 flex-1 sm:flex-none">
               <Search
                 aria-hidden
                 className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
@@ -238,7 +258,7 @@ export function CommissionRuleManager() {
                 placeholder="Rechercher…"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="h-9 w-48 pl-8"
+                className="h-9 w-full pl-8 sm:w-48"
                 aria-label="Rechercher une règle"
               />
             </div>
@@ -339,7 +359,9 @@ export function CommissionRuleManager() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? `Modifier « ${editing.name} »` : "Nouvelle règle"}</DialogTitle>
+            <DialogTitle>
+              {editing ? `Modifier « ${editing.name} »` : "Nouvelle règle"}
+            </DialogTitle>
           </DialogHeader>
 
           <form
@@ -398,7 +420,9 @@ export function CommissionRuleManager() {
                   {...register("calculationBase")}
                   className="border-border bg-card focus-visible:ring-primary/40 h-11 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:outline-none"
                 >
-                  <option value="after_provider_fee">Net après frais du prestataire</option>
+                  <option value="after_provider_fee">
+                    Net après frais du prestataire
+                  </option>
                   <option value="gross_amount">Montant brut</option>
                 </select>
               </Field>
@@ -436,7 +460,9 @@ export function CommissionRuleManager() {
               </Button>
               <Button
                 type="submit"
-                isLoading={isSubmitting || createMutation.isPending || updateMutation.isPending}
+                isLoading={
+                  isSubmitting || createMutation.isPending || updateMutation.isPending
+                }
               >
                 {!editing && <Plus aria-hidden />}
                 {editing ? "Enregistrer les modifications" : "Créer la règle"}

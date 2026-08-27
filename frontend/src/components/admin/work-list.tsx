@@ -11,7 +11,11 @@ import { BookText, CheckCircle2, FileEdit, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPagination } from "@/src/components/admin/admin-pagination";
-import { AdminStatCard, AdminStatGrid, AdminTablePanel } from "@/src/components/admin/admin-page";
+import {
+  AdminStatCard,
+  AdminStatGrid,
+  AdminTablePanel,
+} from "@/src/components/admin/admin-page";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
@@ -28,7 +32,11 @@ import { Input, Select } from "@/src/components/ui/input";
 import { RetryRow, TableSkeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { slugify } from "@/src/lib/slugify";
-import { WORK_STATUS_LABELS, workStatusTone, type WorkStatus } from "@/src/lib/work-status";
+import {
+  WORK_STATUS_LABELS,
+  workStatusTone,
+  type WorkStatus,
+} from "@/src/lib/work-status";
 
 interface WorkListItem {
   id: string;
@@ -176,18 +184,28 @@ export function WorkList() {
   return (
     <div className="space-y-6">
       <AdminStatGrid>
-        <AdminStatCard label="Œuvres" value={stats?.total ?? works?.meta.total ?? 0} icon={BookText} />
-        <AdminStatCard label="Publiées" value={stats?.published ?? 0} icon={CheckCircle2} />
+        <AdminStatCard
+          label="Œuvres"
+          value={stats?.total ?? works?.meta.total ?? 0}
+          icon={BookText}
+        />
+        <AdminStatCard
+          label="Publiées"
+          value={stats?.published ?? 0}
+          icon={CheckCircle2}
+        />
         <AdminStatCard label="À relire" value={stats?.submitted ?? 0} icon={FileEdit} />
         <AdminStatCard label="Brouillons" value={stats?.draft ?? 0} icon={FileEdit} />
       </AdminStatGrid>
 
       <AdminTablePanel
         title="Toutes les œuvres"
-        description={works ? `${works.meta.total} au total, tous statuts confondus.` : undefined}
+        description={
+          works ? `${works.meta.total} au total, tous statuts confondus.` : undefined
+        }
         actions={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative">
+          <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
+            <div className="relative min-w-0 flex-1 sm:flex-none">
               <Search
                 aria-hidden
                 className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
@@ -197,7 +215,7 @@ export function WorkList() {
                 placeholder="Rechercher un titre…"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="h-9 w-56 pl-8"
+                className="h-9 w-full pl-8 sm:w-56"
                 aria-label="Rechercher une œuvre"
               />
             </div>
@@ -287,7 +305,8 @@ export function WorkList() {
             <DialogBody className="space-y-5">
               <FormError message={serverError ?? undefined} />
               <p className="text-muted-foreground text-sm">
-                Le titre, l’adresse et l’auteur suffisent pour commencer. Le reste s’édite ensuite.
+                Le titre, l’adresse et l’auteur suffisent pour commencer. Le reste s’édite
+                ensuite.
               </p>
 
               <Field id="work-title" label="Titre" required error={errors.title?.message}>
@@ -304,7 +323,12 @@ export function WorkList() {
                 <Input {...register("slug")} />
               </Field>
 
-              <Field id="work-author" label="Auteur" required error={errors.authorId?.message}>
+              <Field
+                id="work-author"
+                label="Auteur"
+                required
+                error={errors.authorId?.message}
+              >
                 <Select {...register("authorId")}>
                   <option value="">Choisir un auteur</option>
                   {authors?.data.map((author) => (

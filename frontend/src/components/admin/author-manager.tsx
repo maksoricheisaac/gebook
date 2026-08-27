@@ -11,7 +11,11 @@ import { BookText, CheckCircle2, Plus, Search, Trash2, UserSquare2 } from "lucid
 import { toast } from "sonner";
 
 import { AdminPagination } from "@/src/components/admin/admin-pagination";
-import { AdminStatCard, AdminStatGrid, AdminTablePanel } from "@/src/components/admin/admin-page";
+import {
+  AdminStatCard,
+  AdminStatGrid,
+  AdminTablePanel,
+} from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
 import { Badge } from "@/src/components/ui/badge";
@@ -251,14 +255,24 @@ export function AuthorManager() {
   return (
     <div className="space-y-6">
       <AdminStatGrid>
-        <AdminStatCard label="Auteurs" value={stats?.total ?? data?.meta.total ?? 0} icon={UserSquare2} />
+        <AdminStatCard
+          label="Auteurs"
+          value={stats?.total ?? data?.meta.total ?? 0}
+          icon={UserSquare2}
+        />
         <AdminStatCard label="Actifs" value={stats?.active ?? 0} icon={CheckCircle2} />
         <AdminStatCard label="Sans photo" value={stats?.noPhoto ?? 0} />
         <AdminStatCard
           label="Livres / auteur"
-          value={stats?.avgWorksPerAuthor != null ? stats.avgWorksPerAuthor.toFixed(1) : "—"}
+          value={
+            stats?.avgWorksPerAuthor != null ? stats.avgWorksPerAuthor.toFixed(1) : "—"
+          }
           icon={BookText}
-          hint={stats ? `${stats.totalWorks} œuvre${stats.totalWorks > 1 ? "s" : ""} au total` : undefined}
+          hint={
+            stats
+              ? `${stats.totalWorks} œuvre${stats.totalWorks > 1 ? "s" : ""} au total`
+              : undefined
+          }
         />
       </AdminStatGrid>
 
@@ -266,8 +280,8 @@ export function AuthorManager() {
         title="Auteurs"
         description={data ? `${data.meta.total} au total.` : undefined}
         actions={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative">
+          <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
+            <div className="relative min-w-0 flex-1 sm:flex-none">
               <Search
                 aria-hidden
                 className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
@@ -277,7 +291,7 @@ export function AuthorManager() {
                 placeholder="Rechercher…"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="h-9 w-48 pl-8"
+                className="h-9 w-full pl-8 sm:w-48"
                 aria-label="Rechercher un auteur"
               />
             </div>
@@ -311,7 +325,9 @@ export function AuthorManager() {
             >
               {authors.length === 0 ? (
                 <DataRowFull colSpan={5}>
-                  {search ? "Aucun auteur ne correspond à cette recherche." : "Aucun auteur pour le moment."}
+                  {search
+                    ? "Aucun auteur ne correspond à cette recherche."
+                    : "Aucun auteur pour le moment."}
                 </DataRowFull>
               ) : (
                 authors.map((author) => (
@@ -433,7 +449,10 @@ export function AuthorManager() {
                       optional
                       error={errors.translations?.fr?.shortBiography?.message}
                     >
-                      <Textarea rows={2} {...register("translations.fr.shortBiography")} />
+                      <Textarea
+                        rows={2}
+                        {...register("translations.fr.shortBiography")}
+                      />
                     </Field>
 
                     <Field
@@ -455,7 +474,10 @@ export function AuthorManager() {
                       optional
                       error={errors.translations?.en?.shortBiography?.message}
                     >
-                      <Textarea rows={2} {...register("translations.en.shortBiography")} />
+                      <Textarea
+                        rows={2}
+                        {...register("translations.en.shortBiography")}
+                      />
                     </Field>
 
                     <Field
