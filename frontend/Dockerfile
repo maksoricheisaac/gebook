@@ -1,9 +1,3 @@
-# Image du frontend Next.js.
-#
-# `NEXT_PUBLIC_API_URL` est un argument de construction, pas seulement une
-# variable d'exécution : Next.js remplace toute référence `process.env.NEXT_PUBLIC_*`
-# par sa valeur littérale au moment du `build`. La renseigner uniquement dans
-# `docker-compose.yml` produirait une image où l'URL est figée à « indéfinie ».
 
 FROM node:22-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm

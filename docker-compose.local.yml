@@ -21,6 +21,10 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
 
+  database:
+    ports:
+      - "55432:5432"
+
 networks:
   # Hors Dokploy, ce réseau n'existe pas : il est créé localement plutôt
   # qu'attendu de l'extérieur.

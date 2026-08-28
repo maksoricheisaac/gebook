@@ -79,6 +79,11 @@ export class Environment {
    * que le prestataire de simulation fonctionne sans configuration, mais le
    * démarrage en production est refusé tant qu'elle n'a pas été remplacée.
    */
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined
+      ? DEVELOPMENT_WEBHOOK_SECRET
+      : (value as string),
+  )
   @IsString()
   @MinLength(32, {
     message:
@@ -91,6 +96,11 @@ export class Environment {
    * pour créer le tout premier compte superadmin de la plateforme (audit §33, S-01) :
    * même traitement que `PAYMENT_WEBHOOK_SECRET`, jamais en base, jamais dans Git.
    */
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined
+      ? DEVELOPMENT_SETUP_TOKEN
+      : (value as string),
+  )
   @IsString()
   @MinLength(32, {
     message:
