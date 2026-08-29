@@ -29,7 +29,16 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
   if (token) {
     headers.set("cookie", `${SESSION_COOKIE_NAME}=${token}`);
   }
-  headers.set("origin", incomingUrl.origin);
+  // Voir `app/api/admin/[...path]/route.ts` pour le raisonnement complet :
+  // l'en-tête `Origin` envoyé par le navigateur est repris tel quel plutôt que
+  // reconstruit depuis `request.url`, fragile derrière un proxy inverse
+  // terminant le TLS (Traefik/Dokploy).
+  const browserOrigin = request.headers.get("origin");
+  if (browserOrigin) {
+    headers.set("origin", browserOrigin);
+  } else {
+    headers.set("origin", incomingUrl.origin);
+  }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
 

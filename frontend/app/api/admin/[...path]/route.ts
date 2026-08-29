@@ -42,10 +42,21 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
     }
     headers.set("cookie", forwardedCookies.join("; "));
   }
-  // Même logique que pour la connexion : l'API vérifie cette origine sur toute
-  // méthode d'écriture (`OriginGuard`), il faut la lui fournir explicitement
-  // puisque ce relais est un appel serveur à serveur.
-  headers.set("origin", incomingUrl.origin);
+  // Même logique que pour la connexion (`auth-actions.ts`) : l'API vérifie
+  // cette origine sur toute méthode d'écriture (`OriginGuard`), il faut la lui
+  // fournir explicitement puisque ce relais est un appel serveur à serveur.
+  // L'en-tête `Origin` envoyé par le navigateur lui-même est repris tel quel
+  // plutôt que reconstruit depuis `request.url` : derrière un proxy inverse
+  // qui termine le TLS (Traefik/Dokploy), le schéma/hôte reconstruit par
+  // Next.js peut ne pas refléter l'origine publique réelle, ce que
+  // `OriginGuard` rejetterait alors à tort. Un navigateur moderne envoie déjà
+  // `Origin` sur toute requête d'écriture, même de même origine.
+  const browserOrigin = request.headers.get("origin");
+  if (browserOrigin) {
+    headers.set("origin", browserOrigin);
+  } else {
+    headers.set("origin", incomingUrl.origin);
+  }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
 

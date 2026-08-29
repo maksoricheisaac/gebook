@@ -1272,3 +1272,52 @@ Les mêmes que listés en 10.3 — aucun n'est traité par cette phase, qui est 
 Dix phases exécutées séquentiellement, chacune testée, documentée et commitée avant la suivante, sans jamais reconstruire ce qui fonctionnait déjà. Les axes de sécurité/RLS et de fiabilité des tests, placés en priorité 1 et 2 par la mission, ont été traités en premier (Phase 0) et revérifiés à chaque régression RLS découverte en cours de route (Phases 5, 7, 8) — jamais contournés, toujours corrigés par une policy explicite et testée.
 
 Le modèle cible (Inscription → Lecteur → « Créer mon espace » → Tenant → Owner → {Œuvres, Ventes, Équipe} → {Publication, Revenus, Permissions} → Statistiques → Payout) est atteint de bout en bout à l'exception du payout réel — décision assumée et documentée à chaque phase concernée (7, 9, 10), jamais simulée, conformément à l'interdiction explicite de la mission de fabriquer un mécanisme de paiement/reversement qui n'existe pas réellement.
+
+
+---
+
+## PHASE 11 — Correction du plan et poursuite autonome (nouvelle mission)
+
+Nouvelle mission de l'utilisateur : corriger CORS, l'erreur `.next/cache`, finaliser la boutique tenant, construire un vrai panier, l'intégrer au checkout, vérifier le parcours complet, auditer les routes, la cohérence API/frontend, le flux financier, les payouts, puis un audit final — en autonomie, avec commit/push après chaque tâche.
+
+Décision annulée explicitement par l'utilisateur : le panier n'est plus facultatif (Phase 6 l'avait exclu comme non nécessaire vu l'achat direct multi-lignes) — il devient obligatoire.
+
+### Tâche 1 — Diagnostiquer et corriger CORS
+
+Objectif :
+Diagnostiquer les erreurs CORS signalées et les corriger sans jamais utiliser `origin: '*'`, en conservant l'architecture existante (CORS restrictif piloté par `CORS_ORIGINS`, `OriginGuard` pour le CSRF applicatif).
+
+Travaux réalisés :
+Inspection complète avant toute modification : `backend/src/main.ts` (CORS déjà restrictif, piloté par `CORS_ORIGINS`, `credentials: true`, jamais `*` — rien à corriger ici), `OriginGuard` (`backend/src/modules/auth/guards/origin.guard.ts`, vérifie l'en-tête `Origin` sur toute méthode d'écriture contre `CORS_ORIGINS`, rejette en 403 si absent/non listé — architecture déjà saine), puis toute la chaîne frontend (`src/lib/api.ts` — appels serveur uniquement, jamais depuis le navigateur ; `admin-api.ts`/`account-api.ts` — appels navigateur, mais toujours vers `/api/admin/*`/`/api/account/*`, donc même origine, jamais directement vers l'API NestJS).
+
+Cause réelle trouvée : les deux relais Next.js (`app/api/admin/[...path]/route.ts`, `app/api/account/[...path]/route.ts`) reconstruisent l'en-tête `Origin` à transmettre à l'API depuis `new URL(request.url).origin` plutôt que de reprendre l'en-tête `Origin` réellement envoyé par le navigateur. Or `request.url` dépend de la façon dont Next.js reconstruit le schéma/hôte — fragile derrière un proxy inverse qui termine le TLS (Traefik/Dokploy, exactement l'architecture de `docker-compose.yml`) : si le schéma reconstruit est `http:` au lieu de `https:` (cas très documenté avec `next start` derrière un reverse-proxy sans propagation fiable de `X-Forwarded-Proto`), l'origine transmise à l'API ne correspond plus à `CORS_ORIGINS`, et `OriginGuard` rejette alors à tort toute écriture (équipe, œuvres, paramètres, commandes admin…) avec un 403 — perçu côté navigateur comme une « erreur CORS » puisque la réponse de l'API n'aurait alors pas non plus l'en-tête `Access-Control-Allow-Origin` correspondant.
+
+Point de comparaison qui a confirmé le diagnostic : `src/lib/auth-actions.ts` (connexion/inscription, Server Actions) fait déjà ce qu'il faut — `const origin = (await headers()).get("origin") ?? ""` — en relisant l'en-tête `Origin` réellement envoyé par le navigateur sur la requête entrante, jamais en le reconstruisant. Un navigateur moderne envoie systématiquement `Origin` sur toute requête d'écriture, même de même origine (changement standard côté navigateurs, plus seulement pour les requêtes cross-origin).
+
+Correction appliquée : les deux relais lisent maintenant `request.headers.get("origin")` en priorité, avec repli sur `incomingUrl.origin` uniquement si absent (aucune régression possible : en environnement direct, sans proxy — le dev local vérifié ici — les deux valeurs coïncident déjà).
+
+Fichiers modifiés :
+- `frontend/app/api/admin/[...path]/route.ts`
+- `frontend/app/api/account/[...path]/route.ts`
+
+Tests :
+- Vérification directe du comportement CORS/`OriginGuard` réel contre le serveur backend en dev (`curl`) : origine correcte → préflight `OPTIONS` 204 avec `Access-Control-Allow-Origin` correct, `POST` sans auth → 401 avec ACAO présent (pas d'erreur CORS) ; origine incorrecte (`http://evil.example.com`) → 403 de `OriginGuard`, sans en-tête `Access-Control-Allow-Origin` — confirmant qu'un vrai navigateur y verrait une authentique erreur CORS, exactement le symptôme rapporté.
+- Vérification en navigateur réel (Claude in Chrome) avec une session existante (« John Doe », propriétaire d'un tenant) : `/admin` (tableau de bord, GET), `/admin/team` (GET), puis une vraie écriture — `POST /api/admin/team` (invitation) — passée avec succès jusqu'à la logique métier (409 « cette personne fait déjà partie de cet espace », pas un 403 d'origine ni un blocage CORS). Confirmé via `read_network_requests` : `POST http://localhost:3000/api/admin/team` → 409 (métier), aucune erreur réseau.
+- `pnpm exec tsc --noEmit` (frontend) → OK
+- `pnpm lint` (frontend) → 0 erreur, 3 avertissements préexistants sans rapport
+- `pnpm test:e2e auth.e2e-spec.ts tenants.e2e-spec.ts` (backend, régression ciblée sur les flux origine/session) → 36/36 tests
+
+Résultat :
+VALIDÉ — corrigé, vérifié par test direct API (curl) ET par navigation réelle avec écriture effective à travers le relais corrigé.
+
+Problèmes rencontrés :
+Aucun test e2e existant ne pouvait reproduire ce bug directement : les tests backend appellent l'API NestJS directement avec un en-tête `Origin` fourni à la main (`.set('Origin', ORIGIN)`), jamais à travers les relais Next.js — ce sont ces deux fichiers spécifiques, non couverts par la suite e2e backend, qui portaient le bug. Diagnostic fait par inspection du code et par test manuel (curl + navigateur), pas par un test automatisé préexistant qui aurait échoué.
+
+Décisions :
+- Correction minimale et ciblée : relire l'en-tête déjà envoyé par le navigateur plutôt que le reconstruire, sans toucher à `main.ts`/`OriginGuard`/`CORS_ORIGINS` qui étaient déjà corrects et n'ont pas été modifiés.
+- Conservé le repli sur `incomingUrl.origin` (jamais de suppression sèche) pour ne rien casser dans un scénario où le navigateur n'enverrait pas `Origin` (cas résiduel, sans risque : `OriginGuard` rejette de toute façon l'absence d'origine sur les méthodes d'écriture).
+- Les deux exceptions console observées sur chaque page testée (`[EXCEPTION]` à `:0:0`, avant et après le correctif, sur des pages sans rapport les unes avec les autres) ont été investiguées : aucune requête réseau en échec ne leur correspond, elles apparaissent identiquement sur toutes les pages indépendamment du contenu/des données, et plusieurs extensions Chrome actives injectent leurs propres scripts sur `localhost:3000` (`chrome-extension://...` visibles dans `read_network_requests`). Conclusion : bruit d'extension navigateur, sans rapport avec le code de GeBook — non traité comme un bug applicatif.
+
+Commit : `fix: forward the browser's real Origin header through the admin/account proxies`
+Push : effectué
+
