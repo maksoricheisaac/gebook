@@ -537,8 +537,16 @@ describe('Commissions (e2e)', () => {
 
       // Calculé indépendamment de la requête SQL du service, à partir des
       // mêmes lignes brutes — pas un simple miroir de son résultat.
+      //
+      // Scopé par `tenantId`, pas par `authorId` : `/admin/tenant/statistics`
+      // compte TOUTES les ventes du tenant (`tenantStatistics()`, filtre
+      // `orderItem: { tenantId }`), pas seulement celles d'un auteur donné.
+      // Un filtre par `authorId` ne coïncidait avec le résultat de l'API que
+      // tant qu'aucune autre vente n'existait dans ce tenant — un lecteur
+      // achetant une œuvre d'un autre auteur du même tenant (via le site,
+      // en dehors de ce test) suffit à faire diverger les deux comptages.
       const distributions = await adminPrisma.saleDistribution.findMany({
-        where: { authorId },
+        where: { orderItem: { tenantId } },
         select: {
           orderItem: {
             select: { orderId: true, order: { select: { userId: true } } },
