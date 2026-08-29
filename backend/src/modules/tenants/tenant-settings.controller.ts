@@ -46,6 +46,16 @@ export class TenantSettingsController {
     return this.commissions.tenantStatistics(admin, tenant, range);
   }
 
+  /** Série pour le graphe du tableau de bord de l'espace (Phase 9), parité avec `/admin/statistics/timeseries`. */
+  @Get('statistics/timeseries')
+  timeseries(
+    @Query() range: DateRangeQuery,
+    @CurrentUser() admin: AuthenticatedUser,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return this.commissions.tenantRevenueTimeseries(admin, tenant, range);
+  }
+
   @Get()
   get(
     @CurrentUser() admin: AuthenticatedUser,

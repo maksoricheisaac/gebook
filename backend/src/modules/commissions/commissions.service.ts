@@ -468,6 +468,47 @@ export class CommissionsService {
 
     return fillMissingDays(byDay, from, to);
   }
+
+  /**
+   * Encaissé par jour pour UN tenant, sur la période demandée (brief §7,
+   * Phase 9 — parité avec le graphe déjà présent sur le tableau de bord
+   * plateforme, `revenueTimeseries()`).
+   *
+   * Même raison qu'ailleurs dans ce fichier : un paiement peut couvrir
+   * plusieurs tenants (`order_items.tenant_id`), donc `payments.paid_amount`
+   * n'est pas la bonne source ici — `sale_distributions.gross_amount`,
+   * jointe à `order_items` pour filtrer par tenant, l'est (règle n° 11).
+   */
+  async tenantRevenueTimeseries(
+    admin: AuthenticatedUser,
+    tenant: TenantContext,
+    range?: DateRangeQuery,
+  ): Promise<RevenueTimeseriesPoint[]> {
+    const tenantId = assertCanViewTenantFinance(tenant);
+    const { from, to } = resolveDateRange(range);
+
+    const rows = await this.prisma.withRlsContext(
+      buildRlsContext(admin, tenantId),
+      (tx) =>
+        tx.$queryRaw<{ day: Date; total: Prisma.Decimal }[]>`
+        SELECT date_trunc('day', sd.calculated_at) AS day, SUM(sd.gross_amount) AS total
+        FROM sale_distributions sd
+        JOIN order_items oi ON oi.id = sd.order_item_id
+        WHERE oi.tenant_id = ${tenantId}
+          AND sd.payout_status != 'cancelled'
+          AND sd.calculated_at >= ${from}
+          AND sd.calculated_at <= ${to}
+        GROUP BY 1
+        ORDER BY 1
+      `,
+    );
+
+    const byDay = new Map(
+      rows.map((row) => [toDateKey(row.day), decimalToString(row.total)]),
+    );
+
+    return fillMissingDays(byDay, from, to);
+  }
 }
 
 export interface RevenueTimeseriesPoint {

@@ -16,9 +16,11 @@ import {
   rangeForPreset,
   type DateRange,
 } from "@/src/components/admin/date-range-picker";
+import { RevenueChart } from "@/src/components/admin/revenue-chart";
 import { Button } from "@/src/components/ui/button";
 import { ErrorState } from "@/src/components/ui/states";
 import { adminFetch } from "@/src/lib/admin-api";
+import type { RevenueTimeseriesPoint } from "@/src/lib/commissions";
 import { formatPrice } from "@/src/lib/format";
 import type { CurrentUser } from "@/src/lib/auth-shared";
 
@@ -88,6 +90,19 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
   } = useQuery({
     queryKey: ["admin", "tenant-statistics", range.from, range.to],
     queryFn: () => adminFetch<TenantStatistics>(`/tenant/statistics${buildQuery(range)}`),
+  });
+
+  const {
+    data: timeseries,
+    isLoading: isTimeseriesLoading,
+    isError: isTimeseriesError,
+    refetch: refetchTimeseries,
+  } = useQuery({
+    queryKey: ["admin", "tenant-statistics", "timeseries", range.from, range.to],
+    queryFn: () =>
+      adminFetch<RevenueTimeseriesPoint[]>(
+        `/tenant/statistics/timeseries${buildQuery(range)}`,
+      ),
   });
 
   return (
@@ -172,6 +187,38 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
                 hint="Aucun reversement automatique n’existe encore — ce solde n’a pas été versé."
               />
             </dl>
+          </section>
+
+          <section className="mt-10">
+            <h2 className="type-h3 text-secondary mb-1">Encaissement</h2>
+            <p className="text-muted-foreground mb-4 text-sm">
+              Somme des ventes de cet espace, jour par jour, sur la période choisie.
+            </p>
+            <div className="border-border bg-card rounded-lg border p-5">
+              {isTimeseriesLoading ? (
+                <div className="bg-paper-200 h-64 w-full animate-pulse rounded-md" />
+              ) : isTimeseriesError || !timeseries ? (
+                <ErrorState
+                  description="Le graphe n’a pas pu être chargé."
+                  className="border-0 bg-transparent py-8"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void refetchTimeseries()}
+                  >
+                    Réessayer
+                  </Button>
+                </ErrorState>
+              ) : timeseries.every((point) => Number(point.revenueCollected) === 0) ? (
+                <p className="text-muted-foreground py-8 text-center text-sm">
+                  Aucun encaissement sur cette période.
+                </p>
+              ) : (
+                <RevenueChart data={timeseries} />
+              )}
+            </div>
           </section>
         </>
       )}

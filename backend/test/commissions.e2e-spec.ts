@@ -561,4 +561,41 @@ describe('Commissions (e2e)', () => {
       await readerAgent.get('/admin/tenant/statistics').expect(403);
     });
   });
+
+  describe('Graphe du tableau de bord (tenant, Phase 9)', () => {
+    it("la somme du graphe correspond à l'encaissé de /admin/tenant/statistics", async () => {
+      const { tenantId } = await adminPrisma.author.findUniqueOrThrow({
+        where: { id: authorId },
+        select: { tenantId: true },
+      });
+
+      const [statsResponse, timeseriesResponse] = await Promise.all([
+        adminAgent
+          .get('/admin/tenant/statistics')
+          .set('Cookie', `gebook_active_tenant=${tenantId}`)
+          .expect(200),
+        adminAgent
+          .get('/admin/tenant/statistics/timeseries')
+          .set('Cookie', `gebook_active_tenant=${tenantId}`)
+          .expect(200),
+      ]);
+
+      const stats = statsResponse.body as { revenueCollected: string };
+      const points = timeseriesResponse.body as {
+        date: string;
+        revenueCollected: string;
+      }[];
+
+      expect(Array.isArray(points)).toBe(true);
+      const total = points.reduce(
+        (sum, point) => sum + Number(point.revenueCollected),
+        0,
+      );
+      expect(total.toFixed(2)).toBe(Number(stats.revenueCollected).toFixed(2));
+    });
+
+    it('refuse le graphe de tenant à un lecteur', async () => {
+      await readerAgent.get('/admin/tenant/statistics/timeseries').expect(403);
+    });
+  });
 });

@@ -2,7 +2,7 @@
 
 ## État global
 
-Phase actuelle : PHASE 8 — Équipe, invitations et permissions
+Phase actuelle : PHASE 9 — Statistiques et Analytics
 Statut : TERMINÉE
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
@@ -1069,6 +1069,101 @@ Le même type de faille RLS chicken-and-egg déjà rencontré en Phase 8.2 étai
 - [x] Vérification routes (nouvelle route `POST /tenants/:tenantId/accept`, guard correct)
 - [x] Vérification permissions (matrice documentée et croisée avec le code réel)
 - [x] Vérification multi-tenant (self-accept scopé à `user_id = soi-même`, jamais à un autre membre)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée)
+- [x] Documentation mise à jour (ce fichier)
+
+---
+
+## PHASE 9 — Statistiques et Analytics
+
+### Objectif
+
+Auditer ce qui existe déjà en matière de statistiques (beaucoup, construit au fil des phases précédentes : `CommissionsService.platformStatistics()`, `tenantStatistics()`, `revenue()`, `listSales()`, `revenueTimeseries()`) et combler un écart concret plutôt que d'ajouter des fonctionnalités d'analyse inventées.
+
+### Travaux réalisés
+
+**9.1 — État des lieux (lecture seule)**
+
+Inspection de `commissions.service.ts` et des trois tableaux de bord frontend (`platform-dashboard.tsx`, `tenant-dashboard.tsx`, `app/(site)/auteur/tableau-de-bord/page.tsx`) :
+
+- Le tableau de bord **plateforme** a des cartes chiffrées ET un graphe d'encaissement jour par jour (`RevenueChart`, alimenté par `GET /admin/statistics/timeseries`).
+- Le tableau de bord **tenant** avait des cartes chiffrées équivalentes (`GET /admin/tenant/statistics` : œuvres publiées, auteurs actifs, ventes, commandes, lecteurs, encaissé, commission, dû aux auteurs, solde disponible — Phase 3 et 7) mais **aucun graphe**, aucune route de série temporelle scopée au tenant.
+- Le tableau de bord **auteur** a ses chiffres cumulés et la liste de ses ventes (`/authors/me/revenue`, `/authors/me/sales`, Phase 7), sans graphe non plus — mais sans équivalent « graphe attendu » ailleurs dans l'app pour cette vue, donc pas traité comme un écart au même sens.
+
+Seul l'écart tenant est un vrai manque de parité (même page, même besoin, la brique existe déjà pour la plateforme) — c'est le seul traité dans cette phase, pour ne pas inventer un besoin qui n'a pas de précédent dans le code existant.
+
+**9.2 — Série temporelle scopée au tenant (nouveau, parité avec l'existant)**
+
+- `CommissionsService.tenantRevenueTimeseries(admin, tenant, range)` (`backend/src/modules/commissions/commissions.service.ts`) : même structure que `revenueTimeseries()` (remplissage des jours manquants à zéro, plafond `MAX_TIMESERIES_DAYS`), mais la source n'est pas `payments.paid_amount` (un paiement peut couvrir plusieurs tenants, `order_items.tenant_id`, brief §17) — c'est `sale_distributions.gross_amount` jointe à `order_items` et filtrée par tenant, exactement le même choix de source que `tenantStatistics()` juste au-dessus dans le même fichier. Garde `assertCanViewTenantFinance` réutilisée telle quelle.
+- Route `GET /admin/tenant/statistics/timeseries` (`tenant-settings.controller.ts`), même garde (`TenantAccessGuard`), même DTO (`DateRangeQuery`) que la route `statistics` existante.
+- `tenant-dashboard.tsx` : nouvelle section « Encaissement » avec `RevenueChart`, copiée à l'identique de la section équivalente de `platform-dashboard.tsx` (mêmes états de chargement/erreur/vide, même composant, aucune nouvelle logique d'affichage inventée).
+
+**9.3 — Test de cohérence croisée**
+
+`commissions.e2e-spec.ts` : nouveau describe « Graphe du tableau de bord (tenant, Phase 9) » — vérifie que la somme des points du graphe correspond exactement à `revenueCollected` de `/admin/tenant/statistics` (même tenant, même période par défaut), plus un test de refus (403) pour un lecteur.
+
+### Fichiers modifiés / créés
+
+- `backend/src/modules/commissions/commissions.service.ts` — `tenantRevenueTimeseries()` (nouveau).
+- `backend/src/modules/tenants/tenant-settings.controller.ts` — route `GET statistics/timeseries` (nouvelle).
+- `backend/test/commissions.e2e-spec.ts` — 2 tests ajoutés (cohérence + 403).
+- `frontend/src/components/admin/tenant-dashboard.tsx` — section « Encaissement » avec `RevenueChart`, réutilisant le composant déjà existant.
+
+### Base de données / migrations
+
+Aucune. Lecture seule des tables `sale_distributions`/`order_items`, déjà utilisées par `tenantStatistics()`.
+
+### Tests exécutés
+
+```text
+backend   pnpm exec tsc --noEmit                          → OK
+backend   pnpm lint                                       → OK
+backend   pnpm test (unitaires)                           → 12 suites / 81 tests
+backend   pnpm test:e2e commissions.e2e-spec.ts (isolé)   → 18/18 tests (dont les 2 nouveaux)
+backend   pnpm test:e2e (suite complète, 1er essai)       → 1 suite en échec (library.e2e-spec.ts) — voir note ci-dessous
+backend   pnpm test:e2e library.e2e-spec.ts (isolé)       → 16/16 (immédiatement après l'échec ci-dessus)
+backend   pnpm test:e2e (suite complète, 2e essai)        → 14/14 suites, 203/203 tests
+frontend  pnpm exec tsc --noEmit                           → OK
+frontend  pnpm lint                                        → 0 erreur, 3 avertissements préexistants et sans rapport
+```
+
+**Note sur l'échec transitoire de la suite complète (1er essai)** : `library.e2e-spec.ts` a échoué dès son `beforeAll` (`prisma.user.deleteMany()` → violation de la contrainte `RESTRICT` `fk_orders_user`), faisant échouer en cascade ses 16 tests. Diagnostic : un script ponctuel (contexte platform_admin, mêmes filtres que le nettoyage `afterAll` du fichier — `email` se terminant par `@phase9.e2e.test`, `slug` commençant par `phase9-`) a recherché des lignes orphelines correspondantes ; **aucune trouvée** (tous les compteurs à zéro). Le fichier relancé isolément juste après est passé sans problème (16/16), et la suite complète relancée une seconde fois est passée intégralement (203/203, en 100s contre 70s au premier essai complet de la Phase 8 — ralentissement cohérent avec la fuite de workers déjà documentée en Phase 0/5/7). Conclusion : un flake transitoire de plus dans la même famille déjà connue, pas une régression introduite par cette phase — script de diagnostic supprimé après usage, aucune trace laissée dans le dépôt.
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| `tenantRevenueTimeseries()` scopé par tenant (jamais de fuite inter-tenant) | VALIDÉ — même garde RLS que `tenantStatistics()`, filtre `oi.tenant_id` explicite |
+| Somme du graphe = `revenueCollected` de `/admin/tenant/statistics` | VALIDÉ (test e2e) |
+| Refus à un lecteur | VALIDÉ (test e2e) |
+| Graphe tenant (frontend) | FONCTIONNEL — non vérifié en navigateur réel |
+| Graphe auteur | ABSENT PAR DÉCISION — aucun écart de parité identifié pour le justifier |
+
+### Problèmes rencontrés
+
+Une erreur d'édition transitoire : le premier remplacement de texte a placé la nouvelle méthode `tenantRevenueTimeseries()` en dehors de la classe `CommissionsService` (l'ancienne accolade fermante de la classe précédait le texte remplacé, donc pas incluse dans le remplacement). Repérée immédiatement en relisant le fichier après l'édition, corrigée avant tout test.
+
+### Décisions techniques
+
+- Seul l'écart tenant a été comblé, pas un graphe auteur inventé : la mission interdit explicitement d'inventer des fonctionnalités sans source claire dans le code existant, et rien n'indiquait qu'un graphe était attendu côté auteur (pas de précédent, pas de composant déjà à moitié câblé pour ça).
+- Source `sale_distributions` plutôt que `payments` pour la nouvelle série temporelle, par cohérence stricte avec `tenantStatistics()` juste au-dessus dans le même fichier — utiliser une source différente pour deux chiffres qui doivent normalement coïncider (comme le test de cohérence le vérifie) aurait été une incohérence silencieuse.
+- Réutilisation intégrale du composant `RevenueChart` et de la structure de section déjà existante côté plateforme, sans variante : c'est exactement le même besoin visuel, dupliquer avec des différences aurait été une divergence sans raison.
+
+### Éléments restant à traiter
+
+1. Vérification manuelle en navigateur du nouveau graphe tenant — non faite.
+2. Un éventuel graphe pour le tableau de bord auteur reste une décision produit ouverte, non tranchée faute de précédent dans le code existant.
+
+### Validation
+
+- [x] Typecheck backend
+- [x] Lint backend
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires
+- [x] Tests e2e (fichier isolé + suite complète, 203/203 au second essai après un flake transitoire documenté ci-dessus)
+- [x] Vérification multi-tenant (filtre `tenant_id` explicite + RLS, testé par cohérence croisée)
+- [x] Vérification permissions (même garde que la route `statistics` existante, testée)
 - [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée)
 - [x] Documentation mise à jour (ce fichier)
 
