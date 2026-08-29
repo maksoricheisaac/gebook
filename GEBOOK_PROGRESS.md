@@ -2,7 +2,7 @@
 
 ## État global
 
-Phase actuelle : PHASE 5 — Boutique / espace public du tenant
+Phase actuelle : PHASE 6 — Commandes, paiements et commerce
 Statut : TERMINÉE
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
@@ -738,6 +738,103 @@ frontend  pnpm lint                       → 0 erreur, 3 avertissements préexi
 
 ---
 
-## PHASE 6
+## PHASE 6 — Commandes, paiements et commerce
+
+### Objectif
+
+Décider si un vrai panier est nécessaire ; préserver l'architecture `PaymentDriver`/`PaymentDriverRegistry` ; ne jamais prétendre qu'un paiement réel fonctionne ; conserver idempotence, HMAC, webhooks, transactions et remboursements.
+
+### Décision — pas de panier persistant construit dans cette phase
+
+La mission pose la question comme une décision à prendre (« Décide si GeBook doit maintenant avoir... »), pas comme une obligation — et l'ordre de priorité de la mission qualifie lui-même ce chantier de « si nécessaire ». Constat avant de trancher : l'API accepte déjà plusieurs lignes en un seul appel (`CreateOrderDto.items[]`, vérifié dès la Phase 0), donc rien ne manque côté backend pour un panier multi-œuvres. Ce qui manque est uniquement une expérience « ajouter au panier, revenir plus tard, régler ensuite » côté frontend — une vraie fonctionnalité de produit (persistance, badge, page dédiée, états vides), pas un correctif ou une brique manquante d'une architecture déjà pensée pour ça.
+
+Décision : ne pas construire de panier persistant dans cette phase. C'est un choix conservateur et réversible — l'API n'a besoin d'aucun changement le jour où un panier serait décidé, exactement parce qu'elle accepte déjà plusieurs lignes. Documenté ici plutôt que tranché silencieusement.
+
+### Bug corrigé — une commande pouvait être marquée « payée » sans paiement réel
+
+C'est le problème concret que l'audit initial, puis la Phase 4, avaient déjà signalé sans le corriger (« IMPORTANT », non résolu). Confirmé en relisant `OrdersService.updateStatus()` : `PATCH /admin/orders/:id/status` acceptait `awaiting_payment → paid` (transition structurellement valide) et posait même `paidAt` — mais ni la bibliothèque du lecteur (`reader_library`) ni les commissions (`sale_distributions`) n'étaient alimentées, puisque ces deux effets n'existent que dans `PaymentsService.applyOutcome()`, déclenchée uniquement par un webhook réel (ou sa simulation en développement).
+
+Corrigé en bloquant `paid` comme cible directe de cette route — exactement le même traitement que `refunded`, déjà bloqué avant cette phase pour la même raison. Message d'erreur explicite renvoyant vers le webhook/la simulation.
+
+**Découverte en écrivant le test du correctif : le remboursement, lui, n'avait purement et simplement aucune interface.** `refunded` était déjà bloqué côté API (avant cette phase) mais restait proposé dans le menu déroulant générique du back-office (`allowedTransitions()`), qui échouait donc systématiquement si on le choisissait — et recherche exhaustive dans `frontend/` : **aucun composant n'appelle jamais `POST /admin/orders/:id/refund`**. Un administrateur ne pouvait tout simplement pas déclencher un remboursement depuis le produit, malgré un backend entièrement fonctionnel et déjà testé (`payments.e2e-spec.ts`).
+
+Corrigé dans le même mouvement, puisque c'est la même famille de problème (garanties de paiement, domaine explicite de cette phase) :
+- `allowedTransitions()` exclut désormais `paid` **et** `refunded` du menu générique (les deux sont des cibles toujours refusées par cette route) — la table structurelle complète reste la source unique, dont dérive aussi la nouvelle `canRefund()`.
+- Un vrai bouton « Rembourser » ajouté sur la fiche de commande (`order-detail.tsx`), visible uniquement quand `canRefund(order.status)` est vrai, avec confirmation (`ConfirmDialog`, déjà utilisé ailleurs dans le back-office — pas de nouveau composant) avant d'appeler l'endpoint existant.
+
+### Ce qui n'a pas été touché, et pourquoi
+
+- `PaymentDriver`/`PaymentDriverRegistry` : aucune modification. Aucune logique de paiement n'a été ajoutée dans `OrdersService` — le correctif de cette phase est une validation qui *refuse* une transition, jamais un traitement de paiement.
+- Aucun nouveau prestataire : confirmé, comme en Phase 0, que seul `FakePaymentDriver` est opérationnel ; Chariow et MTN Mobile Money restent des lignes `PaymentProvider` inactives, sans classe de pilote. Rien ne prétend le contraire nulle part dans le produit (`PaymentPanel` affiche déjà « Le paiement en ligne n'est pas encore ouvert », vérifié inchangé).
+- Idempotence, HMAC, fenêtre anti-rejeu, transaction unique du webhook : non touchés, toujours en place, vérifiés par la suite e2e complète après cette phase.
+
+### Fichiers modifiés
+
+- `backend/src/modules/orders/orders.service.ts` — `updateStatus()` refuse désormais `paid` comme cible directe (en plus de `refunded`, déjà refusé).
+- `backend/test/orders.e2e-spec.ts` — nouveau test verrouillant ce refus.
+- `frontend/src/lib/order-status.tsx` — `allowedTransitions()` exclut `paid`/`refunded` ; nouvelle fonction `canRefund()`.
+- `frontend/src/components/admin/order-detail.tsx` — bouton « Rembourser » + confirmation + mutation vers l'endpoint de remboursement existant.
+
+### Base de données / migrations
+
+Aucune.
+
+### Tests exécutés
+
+```text
+backend   pnpm exec tsc --noEmit          → OK
+backend   pnpm lint                       → OK
+backend   pnpm test (unitaires)           → 12 suites / 81 tests
+backend   orders.e2e-spec + payments      → 37/37 (isolé)
+backend   pnpm test:e2e (suite complète)  → 14/14 suites, 199/199 tests (198 + 1 nouveau)
+frontend  pnpm typecheck                  → OK
+frontend  pnpm lint                       → 0 erreur, 3 avertissements préexistants et sans rapport
+```
+
+**Limite honnête à signaler** : le bouton « Rembourser » n'a pas été vérifié dans un navigateur réel — même limite que les phases précédentes. L'endpoint qu'il appelle (`POST /admin/orders/:id/refund`) est, lui, entièrement couvert par les tests e2e existants (transactionnalité, révocation d'accès).
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| Panier persistant | ABSENT PAR DÉCISION — API déjà prête si besoin futur, documenté |
+| Blocage de `paid` en changement de statut direct | VALIDÉ (test e2e dédié) |
+| Bouton de remboursement fonctionnel | FONCTIONNEL — non vérifié en navigateur réel |
+| Menu générique n'offre plus d'options toujours refusées | VALIDÉ |
+| Architecture `PaymentDriver` préservée | VALIDÉ (aucun changement) |
+| Honnêteté sur l'absence de paiement réel | VALIDÉ (déjà correct, revérifié) |
+
+### Problèmes rencontrés
+
+Aucun.
+
+### Décisions techniques
+
+- Bloquer `paid` avec le même mécanisme et le même message-style que `refunded` (déjà présent) : cohérence avec un précédent déjà écrit par l'équipe précédente, plutôt qu'un nouveau style de garde.
+- Réparer le remboursement dans cette même phase plutôt que le signaler pour plus tard : c'est exactement le domaine de cette phase (« conserver... refunds »), et le corriger seul (bloquer `paid`) sans réparer un problème identique et adjacent (`refunded` inutilisable) aurait laissé le produit dans un état à moitié cohérent.
+- Pas de champ « motif » dans la boîte de confirmation du remboursement : `RefundOrderDto.reason` est optionnel côté API ; ajouter un champ de saisie aurait élargi `ConfirmDialog` ou demandé un composant dédié pour un champ non requis — reporté, pas oublié.
+
+### Éléments restant à traiter
+
+1. Vérification manuelle en navigateur du bouton de remboursement — non faite.
+2. Un champ « motif du remboursement » pourrait être ajouté à l'interface plus tard (l'API le supporte déjà).
+3. Si un panier multi-session devient réellement nécessaire plus tard, l'API n'aura besoin d'aucun changement — seul le frontend serait concerné.
+
+### Validation
+
+- [x] Typecheck backend
+- [x] Lint backend
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires
+- [x] Tests e2e (suite complète + nouveau test ciblé)
+- [x] Vérification multi-tenant (aucun changement à l'isolation)
+- [x] Vérification permissions (route déjà `@Roles('admin')`, aucun changement)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée)
+- [x] Documentation mise à jour (ce fichier)
+
+---
+
+## PHASE 7
 
 *(non commencée)*

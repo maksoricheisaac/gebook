@@ -262,13 +262,26 @@ export class OrdersService {
         );
       }
 
+      // Même raison, Phase 6 : marquer une commande « payée » ici ne ferait
+      // que poser le statut. Ni la bibliothèque du lecteur (`reader_library`)
+      // ni les commissions (`sale_distributions`) ne seraient alimentées —
+      // ces deux effets n'existent que dans la transaction du webhook de
+      // paiement (`PaymentsService.applyOutcome`). Un admin qui passerait par
+      // ici obtiendrait une commande payée sur le papier, sans accès ni
+      // répartition réels — exactement le défaut que le blocage du
+      // remboursement, ci-dessus, existe déjà pour éviter côté paiement.
+      if (dto.status === OrderStatus.paid) {
+        throw new BadRequestException(
+          'Un paiement se confirme depuis le webhook ou la simulation du prestataire, jamais en changeant le statut directement — sinon ni la bibliothèque du lecteur ni les commissions ne seraient alimentées.',
+        );
+      }
+
       assertOrderTransitionAllowed(order.status, dto.status);
 
       return tx.order.update({
         where: { id },
         data: {
           status: dto.status,
-          ...(dto.status === OrderStatus.paid && { paidAt: new Date() }),
           ...(dto.status === OrderStatus.cancelled && {
             cancelledAt: new Date(),
           }),

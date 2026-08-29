@@ -43,23 +43,16 @@ export function isPayable(status: string): boolean {
 }
 
 /**
- * Transitions proposées dans l'administration.
- *
- * ⚠️ Cette table reflète `assertOrderTransitionAllowed()` côté API
- * (`backend/src/modules/orders/order-status.ts`), qui reste **la seule
- * autorité** : toute transition refusée par le serveur est affichée telle
- * quelle à l'administrateur, et cette liste ne fait que masquer les choix voués
- * à l'échec.
- *
- * Sans elle, la liste déroulante proposait les neuf statuts sur chaque ligne.
- * Faire passer une commande « En attente » directement à « Payée » renvoyait
- * systématiquement « Impossible de faire passer une commande de pending à
- * paid » — l'administrateur découvrait la règle métier par l'erreur, à chaque
- * tentative.
- *
- * Si le cycle de vie évolue côté API, cette table doit suivre. Le pire scénario
- * en cas d'oubli reste bénin : une transition valide simplement absente du
- * menu, jamais une transition invalide acceptée.
+ * Graphe structurel des transitions, tel que `assertOrderTransitionAllowed()`
+ * le voit côté API (`backend/src/modules/orders/order-status.ts`) — mais
+ * `paid` et `refunded` n'y sont structurellement valides que sur le papier :
+ * `OrdersService.updateStatus()` les refuse tous les deux, systématiquement
+ * (Phase 6), parce que ni l'un ni l'autre ne peut se limiter à poser un
+ * statut — un paiement doit passer par le webhook (bibliothèque + commissions),
+ * un remboursement par `POST /admin/orders/:id/refund` (rend les fonds,
+ * révoque l'accès). Gardé comme source unique pour dériver à la fois le menu
+ * générique (`allowedTransitions`, qui les exclut) et l'éligibilité au bouton
+ * de remboursement dédié (`canRefund`, qui ne regarde que `refunded`).
  */
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   pending: ["awaiting_payment", "cancelled"],
@@ -73,6 +66,28 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   refunded: [],
 };
 
+/** Statuts que `OrdersService.updateStatus()` refuse toujours en tant que cible directe. */
+const BLOCKED_DIRECT_TARGETS = new Set(["paid", "refunded"]);
+
+/**
+ * Transitions proposées dans le menu générique de l'administration.
+ *
+ * ⚠️ Reflète `assertOrderTransitionAllowed()`, qui reste **la seule
+ * autorité** — cette liste ne fait que masquer les choix voués à l'échec, y
+ * compris ceux qui sont structurellement valides mais que l'API bloque quand
+ * même en tant que cible directe (voir `BLOCKED_DIRECT_TARGETS`).
+ *
+ * Si le cycle de vie évolue côté API, cette table doit suivre. Le pire
+ * scénario en cas d'oubli reste bénin : une transition valide simplement
+ * absente du menu, jamais une transition invalide acceptée.
+ */
 export function allowedTransitions(status: string): string[] {
-  return ALLOWED_TRANSITIONS[status] ?? [];
+  return (ALLOWED_TRANSITIONS[status] ?? []).filter(
+    (next) => !BLOCKED_DIRECT_TARGETS.has(next),
+  );
+}
+
+/** Une commande est remboursable si son statut peut structurellement atteindre `refunded`. */
+export function canRefund(status: string): boolean {
+  return (ALLOWED_TRANSITIONS[status] ?? []).includes("refunded");
 }

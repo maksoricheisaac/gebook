@@ -3,10 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPageHeader, AdminPanel } from "@/src/components/admin/admin-page";
+import { Button } from "@/src/components/ui/button";
+import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
 import { FormError } from "@/src/components/ui/field";
 import { Select } from "@/src/components/ui/input";
@@ -14,7 +16,7 @@ import { Skeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { formatDateTime, formatPrice } from "@/src/lib/format";
 import { orderStatusLabel } from "@/src/lib/order-status-labels";
-import { allowedTransitions, OrderStatusBadge } from "@/src/lib/order-status";
+import { allowedTransitions, canRefund, OrderStatusBadge } from "@/src/lib/order-status";
 
 interface OrderItem {
   id: string;
@@ -59,6 +61,7 @@ interface AdminOrder {
 export function OrderDetail({ orderId }: { orderId: string }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["admin", "orders", orderId],
@@ -77,6 +80,27 @@ export function OrderDetail({ orderId }: { orderId: string }) {
       await queryClient.invalidateQueries({ queryKey: ["admin", "orders"] });
     },
     onError: (error: unknown) => {
+      setServerError(
+        error instanceof AdminApiError ? error.message : "Une erreur est survenue.",
+      );
+    },
+  });
+
+  // Remboursement : action dédiée (Phase 6), pas une transition de statut
+  // parmi d'autres — elle rend les fonds chez le prestataire et révoque
+  // l'accès du lecteur, ce que `PATCH /orders/:id/status` refuse désormais
+  // systématiquement de faire (voir `order-status.tsx`).
+  const refundMutation = useMutation({
+    mutationFn: () =>
+      adminFetch<AdminOrder>(`/orders/${orderId}/refund`, { method: "POST" }),
+    onSuccess: async () => {
+      setServerError(null);
+      setRefundDialogOpen(false);
+      toast.success("Commande remboursée, accès révoqué.");
+      await queryClient.invalidateQueries({ queryKey: ["admin", "orders"] });
+    },
+    onError: (error: unknown) => {
+      setRefundDialogOpen(false);
       setServerError(
         error instanceof AdminApiError ? error.message : "Une erreur est survenue.",
       );
@@ -116,6 +140,17 @@ export function OrderDetail({ orderId }: { orderId: string }) {
         actions={
           <div className="flex flex-wrap items-center gap-2.5">
             <OrderStatusBadge status={order.status} />
+            {canRefund(order.status) && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setRefundDialogOpen(true)}
+              >
+                <Undo2 aria-hidden />
+                Rembourser
+              </Button>
+            )}
             {transitions.length > 0 && (
               <Select
                 aria-label="Changer le statut de la commande"
@@ -138,6 +173,18 @@ export function OrderDetail({ orderId }: { orderId: string }) {
             )}
           </div>
         }
+      />
+
+      <ConfirmDialog
+        open={refundDialogOpen}
+        title="Rembourser cette commande ?"
+        description={`${formatPrice(order.totalAmount)} seront rendus chez le prestataire de paiement, et l’accès du lecteur à ${
+          order.items.length > 1 ? "ces œuvres" : "cette œuvre"
+        } sera révoqué. Cette action est irréversible.`}
+        confirmLabel="Rembourser"
+        isPending={refundMutation.isPending}
+        onConfirm={() => refundMutation.mutate()}
+        onCancel={() => setRefundDialogOpen(false)}
       />
 
       <FormError message={serverError ?? undefined} />

@@ -5,6 +5,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
+import type { ErrorResponseBody } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
 import { PrismaService } from './../src/prisma/prisma.service';
 import { adminDb } from './support/admin-db';
@@ -309,6 +310,27 @@ describe('Commandes (e2e)', () => {
         .get(`/orders/${orderNumber}`)
         .expect(200);
       expect((response.body as { status: string }).status).toBe(
+        'awaiting_payment',
+      );
+    });
+
+    it('refuse de marquer une commande « payée » directement (Phase 6)', async () => {
+      // La commande est déjà en `awaiting_payment` (test précédent) — une
+      // transition structurellement valide vers `paid`, mais qui ne doit
+      // jamais passer par ce point d'entrée : seul le webhook (ou sa
+      // simulation) alimente la bibliothèque et les commissions.
+      const response = await adminAgent
+        .patch(`/admin/orders/${orderId}/status`)
+        .set('Origin', ORIGIN)
+        .send({ status: 'paid' })
+        .expect(400);
+
+      expect((response.body as ErrorResponseBody).message).toContain('webhook');
+
+      const unchanged = await readerAAgent
+        .get(`/orders/${orderNumber}`)
+        .expect(200);
+      expect((unchanged.body as { status: string }).status).toBe(
         'awaiting_payment',
       );
     });
