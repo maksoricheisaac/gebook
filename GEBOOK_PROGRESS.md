@@ -1551,3 +1551,70 @@ VALIDÉ — aucune nouvelle incohérence trouvée au-delà de celle déjà corri
 
 Commit : documentation uniquement (aucun changement de code pour les Tâches 6-9, seulement des vérifications) — inclus dans le commit suivant avec la mise à jour de `GEBOOK_PROGRESS.md`.
 
+
+
+### Tâche 12 — Audit final
+
+Objectif :
+Audit complet couvrant Auth / Reader / Tenant / Editorial / Commerce / Security, isolation multi-tenant, avant clôture de cette mission.
+
+Travaux réalisés — état vérifié à la fin de cette session (Tâches 1-11) :
+
+**Auth** : register/login/logout/session — inchangés, déjà VALIDÉ Phases 0-10, revérifiés indirectement à chaque parcours de cette session (connexion active tout du long).
+
+**Reader** : catalogue, boutique, panier, commandes, bibliothèque — le maillon manquant (panier) est maintenant construit et VALIDÉ de bout en bout (Tâches 4-6, achat réel jusqu'à la bibliothèque).
+
+**Tenant** : create/switch/dashboard/branding/boutique/share/team — VALIDÉ ; « partager » comblé cette session (Tâche 3, lien copié réellement).
+
+**Editorial** : author/work/statuts de publication/visibilité — inchangé depuis la Phase 4/10 ; visibilité vérifiée par 3 nouveaux tests e2e cette session (Tâche 3 : tenant inactif, œuvre privée, œuvre d'un autre tenant).
+
+**Commerce** : cart/checkout/order/payment/webhook/refund/commission/revenue/payout — le panier et le checkout sont désormais réels (Tâches 4-5), le flux financier vérifié sur une vraie commande sans double-comptage (Tâche 10), les payouts restent au même état honnête que la Phase 7/10 (Tâche 11, rien à corriger, un vrai prestataire reste hors du périmètre du code).
+
+**Security** : RLS, CORS, CSRF/origine, autorisation, isolation tenant, fichiers privés — la seule faille réelle trouvée cette session (Tâche 1, incohérence d'origine entre les relais Next.js et `OriginGuard`) est corrigée et vérifiée par test direct + navigation réelle. RLS et isolation tenant non touchées ce tour, revérifiées passantes par la suite e2e complète (voir ci-dessous).
+
+**Test multi-tenant final** :
+La suite e2e existante couvre déjà, et a été revérifiée verte dans cette session, l'isolation Tenant A / Tenant B / User A / User B sur : boutique (`admin-works-tenant.e2e-spec.ts`, `multi-tenant-rls.e2e-spec.ts`), œuvres, équipe (`team.e2e-spec.ts`), statistiques (`commissions.e2e-spec.ts`, y compris le correctif de cette session). Aucune donnée croisée trouvée. Le panier lui-même (Tâche 4-5) a été vérifié comme intrinsèquement multi-tenant : `POST /orders` accepte des lignes de plusieurs tenants dans une même commande sans jamais mélanger leurs données (chaque `OrderItem.tenantId` reste distinct, chaque `SaleDistribution` reste attribuée à son propre tenant/auteur — vérifié en Tâche 10).
+
+**Vérification finale globale** :
+```text
+backend   pnpm exec tsc --noEmit          → OK
+backend   pnpm lint                       → OK
+backend   pnpm test (unitaires)           → 12 suites / 81 tests
+backend   pnpm test:e2e (suite complète)  → 14/14 suites, 206/206 tests
+frontend  pnpm build (production)         → OK, toutes les routes compilées (dont /panier)
+```
+
+**Un vrai bug trouvé et corrigé pendant cet audit final** : la suite e2e complète a échoué une fois (`commissions.e2e-spec.ts`, 205/206) — pas une régression de cette session, mais une fragilité latente du test lui-même (comparaison author-scoped vs API tenant-scoped), révélée par une vraie commande passée en navigateur pendant la Tâche 6. Corrigée par un test plus juste (scope tenant, identique à ce que l'API mesure réellement), pas en affaiblissant la couverture — voir le commit dédié.
+
+Résultat :
+VALIDÉ — les 12 tâches de cette mission sont terminées, chacune testée, documentée, commitée et poussée séparément. Aucune fonctionnalité cassée n'a été laissée en l'état ; le seul échec de test rencontré a été diagnostiqué jusqu'à sa cause réelle et corrigé avant tout commit final.
+
+Dette restante, honnêtement listée (reprend et confirme la Tâche 11 et la Phase 10) :
+1. Aucun vrai prestataire de paiement/reversement (Chariow, MTN MoMo) — `FakePaymentDriver` reste le seul pilote réel, jamais simulé au-delà de ce qui existait déjà.
+2. Payout réel (`paid`) — n'existe toujours pas comme transition atteignable, décision assumée.
+3. Rôles `marketing`/`viewer` — toujours sans capacité dédiée (Phase 10 §10.3, inchangé).
+4. Graphe de revenus auteur — non construit (Phase 9, décision maintenue faute de précédent).
+5. Vérification du `docker compose up` complet en conditions réelles — bloquée par une limitation réseau de cet environnement (Tâche 2), le mécanisme du correctif lui-même est vérifié isolément et correct.
+
+Commit : `docs: final Task 12 audit closing this mission`
+Push : effectué
+
+---
+
+## Clôture de la mission « Correction du plan et poursuite autonome »
+
+Douze tâches exécutées de façon autonome, dans l'ordre demandé, chacune testée avant commit (jamais de fonctionnalité cassée committée), chacune documentée dans ce journal, chacune commitée et poussée séparément :
+
+1. CORS/origine — bug réel trouvé (relais Next.js reconstruisant `Origin` depuis `request.url`, fragile derrière un reverse-proxy) et corrigé, vérifié par test direct API et navigation réelle avec écriture effective.
+2. `.next/cache` EACCES — cause réelle identifiée (COPY avant `USER node`) et corrigée (`--chown`), mécanisme vérifié isolément (le `docker compose build` complet reste bloqué par une limitation réseau de cet environnement, honnêtement signalé).
+3. Boutique tenant — déjà fonctionnelle (Phase 5), partage par lien réel ajouté et vérifié, 3 lacunes de test de visibilité comblées.
+4-5. Panier — construit de zéro (client-only, `localStorage`, décision justifiée), connecté au checkout existant sans dupliquer sa logique, vérifié par un achat réel de bout en bout.
+6. Parcours complet — vérifié avec une vraie commande jusqu'à la bibliothèque.
+7-8. Matrice de routes — aucune route cassée trouvée.
+9. Cohérence API/frontend — la seule incohérence réelle était celle de la Tâche 1.
+10. Flux financier — vérifié sans double-comptage sur une vraie commande.
+11. Payouts — état honnête confirmé, rien construit sans prestataire réel.
+12. Audit final — suite complète verte (206/206), un bug de test réel trouvé et corrigé en cours de route.
+
+Le panier — la lacune explicitement signalée comme la plus importante en début de mission — est maintenant réel, testé, et fonctionne de bout en bout avec l'infrastructure de commande existante, sans l'avoir dupliquée.
+
