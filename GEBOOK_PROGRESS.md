@@ -1356,3 +1356,54 @@ Décisions :
 Commit : `fix: give the node user ownership of .next in the frontend runtime image`
 Push : effectué
 
+
+
+### Tâche 3 — Finaliser et vérifier la boutique tenant
+
+Objectif :
+S'assurer que chaque tenant a une vraie boutique publique partageable (URL par slug déjà existante, `/espaces/[slug]`), avec un accès explicite « voir »/« partager » depuis le dashboard, un contenu conforme (logo/nom/description/site/réseaux/œuvres/auteurs), et un respect strict de la visibilité (RLS + `status`/`visibility`) — et le vérifier réellement (tests + navigateur), pas seulement par lecture de code.
+
+Travaux réalisés :
+Inspection avant modification (Phase 5, sessions précédentes) : `/espaces/[slug]` existe déjà, alimentée par `GET /tenants/public/:slug` (profil) et `GET /works?tenant=`/`GET /authors?tenant=` (catalogue et équipe éditoriale), avec les règles de visibilité `visibleWithinOwnTenant` déjà appliquées. Un bouton « Voir la vitrine publique » existait déjà dans `admin/parametres`, mais aucun moyen de copier/partager le lien — écart réel identifié.
+
+Vérification en navigateur réel (Claude in Chrome, session existante « John Doe », propriétaire du tenant « John Ecrit ») :
+- `/admin` (tableau de bord tenant) → chiffres réels affichés, graphe « Encaissement » (Phase 9) rendu correctement.
+- `/admin/team` → équipe affichée, invitation testée (409 métier, confirme aussi le correctif Tâche 1).
+- `/admin/parametres` → panneau « Profil de l'espace » avec « Voir la vitrine publique ».
+- `/espaces/john-ecrit` (lien réel cliqué depuis le dashboard, pas une URL inventée) → page publique complète : profil (« Auteur indépendant », nom), section « Équipe éditoriale » (auteurs du tenant), section « Catalogue — Les œuvres de John Ecrit » (« Aucune œuvre publiée pour le moment », correct pour ce tenant de test sans œuvre publiée). Aucune erreur réseau, aucun 404/500.
+
+Ajout du partage réel :
+`frontend/src/components/admin/tenant-settings-manager.tsx` — bouton « Copier le lien » à côté de « Voir ma boutique » (renommé depuis « Voir la vitrine publique » pour matcher le vocabulaire de la mission), utilisant `navigator.clipboard.writeText` sur l'URL publique réelle (`${window.location.origin}/espaces/${profile.slug}`, jamais un lien fictif), avec confirmation `toast`. Testé en navigateur réel : clic → toast « Lien copié. http://localhost:3000/espaces/john-ecrit » — lien exact et correct.
+
+Comblement des lacunes de test identifiées face à la liste exigée par la mission :
+`backend/test/admin-works-tenant.e2e-spec.ts`, describe « vitrine publique d'un tenant (Phase 5) », déjà couvrait : tenant actif → accessible ; tenant inexistant → 404 ; œuvre publiée → visible ; œuvre `tenant_only` → visible seulement dans son propre contexte. Trois cas manquaient et ont été ajoutés :
+- tenant inactif (`suspended`) → `GET /tenants/public/:slug` → 404.
+- œuvre `private` publiée → absente de la vitrine ET du lien direct (`GET /works/:slug` → 404, `visibleWithinOwnTenant` exige `visibility !== 'private'`).
+- œuvre publiée d'un AUTRE tenant → jamais présente dans la vitrine du tenant courant, tout en restant visible dans sa propre vitrine.
+
+Fichiers modifiés :
+- `frontend/src/components/admin/tenant-settings-manager.tsx`
+- `backend/test/admin-works-tenant.e2e-spec.ts`
+
+Tests :
+- `pnpm test:e2e admin-works-tenant.e2e-spec.ts` → 17/17 (14 existants + 3 nouveaux)
+- `pnpm test` (backend, unitaires) → 12 suites / 81 tests
+- `pnpm exec tsc --noEmit` + `pnpm lint` (backend) → OK
+- `pnpm exec tsc --noEmit` + `pnpm lint` (frontend) → OK, 0 erreur (3 avertissements préexistants sans rapport)
+- Navigation réelle (voir ci-dessus) : dashboard → paramètres → vitrine publique → retour, sans erreur console/réseau liée à l'application.
+
+Résultat :
+VALIDÉ — vitrine déjà fonctionnelle confirmée par test e2e ET navigation réelle ; partage par lien ajouté et vérifié de bout en bout (clic réel → lien réel copié) ; les 6 règles de visibilité exigées par la mission sont maintenant toutes couvertes par un test e2e explicite.
+
+Problèmes rencontrés :
+Aucun. Le tenant de test utilisé en navigateur n'avait aucune œuvre publiée — l'affichage du contenu réel (logo/couverture/œuvres peuplés) reste donc vérifié par la lecture du code et les tests e2e, pas par une capture visuelle avec données non vides ; signalé pour rester honnête, pas un blocage.
+
+Décisions :
+- « Voir la vitrine publique » renommé « Voir ma boutique » pour suivre le vocabulaire exact de la mission (« Ma boutique / Voir ma boutique / Partager ma boutique ») sans changer la route ni le comportement.
+- Le lien copié est calculé côté client (`window.location.origin`), jamais codé en dur ni renvoyé par l'API : il reflète toujours l'origine réellement utilisée par la personne qui clique, cohérent avec le principe déjà appliqué pour l'en-tête `Origin` en Tâche 1.
+- Tests de visibilité ajoutés dans le fichier existant plutôt qu'un nouveau fichier : ils prolongent exactement le describe « vitrine publique d'un tenant (Phase 5) » déjà présent, avec les mêmes fixtures (`tenantAId`/`tenantBId`/`authorOtherId`/`authorBId`) — créer un nouveau fichier aurait dupliqué tout le `beforeAll`.
+- `afterAll` du fichier élargi de `tenant.deleteMany({ id: { in: [...] } })` à `tenant.deleteMany({ slug: { startsWith: 'tenant-works-' } })` pour couvrir aussi le nouveau tenant suspendu de test, cohérent avec le nettoyage déjà fait par préfixe de slug sur les autres tables du même `afterAll`.
+
+Commit : `feat: add storefront share link and close visibility test gaps`
+Push : effectué
+

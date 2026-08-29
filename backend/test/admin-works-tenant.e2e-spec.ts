@@ -239,8 +239,11 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
     await adminPrisma.tenantMember.deleteMany({
       where: { tenantId: { in: [tenantAId, tenantBId] } },
     });
+    // `startsWith` plutôt que `id: { in: [tenantAId, tenantBId] }` : couvre
+    // aussi le tenant suspendu créé par le test « tenant inactif » (Phase 3,
+    // mission), jamais assigné à une variable suivie individuellement ici.
     await adminPrisma.tenant.deleteMany({
-      where: { id: { in: [tenantAId, tenantBId] } },
+      where: { slug: { startsWith: 'tenant-works-' } },
     });
     await adminPrisma.user.deleteMany({
       where: { email: { endsWith: EMAIL_DOMAIN } },
@@ -609,6 +612,82 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
       const slugs = (response.body as { slug: string }[]).map((a) => a.slug);
       expect(slugs).toContain(`tenant-works-author-self-${RUN_ID}`);
       expect(slugs).not.toContain(`tenant-works-author-b-${RUN_ID}`);
+    });
+
+    it('refuse un tenant suspendu (mission — « tenant inactif → inaccessible »)', async () => {
+      const suspendedSlug = `tenant-works-suspended-${RUN_ID}`;
+      await adminPrisma.tenant.create({
+        data: {
+          slug: suspendedSlug,
+          name: 'Maison suspendue (test œuvres)',
+          type: 'independent_author',
+          status: 'suspended',
+        },
+      });
+
+      await request(app.getHttpServer())
+        .get(`/tenants/public/${suspendedSlug}`)
+        .expect(404);
+    });
+
+    it('une œuvre "private" publiée n’apparaît jamais dans la vitrine, ni par lien direct', async () => {
+      const slug = `tenant-works-visibility-private-${RUN_ID}`;
+      await adminPrisma.work.create({
+        data: {
+          tenantId: tenantAId,
+          authorId: authorOtherId,
+          title: 'Œuvre privée publiée',
+          slug,
+          status: 'published',
+          visibility: 'private',
+        },
+      });
+
+      // Ni dans la vitrine de son propre tenant…
+      const storefront = await request(app.getHttpServer())
+        .get(`/works?tenant=tenant-works-a-${RUN_ID}`)
+        .expect(200);
+      const storefrontSlugs = (
+        storefront.body as { data: { slug: string }[] }
+      ).data.map((w) => w.slug);
+      expect(storefrontSlugs).not.toContain(slug);
+
+      // … ni par lien direct : `visibleWithinOwnTenant` exige `visibility !== 'private'`.
+      await request(app.getHttpServer()).get(`/works/${slug}`).expect(404);
+    });
+
+    it('une œuvre publiée d’un autre tenant n’apparaît jamais dans MA vitrine', async () => {
+      const slug = `tenant-works-b-visible-in-a-${RUN_ID}`;
+      await adminPrisma.work.create({
+        data: {
+          tenantId: tenantBId,
+          authorId: authorBId,
+          title: 'Œuvre publique du tenant B',
+          slug,
+          status: 'published',
+          visibility: 'public',
+        },
+      });
+
+      // Visible dans SA propre vitrine (tenant B)…
+      const storefrontB = await request(app.getHttpServer())
+        .get(`/works?tenant=tenant-works-b-${RUN_ID}`)
+        .expect(200);
+      expect(
+        (storefrontB.body as { data: { slug: string }[] }).data.map(
+          (w) => w.slug,
+        ),
+      ).toContain(slug);
+
+      // … jamais dans celle du tenant A.
+      const storefrontA = await request(app.getHttpServer())
+        .get(`/works?tenant=tenant-works-a-${RUN_ID}`)
+        .expect(200);
+      expect(
+        (storefrontA.body as { data: { slug: string }[] }).data.map(
+          (w) => w.slug,
+        ),
+      ).not.toContain(slug);
     });
   });
 });

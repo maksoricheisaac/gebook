@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { ExternalLink, Globe, ImagePlus, Link2, Pencil } from "lucide-react";
+import { Copy, ExternalLink, Globe, ImagePlus, Link2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -173,6 +173,18 @@ export function TenantSettingsManager() {
     onError: (error: unknown) => toast.error(errorMessage(error)),
   });
 
+  const copyStorefrontLink = async (slug: string): Promise<void> => {
+    const url = `${window.location.origin}/espaces/${slug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Lien copié.", { description: url });
+    } catch {
+      toast.error(
+        "Impossible de copier le lien. Copiez-le manuellement depuis la barre d’adresse.",
+      );
+    }
+  };
+
   const startEdit = (): void => {
     if (!profile) return;
     setServerError(null);
@@ -332,8 +344,17 @@ export function TenantSettingsManager() {
             <Button asChild variant="outline" size="sm">
               <a href={`/espaces/${profile.slug}`} target="_blank" rel="noreferrer">
                 <ExternalLink aria-hidden />
-                Voir la vitrine publique
+                Voir ma boutique
               </a>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void copyStorefrontLink(profile.slug)}
+            >
+              <Copy aria-hidden />
+              Copier le lien
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={startEdit}>
               <Pencil aria-hidden />
