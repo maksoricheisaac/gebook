@@ -2,7 +2,7 @@
 
 ## État global
 
-Phase actuelle : PHASE 1 — Unifier le modèle utilisateur
+Phase actuelle : PHASE 2 — Expérience « Créer mon espace »
 Statut : TERMINÉE
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
@@ -247,6 +247,123 @@ Aucun. Phase courte et ciblée : l'essentiel du travail était l'analyse (confir
 
 ---
 
-## PHASE 2
+## PHASE 2 — Expérience « Créer mon espace »
 
-*(non commencée — en attente du feu vert pour démarrer, conformément à la consigne de ne pas enchaîner les phases silencieusement)*
+### Objectif
+
+Le parcours de création d'espace existe déjà (confirmé fonctionnel de bout en bout par l'audit et par la suite e2e de la Phase 0). Ne pas le reconstruire : l'améliorer pour qu'il devienne le véritable point d'entrée du modèle SaaS visé.
+
+### Travaux réalisés
+
+**Inspection de l'existant avant toute modification.**
+
+- Backend (`backend/src/modules/tenants/tenants.{controller,service}.ts`, `dto/create-tenant.dto.ts`) : `POST /tenants` existe déjà, protégé par `AuthGuard` seul (tout compte connecté peut créer son espace), crée le `Tenant` et le `TenantMember(role=owner, status=active)` dans une seule transaction RLS, pose immédiatement le cookie de tenant actif. `CreateTenantDto` valide déjà `name`, `slug` (motif kebab-case), `type` (enum), `description` (optionnelle). Rien à reconstruire ici.
+- Frontend (`app/(site)/creer-un-espace/page.tsx`, `src/components/account/create-workspace-form.tsx`, `src/lib/tenant-actions.ts`) : formulaire déjà complet (nom, slug auto-proposé depuis le nom tant qu'il n'est pas modifié à la main — même pattern que les autres formulaires du back-office —, type, description), Server Action déjà correcte (jamais de confiance dans le `Set-Cookie` brut de l'API, cookie de tenant actif reposé sur l'origine du frontend), redirection déjà directe vers `/admin` sans étape intermédiaire à traverser.
+
+**Parcours cible comparé point par point à l'existant :**
+
+```text
+Nom               → déjà présent
+Identifiant/slug  → déjà présent, auto-proposé
+Type d'espace     → déjà présent (4 options, voir plus bas)
+Description       → déjà présent (optionnelle)
+Logo / branding   → volontairement absent à cette étape (voir décision ci-dessous)
+Création          → déjà fonctionnelle
+OWNER             → déjà automatique
+Dashboard         → déjà atteint directement après création
+```
+
+**Décision documentée — logo/branding non ajouté au formulaire de création.**
+
+Le formulaire de création n'inclut pas d'upload de logo/couverture, alors que le parcours cible en mentionne un. Vérifié avant de trancher : `POST /admin/tenant/logo` et `/cover` (`tenant-settings.controller.ts`) exigent déjà un tenant actif sélectionné (`TenantAccessGuard`), donc structurellement impossible avant que le tenant n'existe — il faudrait soit créer le tenant d'abord puis uploader dans la foulée (un flux en deux temps caché derrière un seul écran, complexité ajoutée), soit téléverser un fichier temporaire avant la création (mécanisme entièrement nouveau à inventer). Le formulaire `/admin/parametres` (`TenantSettingsManager`) gère déjà cet upload, complètement, immédiatement accessible depuis le tableau de bord. Ajouter cette étape au formulaire de création n'apporterait donc aucune valeur immédiate, seulement de la complexité — conforme à l'instruction explicite de la mission (« ne complexifie pas inutilement... si cela n'apporte pas de valeur immédiate »). Décision : laisser la personnalisation de la marque comme un geste naturel de **deuxième** étape, déjà entièrement construit et fonctionnel, pas de première.
+
+**Décision documentée — types d'espace, déjà au-delà du minimum demandé.**
+
+La mission demande au minimum *Auteur indépendant, Maison d'édition, Collectif/organisation*. Le code existant en propose déjà quatre : `independent_author`, `publishing_house`, `collective`, `cultural_organization`. Vérifié par grep (`backend/src`, `frontend/src`, `frontend/app`) : **`Tenant.type` n'influence aujourd'hui aucun comportement** — il n'est ni lu par une règle métier, ni par un guard, ni par une différence d'interface ; il est seulement stocké et réaffiché (`tenant-membership.response.ts:25`, `tenant-profile.response.ts:21`). C'est exactement le niveau de complexité recommandé par la mission : présent pour l'avenir, sans couplage comportemental inutile aujourd'hui. Aucune modification nécessaire.
+
+**Amélioration concrète apportée — le moment d'accueil après création.**
+
+Le seul écart réel entre le parcours existant et le parcours cible : après création, l'utilisateur était redirigé directement vers `/admin` sans aucun signal explicite que son espace venait d'être créé avec succès (le tableau de bord tenant affiche déjà « Bonjour, {prénom}. » et « Vue d'ensemble de « {nom de l'espace} » », mais rien ne distingue une première visite d'une visite ordinaire).
+
+Correctif minimal, sans reconstruire le tableau de bord existant :
+- `frontend/src/lib/tenant-actions.ts` — `createTenantAction` redirige désormais vers `/admin?espace_cree=1` au lieu de `/admin`.
+- `frontend/src/components/admin/tenant-dashboard.tsx` (composant déjà existant, simplement complété) — un `useEffect` détecte ce paramètre, affiche un message de succès (« Votre espace est prêt. » + invite à ajouter des auteurs et publier) via `sonner`, la bibliothèque de toasts déjà utilisée dans tout le back-office (`tenant-settings-manager.tsx`, `team-manager.tsx`, etc. — pas une nouvelle dépendance), puis nettoie l'URL (`router.replace("/admin")`) pour qu'un rafraîchissement de la page ne réaffiche pas le message.
+
+Le nom de l'espace n'est pas répété dans le toast lui-même : il est déjà visible juste en dessous, dans l'en-tête du tableau de bord (« Vue d'ensemble de « {nom} » »), donc le toast reste un message générique qui ne dépend pas du chargement réseau du profil du tenant (`useQuery` séparé).
+
+Cette même page donne déjà accès en un clic à tout ce que la mission demande immédiatement après création : tableau de bord (page courante), œuvres, auteurs, équipe, branding/paramètres, statistiques — via la barre de navigation admin déjà en place (`AdminSidebar`, confirmée dans l'audit initial).
+
+### Fichiers modifiés
+
+- `frontend/src/lib/tenant-actions.ts` — redirection post-création vers `/admin?espace_cree=1`.
+- `frontend/src/components/admin/tenant-dashboard.tsx` — ajout du message d'accueil ponctuel (toast `sonner`), aucune restructuration du composant existant.
+
+### Base de données / migrations
+
+Aucune. Aucun changement de schéma n'était nécessaire pour cette phase.
+
+### Backend
+
+Aucun changement. Le flux de création (`TenantsController`/`TenantsService`) était déjà complet et correct ; l'amélioration de cette phase est purement une couche d'accueil côté frontend.
+
+### Frontend
+
+Voir « Fichiers modifiés ». Deux fichiers touchés, changement additif (aucune suppression de fonctionnalité), réutilisation stricte des briques déjà en place (`sonner`, `useSearchParams`/`useRouter` déjà utilisés ailleurs dans le projet selon le même patron que `catalog-filters.tsx`).
+
+### Tests exécutés
+
+```text
+frontend  pnpm typecheck   → OK, aucune erreur
+frontend  pnpm lint        → 0 erreur, 3 avertissements préexistants et sans rapport (déjà présents
+                              avant cette phase, react-hooks/incompatible-library sur des fichiers
+                              non touchés ici)
+```
+
+Aucun changement backend → pas de nouvelle exécution des suites backend jugée nécessaire (résultats verts de la Phase 0 toujours valables).
+
+**Limite honnête à signaler** : le nouveau message d'accueil n'a pas été vérifié dans un navigateur réel (aucun serveur de développement n'a été démarré dans cette phase) — sa correction repose sur la lecture du code, le typecheck et le lint, plus la connaissance du fait que `sonner`/`<Toaster/>` fonctionne déjà ailleurs dans le même arbre de composants (`admin-shell.tsx`). Le flux de création sous-jacent, lui, reste couvert par la suite e2e `tenants.e2e-spec.ts`, déjà vérifiée verte en Phase 0 et non affectée par ce changement (aucun fichier backend modifié).
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| Parcours de création (nom/slug/type/description → tenant + OWNER) | VALIDÉ (déjà couvert par les tests e2e de la Phase 0, non modifié) |
+| Types d'espace (minimum 3 demandés) | FONCTIONNEL (4 déjà présents, décision de ne pas complexifier documentée) |
+| Logo/branding à la création | ABSENT PAR DÉCISION — disponible immédiatement après, à la bonne étape (`/admin/parametres`) |
+| Moment d'accueil post-création | FONCTIONNEL (ajouté cette phase) — non vérifié en navigateur réel, voir limite ci-dessus |
+| Accès immédiat à dashboard/œuvres/auteurs/équipe/branding/statistiques après création | VALIDÉ (déjà vrai avant cette phase, revérifié) |
+
+### Problèmes rencontrés
+
+Aucun.
+
+### Décisions techniques
+
+- Réutiliser `sonner` (déjà la bibliothèque de toasts du projet) plutôt qu'introduire un nouveau composant de bannière : cohérent avec l'instruction de réutiliser le design system existant plutôt que d'en ajouter un nouveau pour un seul écran.
+- Nettoyer l'URL après affichage (`router.replace`) plutôt que de laisser `?espace_cree=1` persister : évite qu'un signet, un rafraîchissement ou un partage de lien ne rejoue le message indéfiniment.
+- Ne pas ajouter d'étape de branding à la création : décision justifiée par une contrainte architecturale réelle (pas de tenant = pas de cible pour l'upload), pas une simplification arbitraire.
+- Ne pas toucher au modèle `TenantType` : confirmé purement descriptif aujourd'hui, sans couplage comportemental — l'ajouter ou le retirer n'aurait aucune conséquence fonctionnelle actuelle, donc aucune raison d'y toucher dans cette phase.
+
+### Éléments restant à traiter
+
+1. Vérification manuelle en navigateur du nouveau message d'accueil — non faite dans cette phase (voir « Tests exécutés »). À faire lors d'une prochaine session avec accès à un serveur de développement démarré, ou lors de la Phase 10 (audit final).
+2. Si un jour `Tenant.type` doit influencer un comportement réel (ex. libellés différents selon le type d'espace, workflows différents pour une maison d'édition vs. un auteur indépendant), cela reste à concevoir — hors périmètre de cette phase, qui ne fait que confirmer qu'aucun couplage n'existe aujourd'hui.
+
+### Validation
+
+- [x] Typecheck backend *(non ré-exécuté — aucun fichier backend modifié dans cette phase ; résultat vert de la Phase 0 toujours valable)*
+- [x] Lint backend *(idem)*
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires *(non ré-exécutés — aucun fichier backend modifié)*
+- [x] Tests e2e *(non ré-exécutés — parcours de création déjà couvert et vert en Phase 0, non affecté par ce changement)*
+- [x] Vérification multi-tenant (aucun changement à l'isolation ou aux permissions dans cette phase)
+- [x] Vérification permissions (aucun changement)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée explicitement)
+- [x] Documentation mise à jour (ce fichier)
+
+---
+
+## PHASE 3
+
+*(non commencée)*

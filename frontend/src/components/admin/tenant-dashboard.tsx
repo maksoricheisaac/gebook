@@ -1,11 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { BookText, Percent, UserSquare2 } from "lucide-react";
 
-import { AdminPageHeader, AdminStatCard, AdminStatGrid } from "@/src/components/admin/admin-page";
-import { DateRangePicker, rangeForPreset, type DateRange } from "@/src/components/admin/date-range-picker";
+import {
+  AdminPageHeader,
+  AdminStatCard,
+  AdminStatGrid,
+} from "@/src/components/admin/admin-page";
+import {
+  DateRangePicker,
+  rangeForPreset,
+  type DateRange,
+} from "@/src/components/admin/date-range-picker";
 import { Button } from "@/src/components/ui/button";
 import { ErrorState } from "@/src/components/ui/states";
 import { adminFetch } from "@/src/lib/admin-api";
@@ -42,11 +52,30 @@ function buildQuery(range: DateRange): string {
  */
 export function TenantDashboard({ user }: { user: CurrentUser }) {
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const { data: profile } = useQuery({
     queryKey: ["admin", "tenant-settings"],
     queryFn: () => adminFetch<TenantProfile>("/tenant"),
   });
+
+  // Moment d'accueil après « Créer mon espace » (Phase 2, onboarding) :
+  // `createTenantAction` redirige ici avec `?espace_cree=1`. Le nom de
+  // l'espace apparaît déjà juste en dessous dans l'en-tête — le message reste
+  // donc générique et n'attend pas `profile` pour s'afficher. Le paramètre
+  // est retiré de l'URL après lecture pour qu'un rafraîchissement de la page
+  // ne redéclenche pas le message.
+  useEffect(() => {
+    if (searchParams.get("espace_cree") !== "1") {
+      return;
+    }
+    toast.success("Votre espace est prêt.", {
+      description: "Ajoutez vos auteurs et publiez vos premières œuvres dès maintenant.",
+    });
+    router.replace("/admin");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const {
     data: statistics,
@@ -55,8 +84,7 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
     refetch,
   } = useQuery({
     queryKey: ["admin", "tenant-statistics", range.from, range.to],
-    queryFn: () =>
-      adminFetch<TenantStatistics>(`/tenant/statistics${buildQuery(range)}`),
+    queryFn: () => adminFetch<TenantStatistics>(`/tenant/statistics${buildQuery(range)}`),
   });
 
   return (
@@ -64,7 +92,9 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
       <AdminPageHeader
         title={`Bonjour, ${user.firstName}.`}
         description={
-          profile ? `Vue d’ensemble de « ${profile.name} ».` : "Vue d’ensemble de votre espace."
+          profile
+            ? `Vue d’ensemble de « ${profile.name} ».`
+            : "Vue d’ensemble de votre espace."
         }
       />
 
@@ -84,22 +114,41 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
         </div>
       ) : isError || !statistics ? (
         <ErrorState description="Les chiffres de cet espace n’ont pas pu être chargés.">
-          <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void refetch()}
+          >
             Réessayer
           </Button>
         </ErrorState>
       ) : (
         <>
           <AdminStatGrid>
-            <AdminStatCard label="Œuvres publiées" value={statistics.publishedWorks} icon={BookText} />
-            <AdminStatCard label="Auteurs actifs" value={statistics.activeAuthors} icon={UserSquare2} />
+            <AdminStatCard
+              label="Œuvres publiées"
+              value={statistics.publishedWorks}
+              icon={BookText}
+            />
+            <AdminStatCard
+              label="Auteurs actifs"
+              value={statistics.activeAuthors}
+              icon={UserSquare2}
+            />
             <AdminStatCard label="Ventes" value={statistics.salesCount} icon={Percent} />
-            <AdminStatCard label="Encaissé" value={formatPrice(statistics.revenueCollected)} />
+            <AdminStatCard
+              label="Encaissé"
+              value={formatPrice(statistics.revenueCollected)}
+            />
           </AdminStatGrid>
 
           <section className="mt-6">
             <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
-              <AdminStatCard label="Commission GeBook" value={formatPrice(statistics.commissionTotal)} />
+              <AdminStatCard
+                label="Commission GeBook"
+                value={formatPrice(statistics.commissionTotal)}
+              />
               <AdminStatCard
                 label="Dû aux auteurs"
                 value={formatPrice(statistics.authorNetTotal)}

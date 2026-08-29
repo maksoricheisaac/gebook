@@ -77,7 +77,7 @@ export async function createTenantAction(
     maxAge: 60 * 60 * 24 * 365,
   });
 
-  redirect("/admin");
+  redirect("/admin?espace_cree=1");
 }
 
 /**
@@ -116,9 +116,7 @@ export async function setActiveTenantAction(
   });
 
   const payload = (await response.json().catch(() => null)) as
-    | (TenantMembership & Record<string, unknown>)
-    | { message?: string }
-    | null;
+    (TenantMembership & Record<string, unknown>) | { message?: string } | null;
 
   if (!response.ok) {
     const record = (payload ?? {}) as { message?: string };
