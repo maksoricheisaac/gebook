@@ -43,7 +43,12 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=build /app/.next ./.next
+# `--chown=node:node` : sans lui, ces fichiers restent root:root (aucun `USER`
+# n'a encore été déclaré dans cette étape au moment du `COPY`), et `next start`
+# — qui tourne en tant que `node` juste après — échoue au premier accès en
+# écriture avec `EACCES: permission denied, mkdir '.next/cache/fetch-cache'`
+# (cache ISR/fetch écrit à l'exécution, pas seulement à la compilation).
+COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/next.config.ts ./next.config.ts

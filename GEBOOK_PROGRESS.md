@@ -1321,3 +1321,38 @@ Décisions :
 Commit : `fix: forward the browser's real Origin header through the admin/account proxies`
 Push : effectué
 
+
+
+### Tâche 2 — Corriger l'erreur Next.js `.next/cache` (EACCES)
+
+Objectif :
+Corriger `EACCES: permission denied, mkdir '/app/.next/cache/fetch-cache'` par une vraie correction de permissions Docker (utilisateur non-root conservé), pas par un `chmod 777`.
+
+Travaux réalisés :
+Inspection de `frontend/Dockerfile` (multi-stage). Cause trouvée : l'étape `runtime` copie `.next` (`COPY --from=build /app/.next ./.next`) **avant** de déclarer `USER node` — au moment de ce `COPY`, aucun `USER` n'a encore été fixé dans cette étape, donc Docker l'exécute en root, et les fichiers copiés restent `root:root` dans l'image finale. `next start`, lancé juste après en tant qu'utilisateur `node` (non-root, déjà présent dans l'image `node:22-bookworm-slim`), tente d'écrire le cache ISR/fetch à l'exécution (`.next/cache/fetch-cache`) — écriture refusée, `.next` n'appartenant pas à `node`. Correction : `COPY --from=build --chown=node:node /app/.next ./.next`.
+
+Fichiers modifiés :
+- `frontend/Dockerfile`
+
+Tests :
+- `docker build -f frontend/Dockerfile -t gebook-frontend-test frontend` (build réel, environnement de développement local) : l'étape `build` (compilation Next.js complète, `.next` généré) se termine sans erreur ; l'étape `runtime` échoue ensuite, mais sur une ligne sans rapport avec ce correctif — `apt-get install curl ca-certificates`, qui échoue par absence d'accès réseau à `deb.debian.org` depuis cet environnement sandboxé (`Could not resolve 'deb.debian.org'`). Cette ligne n'a pas été touchée par cette tâche et échouerait de façon identique avant comme après le correctif — limitation de l'environnement de build, pas du code.
+- Impossible dans ces conditions de faire tourner `docker compose up` de bout en bout et de constater l'absence de l'erreur EACCES sur le vrai conteneur `frontend` — honnêtement signalé, pas contourné.
+- Vérification isolée du mécanisme exact du correctif, sans dépendance réseau : un `Dockerfile` de test minimal, utilisant la même image de base déjà en cache localement (`node:22-bookworm-slim`), reproduisant très exactement le motif `COPY` (sans puis avec `--chown`) → `USER node` → `mkdir` du vrai `Dockerfile` :
+  - Sans `--chown` : `mkdir: cannot create directory '.next/cache/fetch-cache': Permission denied` — reproduit très exactement l'erreur rapportée.
+  - Avec `--chown=node:node` (le correctif appliqué) : `mkdir` réussit (`fixed: mkdir succeeded`).
+  - Fichier de test et images Docker de test supprimés après vérification, rien laissé dans le dépôt.
+
+Résultat :
+FONCTIONNEL — le mécanisme exact du correctif (permissions du dossier `.next` copié) est vérifié et confirmé résoudre le symptôme rapporté, de façon isolée et reproductible. Pas VALIDÉ au sens strict de la règle de véracité de cette mission : un `docker compose up` réel du service `frontend` complet n'a pas pu être exécuté dans cet environnement, à cause d'une limitation réseau sans rapport avec ce correctif (accès à `deb.debian.org` bloqué). À revérifier avec `docker compose build && docker compose up` dès qu'un environnement avec accès réseau complet est disponible (ex. le serveur Dokploy cible lui-même).
+
+Problèmes rencontrés :
+`apt-get update && apt-get install curl ca-certificates` (étape `runtime`, ligne non modifiée par cette tâche) échoue dans cet environnement sandboxé — DNS `deb.debian.org` non résolu. Contourné pour la vérification en isolant le mécanisme du correctif dans un Dockerfile de test séparé, n'exerçant que le motif `COPY`/`USER`/`mkdir` en cause, sans dépendre du réseau (image de base déjà en cache local).
+
+Décisions :
+- `--chown=node:node` plutôt que `chmod 777` (proscrit explicitement par la mission sauf justification exceptionnelle, absente ici) : solution Docker standard, ne compromet aucune permission au-delà de ce qui est nécessaire, conserve un utilisateur non-root pour le processus applicatif.
+- Correctif limité à la seule ligne `COPY` de `.next` : `public`/`package.json`/`next.config.ts` ne nécessitent aucune écriture à l'exécution, donc aucun `--chown` ajouté dessus — éviter d'élargir la portée du correctif au-delà du besoin réel.
+- Documenté honnêtement comme FONCTIONNEL et non VALIDÉ, conformément à la règle de véracité explicite de cette mission : un test isolé et pertinent existe, mais pas le test de bout en bout demandé (`docker compose up`), pour une raison d'environnement indépendante du correctif.
+
+Commit : `fix: give the node user ownership of .next in the frontend runtime image`
+Push : effectué
+
