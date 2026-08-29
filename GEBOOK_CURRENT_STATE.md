@@ -4,7 +4,10 @@ Audit technique et fonctionnel en lecture seule. Aucune modification de code, de
 
 Méthode : lecture directe du code source (backend NestJS, frontend Next.js, migrations Prisma/SQL, tests), pas de confiance aveugle dans la documentation existante. Le document `docs/AUDIT_V2_MULTI_TENANT.md` (daté du 2026-08-23) décrit un **plan proposé** à un instant donné — une bonne partie a depuis été implémentée, et cet audit distingue explicitement ce qui est réellement dans le code aujourd'hui de ce qui était seulement proposé. Chaque affirmation ci-dessous s'appuie sur une référence `fichier:ligne` vérifiée.
 
+> **Note de péremption (2026-08-29, fin de mission Phase 0-10)** : ce document est une photographie de l'état **avant** la mission d'évolution vers un modèle multi-tenant type « Chariow » (Phases 0 à 10, commit de référence `2a5ddce`). Il n'a pas été mis à jour après la mission — c'est une décision délibérée, pour garder une base de comparaison fidèle plutôt que de mélanger contenu d'origine et contenu re-vérifié après coup. Pour l'état courant, voir `GEBOOK_PROGRESS.md`, en particulier sa section « PHASE 10 — Audit final et consolidation » qui reprend la matrice de maturité ci-dessous (§18) ligne par ligne avec ce qui a changé et la preuve associée. En résumé : la régression RLS du §3.G est corrigée, le workflow de publication (§8) et le blocage `paid` (§9) sont désormais réellement appliqués, l'équipe/invitations (§6, §14) a un vrai cycle `invited → active`, et les statistiques (§11) ont un graphe côté tenant en plus de la plateforme. Le reversement réel aux auteurs (§10) reste absent, sans changement — décision assumée, jamais simulée.
+
 ---
+
 
 ## 0. Résumé exécutif
 

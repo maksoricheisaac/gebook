@@ -2,7 +2,7 @@
 
 ## État global
 
-Phase actuelle : PHASE 9 — Statistiques et Analytics
+Phase actuelle : PHASE 10 — Audit final et consolidation
 Statut : TERMINÉE
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
@@ -1168,3 +1168,107 @@ Une erreur d'édition transitoire : le premier remplacement de texte a placé la
 - [x] Documentation mise à jour (ce fichier)
 
 ---
+
+## PHASE 10 — Audit final et consolidation
+
+### Objectif
+
+Clore la mission : vérification finale et globale (au-delà de ce que chaque phase a déjà vérifié individuellement), et consolidation de l'état du produit face à la matrice de maturité du `GEBOOK_CURRENT_STATE.md` original (l'audit qui a précédé la Phase 0). Pas une reconstruction de cet audit — un état des lieux du delta.
+
+### Travaux réalisés
+
+**10.1 — Vérifications globales, au-delà des vérifications par phase**
+
+- `backend`: `pnpm build` (`nest build`) → sans erreur.
+- `frontend`: `pnpm build` (`next build`, production) → sans erreur ; toutes les routes touchées par les Phases 0-9 (`/mon-espace`, `/admin/team`, `/admin`, `/espaces/[slug]`, `/creer-un-espace`, `/auteur/tableau-de-bord`, etc.) compilent et se génèrent correctement.
+- `pnpm exec prisma migrate status` → « Database schema is up to date! », 18 migrations, toutes appliquées.
+- Suite e2e backend complète relancée une dernière fois : 14/14 suites, 203/203 tests (voir aussi le flake documenté en Phase 9, non reproduit).
+
+**10.2 — Matrice de maturité, mise à jour face à l'audit original**
+
+Le tableau ci-dessous reprend exactement les lignes de la section 18 de `GEBOOK_CURRENT_STATE.md` (état avant Phase 0), avec le statut après les dix phases. Seules les lignes qui ont réellement changé sont commentées ; les autres sont reconduites telles quelles, aucune n'a été réévaluée à la hausse sans preuve (test e2e ou vérification directe en base).
+
+| Fonctionnalité | Statut avant (audit initial) | Statut après (Phase 0-9) | Preuve |
+|---|---|---|---|
+| Inscription | FONCTIONNEL | **Inchangé** — FONCTIONNEL | — |
+| Parcours lecteur complet | FONCTIONNEL | **Inchangé** — FONCTIONNEL | — |
+| Création tenant (self-service) | FONCTIONNEL | **Inchangé** — FONCTIONNEL (confirmé, pas reconstruit, Phase 2) | Phase 0 (suite e2e), Phase 2 |
+| Multi-tenant (isolation réelle) | ⚠️ PARTIEL — script de provisioning du rôle DB supprimé | **VALIDÉ** — script restauré et vérifié en base réelle | Phase 0 §0.1 |
+| Dashboard tenant | FONCTIONNEL | **Renforcé** — graphe d'encaissement ajouté (parité avec le tableau de bord plateforme) | Phase 9 |
+| Gestion œuvres (CRUD) | FONCTIONNEL | **Inchangé** — FONCTIONNEL | — |
+| Workflow de publication (review) | ⚠️ PARTIEL/PRÉVU — `submitted/under_review/approved/rejected` jamais appliqués | **FONCTIONNEL** — machine à états réelle par rôle (`assertAllowedStatus`) | Phase 4 |
+| Commandes | ⚠️ PARTIEL — `paid` forçable sans paiement réel | **FONCTIONNEL** — transition directe vers `paid` bloquée | Phase 6 |
+| Paiements | ⚠️ PARTIEL — seul le prestataire factice fonctionne | **Inchangé** — toujours seul `FakePaymentDriver` réel ; Chariow/MTN MoMo toujours absents de code (délibérément, jamais simulés) | — |
+| Statistiques | FONCTIONNEL | **Renforcé** — graphe tenant ajouté, `availableBalance` sur les 3 niveaux | Phase 7, 9 |
+| Commissions | FONCTIONNEL | **Inchangé** — FONCTIONNEL, cycle de vie `payoutStatus` réel ajouté (`pending → available/cancelled`) | Phase 7 |
+| Reversements (payouts) | ❌ ABSENT — aucune transition de statut, aucun virement | **PARTIEL** — cycle de statut réel (disponibilité, annulation au remboursement) ; **le virement/versement réel reste ABSENT**, jamais simulé | Phase 7 |
+| Superadmin | FONCTIONNEL | **Inchangé** — FONCTIONNEL | — |
+| Équipe et invitations (`/admin/team`) | ⚠️ PARTIEL — « pas de vraie invitation » | **FONCTIONNEL** — workflow `invited → active` réel, self-accept RLS, UI d'acceptation | Phase 8 |
+| Vitrine publique tenant (`/espaces/[slug]`) | non évalué (n'existait pas encore comme tel) | **FONCTIONNEL** — profil public tenant, visibilité `tenant_only` sur la vitrine propre | Phase 5 |
+
+**10.3 — Ce qui reste ABSENT ou PARTIEL, honnêtement, à la fin des dix phases**
+
+- **Reversement réel aux auteurs** (virement, mobile money) : toujours entièrement absent. Le cycle de statut (Phase 7) prépare le terrain (disponibilité, annulation) mais aucun argent ne bouge réellement — c'est une décision assumée depuis la Phase 7, jamais simulée.
+- **Prestataires de paiement réels** (Chariow, MTN MoMo) : toujours absents de code, seulement des lignes de seed inactives. `PaymentDriver`/`PaymentDriverRegistry` reste l'abstraction prête à les accueillir, non exploitée.
+- **Rôles `marketing`/`viewer`** : toujours sans capacité distincte de la lecture (Phase 8 §8.3) — aucune fonctionnalité de campagne marketing n'existe ailleurs dans l'app pour justifier une permission dédiée.
+- **Graphe de revenus pour le tableau de bord auteur** : non construit (Phase 9), faute de précédent identifiable dans le code existant justifiant cette parité-là spécifiquement.
+- **Vérification manuelle en navigateur** : plusieurs fonctionnalités livrées Phases 7-9 (cartes de solde, champs de reversement, invitations, graphe tenant) sont FONCTIONNELLES au sens du code et des tests e2e (y compris sous RLS réellement appliquée), mais n'ont jamais été vérifiées visuellement dans un navigateur réel au cours de cette mission — limite répétée honnêtement à chaque phase concernée, pas résolue ici.
+
+**10.4 — `GEBOOK_CURRENT_STATE.md` : note de péremption plutôt que réécriture**
+
+Ce document reste la photographie fidèle de l'état **avant** la Phase 0 — une valeur historique réelle (comparer où on était et où on est arrivé). Le réécrire entièrement (ses 19 sections, dont plusieurs domaines jamais touchés par cette mission : commandes, bibliothèque, superadmin, schéma complet) aurait été un nouvel audit intégral, hors du périmètre de « consolidation » de cette dernière phase, et risquait de mélanger du contenu vérifié à neuf avec du contenu simplement recopié sans re-vérification — exactement ce que la rigueur méthodologique de cette mission a cherché à éviter à chaque phase. À la place, une note de tête a été ajoutée pointant vers ce fichier pour l'état courant, sans toucher aux 19 sections d'origine.
+
+### Fichiers modifiés / créés
+
+- `GEBOOK_PROGRESS.md` — cette section.
+- `GEBOOK_CURRENT_STATE.md` — note de péremption ajoutée en tête de document, aucun autre changement.
+
+### Base de données / migrations
+
+Aucune — phase de vérification et de documentation uniquement.
+
+### Tests exécutés
+
+```text
+backend   pnpm build (nest build)              → OK
+backend   pnpm exec prisma migrate status       → à jour, 18/18 migrations appliquées
+backend   pnpm test:e2e (suite complète)         → 14/14 suites, 203/203 tests (dernière exécution de la mission)
+frontend  pnpm build (next build, production)   → OK, toutes les routes compilées
+```
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| Build backend production | VALIDÉ |
+| Build frontend production | VALIDÉ |
+| Migrations à jour | VALIDÉ |
+| Suite e2e complète | VALIDÉ (203/203, dernière exécution) |
+| Matrice de maturité mise à jour et sourcée | VALIDÉ |
+| Écarts restants documentés honnêtement | VALIDÉ |
+
+### Décisions techniques
+
+- Consolidation par delta (comparaison ligne à ligne avec la matrice existante), pas par réécriture complète de `GEBOOK_CURRENT_STATE.md` : cohérent avec la règle appliquée à chaque phase (« ne jamais reconstruire ce qui fonctionne déjà »), appliquée ici à la documentation elle-même.
+- Aucune ligne de la matrice originale n'a été remontée à VALIDÉ/FONCTIONNEL sans preuve directement citée (numéro de phase, test e2e) — une matrice de maturité qui s'auto-décerne des statuts sans preuve n'aurait aucune valeur de vérification.
+
+### Éléments restant à traiter
+
+Les mêmes que listés en 10.3 — aucun n'est traité par cette phase, qui est une phase de constat, pas d'implémentation. Ce sont des décisions produit ou des chantiers explicitement hors périmètre de la mission telle que spécifiée (pas de nouveaux payouts réels, pas de nouveau prestataire de paiement, pas de nouvelles règles métier inventées).
+
+### Validation
+
+- [x] Build backend
+- [x] Build frontend
+- [x] Migrations vérifiées à jour
+- [x] Suite e2e complète (dernière exécution de la mission)
+- [x] Matrice de maturité consolidée et sourcée
+- [x] Documentation mise à jour (ce fichier + note de péremption dans `GEBOOK_CURRENT_STATE.md`)
+
+---
+
+## Clôture de la mission (Phases 0-10)
+
+Dix phases exécutées séquentiellement, chacune testée, documentée et commitée avant la suivante, sans jamais reconstruire ce qui fonctionnait déjà. Les axes de sécurité/RLS et de fiabilité des tests, placés en priorité 1 et 2 par la mission, ont été traités en premier (Phase 0) et revérifiés à chaque régression RLS découverte en cours de route (Phases 5, 7, 8) — jamais contournés, toujours corrigés par une policy explicite et testée.
+
+Le modèle cible (Inscription → Lecteur → « Créer mon espace » → Tenant → Owner → {Œuvres, Ventes, Équipe} → {Publication, Revenus, Permissions} → Statistiques → Payout) est atteint de bout en bout à l'exception du payout réel — décision assumée et documentée à chaque phase concernée (7, 9, 10), jamais simulée, conformément à l'interdiction explicite de la mission de fabriquer un mécanisme de paiement/reversement qui n'existe pas réellement.
