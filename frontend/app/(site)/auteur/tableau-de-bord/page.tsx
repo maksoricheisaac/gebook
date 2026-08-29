@@ -7,7 +7,7 @@ import { TenantSwitcher } from "@/src/components/layout/tenant-switcher";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { EmptyState } from "@/src/components/ui/states";
-import { requireRole } from "@/src/lib/auth";
+import { requireUser } from "@/src/lib/auth";
 import {
   fetchAuthorRevenue,
   fetchAuthorSales,
@@ -34,7 +34,14 @@ export const metadata: Metadata = {
 export default async function AuthorDashboardPage(
   props: PageProps<"/auteur/tableau-de-bord">,
 ) {
-  const user = await requireRole(["author", "admin"], "/auteur/tableau-de-bord");
+  // Le rôle global `author` n'est jamais attribué par aucun parcours applicatif
+  // (audit Phase 1) — seule l'appartenance à une fiche `Author` (vérifiée côté
+  // API par `AuthorRevenueController`, jamais par un rôle global) détermine
+  // l'accès réel. Filtrer ici sur ["author","admin"] rendait cette page
+  // inatteignable pour tout auteur tenant-scopé réel ; `requireUser` laisse
+  // passer, et la réponse 403 de l'API bascule déjà proprement vers l'état
+  // vide ci-dessous.
+  const user = await requireUser("/auteur/tableau-de-bord");
   const revenue = await fetchAuthorRevenue();
 
   if (!revenue) {

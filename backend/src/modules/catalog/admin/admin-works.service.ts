@@ -238,9 +238,20 @@ export class AdminWorksService {
     admin: AuthenticatedUser,
     tenant: TenantContext,
   ): Promise<WorkWithFormats> {
+    // Filtre applicatif redondant avec la RLS (défense en profondeur, audit
+    // Phase 0 §0.3) : un `findUnique` par id seul reposait entièrement sur la
+    // policy `works_select` pour l'isolation tenant, comme `list()`/`stats()`
+    // le font déjà via `where.tenantId`.
     const work = await this.prisma.withRlsContext(
       buildRlsContext(admin, tenant.tenantId),
-      (tx) => tx.work.findUnique({ where: { id }, include: workInclude }),
+      (tx) =>
+        tx.work.findFirst({
+          where: {
+            id,
+            ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
+          },
+          include: workInclude,
+        }),
     );
     if (!work) {
       throw new NotFoundException("Cette œuvre n'existe pas.");
@@ -405,7 +416,14 @@ export class AdminWorksService {
   ): Promise<void> {
     await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
-        const existing = await tx.work.findUnique({ where: { id } });
+        // Filtre applicatif redondant avec la RLS (défense en profondeur,
+        // audit Phase 0 §0.3).
+        const existing = await tx.work.findFirst({
+          where: {
+            id,
+            ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
+          },
+        });
         if (!existing) {
           throw new NotFoundException("Cette œuvre n'existe pas.");
         }

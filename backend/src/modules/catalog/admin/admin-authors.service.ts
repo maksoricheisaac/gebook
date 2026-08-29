@@ -157,9 +157,18 @@ export class AdminAuthorsService {
     admin: AuthenticatedUser,
     tenant: TenantContext,
   ): Promise<AuthorWithTranslations> {
+    // Filtre applicatif redondant avec la RLS (défense en profondeur, audit
+    // Phase 0 §0.3, même correctif que `AdminWorksService.findOne`).
     const author = await this.prisma.withRlsContext(
       buildRlsContext(admin, tenant.tenantId),
-      (tx) => tx.author.findUnique({ where: { id }, include: authorInclude }),
+      (tx) =>
+        tx.author.findFirst({
+          where: {
+            id,
+            ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
+          },
+          include: authorInclude,
+        }),
     );
     if (!author) {
       throw new NotFoundException("Cet auteur n'existe pas.");
@@ -239,7 +248,14 @@ export class AdminAuthorsService {
 
     await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
-        const existing = await tx.author.findUnique({ where: { id } });
+        // Filtre applicatif redondant avec la RLS (défense en profondeur,
+        // audit Phase 0 §0.3).
+        const existing = await tx.author.findFirst({
+          where: {
+            id,
+            ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
+          },
+        });
         if (!existing) {
           throw new NotFoundException("Cet auteur n'existe pas.");
         }
@@ -308,7 +324,14 @@ export class AdminAuthorsService {
   ): Promise<void> {
     await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
-        const existing = await tx.author.findUnique({ where: { id } });
+        // Filtre applicatif redondant avec la RLS (défense en profondeur,
+        // audit Phase 0 §0.3).
+        const existing = await tx.author.findFirst({
+          where: {
+            id,
+            ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
+          },
+        });
         if (!existing) {
           throw new NotFoundException("Cet auteur n'existe pas.");
         }
