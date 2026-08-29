@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Globe, ImagePlus, Link2, Pencil } from "lucide-react";
+import { ExternalLink, Globe, ImagePlus, Link2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -328,10 +328,18 @@ export function TenantSettingsManager() {
         title="Profil de l’espace"
         description="Visible sur la fiche publique et dans les échanges avec les lecteurs."
         actions={
-          <Button type="button" variant="outline" size="sm" onClick={startEdit}>
-            <Pencil aria-hidden />
-            Modifier
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="sm">
+              <a href={`/espaces/${profile.slug}`} target="_blank" rel="noreferrer">
+                <ExternalLink aria-hidden />
+                Voir la vitrine publique
+              </a>
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={startEdit}>
+              <Pencil aria-hidden />
+              Modifier
+            </Button>
+          </div>
         }
       >
         <dl className="grid gap-5 sm:grid-cols-2">

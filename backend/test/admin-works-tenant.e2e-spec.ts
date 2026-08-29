@@ -495,9 +495,10 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
         .set('Origin', ORIGIN)
         .send({ status: 'approved' })
         .expect(200);
-      // Publiée, mais explicitement réservée au tenant — pas au catalogue
-      // agrégé (Phase 5 n'existe pas encore : aucune vitrine ne l'affiche
-      // ailleurs pour l'instant, ce qui est le comportement attendu ici).
+      // Publiée, mais explicitement réservée au tenant — jamais dans
+      // l'agrégat multi-tenant, mais bien sur sa propre fiche et la vitrine
+      // de son tenant (Phase 5) : c'est très exactement ce que `tenant_only`
+      // veut dire, pas une invisibilité totale.
       await ownerAgent
         .patch(`/admin/works/${workId}`)
         .set('Origin', ORIGIN)
@@ -505,8 +506,8 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
         .expect(200);
 
       const slug = `tenant-works-visibility-tenant-only-${RUN_ID}`;
-      await request(app.getHttpServer()).get(`/works/${slug}`).expect(404);
 
+      // Absente de l'agrégat multi-tenant, avec ou sans recherche.
       const list = await request(app.getHttpServer())
         .get(`/works?q=${encodeURIComponent(slug)}`)
         .expect(200);
@@ -514,6 +515,19 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
         (w) => w.slug,
       );
       expect(slugs).not.toContain(slug);
+
+      // Consultable par lien direct — une œuvre `tenant_only` n'est pas
+      // secrète, seulement non listée dans l'agrégat.
+      await request(app.getHttpServer()).get(`/works/${slug}`).expect(200);
+
+      // Et bien listée dans la vitrine de SON tenant (Phase 5).
+      const storefront = await request(app.getHttpServer())
+        .get(`/works?tenant=tenant-works-a-${RUN_ID}`)
+        .expect(200);
+      const storefrontSlugs = (
+        storefront.body as { data: { slug: string }[] }
+      ).data.map((w) => w.slug);
+      expect(storefrontSlugs).toContain(slug);
 
       // Mais reste bien visible depuis le back-office du tenant lui-même.
       const adminView = await ownerAgent
@@ -562,6 +576,39 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
 
       const slug = `tenant-works-visibility-public-${RUN_ID}`;
       await request(app.getHttpServer()).get(`/works/${slug}`).expect(200);
+    });
+  });
+
+  describe('vitrine publique d’un tenant (Phase 5)', () => {
+    it('expose le profil public d’un tenant actif, par slug', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/tenants/public/tenant-works-a-${RUN_ID}`)
+        .expect(200);
+
+      const body = response.body as {
+        slug: string;
+        name: string;
+        type: string;
+      };
+      expect(body.slug).toBe(`tenant-works-a-${RUN_ID}`);
+      expect(body.name).toBe('Maison A (test œuvres)');
+      expect(body.type).toBe('independent_author');
+    });
+
+    it('refuse un slug de tenant inconnu', async () => {
+      await request(app.getHttpServer())
+        .get(`/tenants/public/aucun-tel-espace-${RUN_ID}`)
+        .expect(404);
+    });
+
+    it('liste les auteurs d’un tenant via le filtre public `?tenant=`', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/authors?tenant=tenant-works-a-${RUN_ID}`)
+        .expect(200);
+
+      const slugs = (response.body as { slug: string }[]).map((a) => a.slug);
+      expect(slugs).toContain(`tenant-works-author-self-${RUN_ID}`);
+      expect(slugs).not.toContain(`tenant-works-author-b-${RUN_ID}`);
     });
   });
 });

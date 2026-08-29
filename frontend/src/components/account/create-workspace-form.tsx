@@ -7,13 +7,7 @@ import { Field, FormError } from "@/src/components/ui/field";
 import { Input, Select, Textarea } from "@/src/components/ui/input";
 import { createTenantAction, type CreateTenantFormState } from "@/src/lib/tenant-actions";
 import { slugify } from "@/src/lib/slugify";
-
-const TENANT_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "independent_author", label: "Auteur indépendant" },
-  { value: "publishing_house", label: "Maison d'édition" },
-  { value: "collective", label: "Collectif d'auteurs" },
-  { value: "cultural_organization", label: "Organisation culturelle" },
-];
+import { TENANT_TYPE_OPTIONS } from "@/src/lib/tenant-type";
 
 const initialState: CreateTenantFormState = {};
 

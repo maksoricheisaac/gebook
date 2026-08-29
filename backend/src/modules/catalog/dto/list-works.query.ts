@@ -38,6 +38,12 @@ export class ListWorksQuery {
   @MaxLength(180)
   author?: string;
 
+  /** Slug de tenant (Phase 5, vitrine publique d'un espace). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  tenant?: string;
+
   @IsOptional()
   @IsEnum(FormatType, {
     message:

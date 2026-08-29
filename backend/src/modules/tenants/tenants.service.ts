@@ -1,4 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buildRlsContext } from '../../prisma/rls-context';
@@ -8,6 +12,10 @@ import {
   toTenantMembershipResponse,
   type TenantMembershipResponse,
 } from './dto/tenant-membership.response';
+import {
+  toTenantPublicProfile,
+  type TenantPublicProfileResponse,
+} from './dto/tenant-public.response';
 
 @Injectable()
 export class TenantsService {
@@ -107,5 +115,26 @@ export class TenantsService {
     );
 
     return member ? toTenantMembershipResponse(member) : null;
+  }
+
+  /**
+   * Profil public d'un tenant (Phase 5, vitrine). Aucun contexte RLS posé,
+   * comme `WorksService`/`AuthorsService` pour leurs lectures publiques : la
+   * policy `tenants_select` porte elle-même la condition `status = 'active'`
+   * qui autorise cette lecture anonyme (`20260823020000_add_rls_policies`,
+   * ligne 76) — poser un contexte ici n'apporterait rien de plus.
+   */
+  async findPublicBySlug(slug: string): Promise<TenantPublicProfileResponse> {
+    const tenant = await this.prisma.tenant.findFirst({
+      where: { slug, status: 'active' },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException(
+        "Cet espace n'existe pas ou n'est plus actif.",
+      );
+    }
+
+    return toTenantPublicProfile(tenant);
   }
 }

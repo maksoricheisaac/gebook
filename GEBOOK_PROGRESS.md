@@ -2,7 +2,7 @@
 
 ## État global
 
-Phase actuelle : PHASE 4 — Système éditorial et publication
+Phase actuelle : PHASE 5 — Boutique / espace public du tenant
 Statut : TERMINÉE
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
@@ -621,6 +621,123 @@ frontend  pnpm lint                       → 0 erreur, 3 avertissements préexi
 
 ---
 
-## PHASE 5
+## PHASE 5 — Boutique / espace public du tenant
+
+### Objectif
+
+Donner à chaque tenant une vitrine publique réelle (logo, nom, description, réseaux sociaux, site web, œuvres publiées, auteurs), en réutilisant les champs de branding déjà présents sur `Tenant` — sans construire de nouveau système, et sans utiliser `TenantSetting` sans raison.
+
+### Travaux réalisés — Backend
+
+**Nouvelle route publique `GET /tenants/public/:slug`** — profil public d'un tenant actif. Vérifié avant d'écrire quoi que ce soit : la policy RLS `tenants_select` a déjà, depuis la Phase 4 (en réalité depuis la migration initiale des policies), un accès public inconditionnel pour `status = 'active'` — aucune migration n'était nécessaire pour *cette* route précise. Placée dans un contrôleur séparé (`TenantsPublicController`, chemin `/tenants/public/:slug`) plutôt qu'ajoutée à `TenantsController` (`@UseGuards(AuthGuard)` au niveau de la classe) — et volontairement pas `/tenants/:slug`, pour éliminer tout risque qu'un paramètre générique intercepte un jour `/tenants/me` selon l'ordre d'enregistrement des routes Express.
+
+**`TenantSetting` — confirmé inutile, non utilisé, conformément à la consigne.** Tous les champs demandés par la mission (nom, description, logo, couverture, site web, réseaux sociaux) vivent déjà sur `Tenant` — c'est exactement ce que `toTenantPublicProfile()` lit. `TenantSetting` reste un modèle mort (déjà signalé dans l'audit initial), et cette phase ne lui donne aucune raison de plus d'exister.
+
+**Filtres `?tenant=` sur les listes publiques existantes** — plutôt que de dupliquer la pagination/sélection déjà écrite dans `WorksService`/`AuthorsService`, ajout d'un paramètre `tenant` (slug) à `ListWorksQuery` et à un nouveau `ListAuthorsQuery` (hérite de `LocaleQuery` : `/categories` partage `LocaleQuery` et n'a aucune notion de tenant, donc le champ n'y est pas ajouté directement). `GET /works?tenant=X` et `GET /authors?tenant=X` réutilisent tout le reste (recherche, pagination, formats…) sans code dupliqué.
+
+**Découverte importante en cours de route — `tenant_only` était bloquée par RLS, pas seulement par le filtre applicatif.** En écrivant le test de la vitrine, `GET /works/:slug` sur une œuvre `tenant_only` renvoyait 404 au lieu du 200 attendu. Investigation : la policy RLS `works_select` (Phase 4, migration `20260823020000_add_rls_policies`) n'autorise un visiteur anonyme que pour `status = 'published' AND visibility = 'public'` — `tenant_only` n'y a jamais été inclus, parce qu'aucune vitrine n'existait encore pour en avoir besoin. Mon filtre applicatif (`visibleWithinOwnTenant`, ajouté dans `works.service.ts`) était donc correct mais neutralisé par une policy plus stricte en dessous.
+
+Corrigé par une nouvelle migration (`20260829000000_works_select_tenant_only_public`) qui élargit trois policies `SELECT` (`works_select`, `work_translations_select`, `work_formats_select`) : le visiteur anonyme peut désormais lire une œuvre `status = 'published' AND visibility <> 'private'` — c'est-à-dire `public` **ou** `tenant_only` — au lieu de `visibility = 'public'` strictement. `private` reste totalement inatteignable pour un visiteur anonyme, dans tous les cas. `work_files` (le contenu réel des livres, servi uniquement via `LibraryController`) n'a pas cette policy et n'avait aucune raison d'être touché — la vitrine n'expose jamais de fichier, seulement des métadonnées et des prix.
+
+Cette découverte a aussi affiné le modèle de visibilité lui-même :
+- **Agrégat multi-tenant** (`/works` sans filtre `tenant`) : reste strictement `visibility = 'public'` (`publiclyVisible`, inchangé depuis la Phase 4).
+- **Vitrine d'un tenant** (`/works?tenant=X`, ou la fiche de l'œuvre elle-même) : montre `public` **et** `tenant_only` (nouvelle constante `visibleWithinOwnTenant`) — c'est très exactement ce que « réservée à mon espace » est censé vouloir dire, pas une invisibilité totale.
+
+Un test de la Phase 4 (`admin-works-tenant.e2e-spec.ts`) affirmait l'ancien comportement (`tenant_only` → 404 partout) ; il a été mis à jour pour refléter ce comportement plus juste, avec les nouvelles assertions ajoutées à côté (visible par lien direct, visible dans la vitrine de son tenant, absente de l'agrégat).
+
+**Cohérence Phase 4 → Phase 5 sur `AuthorsService`** — `list()`/`findBySlug()` comptaient déjà les œuvres publiées d'un auteur avec un filtre qui ne vérifiait que `status`, pas `visibility` (incohérence introduite sans le vouloir par mon propre changement de Phase 4). Corrigé au passage : `publishedPublicWorks` (agrégat, strict `public`) vs `publishedWorksWithinOwnTenant` (vitrine/fiche directe, `public` + `tenant_only`) — même distinction que pour les œuvres elles-mêmes.
+
+### Travaux réalisés — Frontend
+
+- `src/lib/catalog.ts` — `WorksFilters` gagne un champ `tenant?`, `fetchAuthors()` accepte un slug de tenant optionnel.
+- `src/lib/tenant-public.ts` (nouveau) — `fetchTenantPublicProfile(slug)`, même style que les autres fonctions de `catalog.ts`.
+- `src/lib/tenant-type.ts` (nouveau) — libellés du type d'espace, extraits de `create-workspace-form.tsx` (qui les avait en local) puisqu'une deuxième page en a maintenant besoin.
+- `app/(site)/espaces/[slug]/page.tsx` (nouveau) — la vitrine elle-même : logo (ou initiales), nom, type, description, site web, réseaux sociaux, puis les auteurs de l'espace (`AuthorCard`, déjà existant) et ses œuvres (`BookGrid`, déjà existant). Structure calquée sur `/auteurs/[slug]/page.tsx` — mêmes composants de mise en page (`Container`/`Breadcrumb`/`SectionHeader`), même gestion du 404 (`ApiError.isNotFound` → `notFound()`), même `generateMetadata`.
+- `src/components/admin/tenant-settings-manager.tsx` — bouton « Voir la vitrine publique » ajouté à côté de « Modifier », pour qu'un owner/admin retrouve facilement sa propre page.
+
+**« Collections éventuelles »** — la mission mentionne des collections comme un élément possible de la page publique. Vérifié : aucun modèle `Collection` n'existe dans le schéma, et le mot « éventuelles » signale explicitement un élément conditionnel. Décision : ne rien construire — inventer un nouveau concept de données pour une mention explicitement optionnelle serait le contraire de « ne complexifie pas inutilement ».
+
+### Fichiers modifiés / créés
+
+- `backend/src/modules/tenants/dto/tenant-public.response.ts` (nouveau)
+- `backend/src/modules/tenants/tenants-public.controller.ts` (nouveau)
+- `backend/src/modules/tenants/tenants.service.ts` — `findPublicBySlug()`
+- `backend/src/modules/tenants/tenants.module.ts` — enregistrement du nouveau contrôleur
+- `backend/src/modules/catalog/dto/list-works.query.ts` — champ `tenant`
+- `backend/src/modules/catalog/dto/list-authors.query.ts` (nouveau)
+- `backend/src/modules/catalog/catalog.controller.ts` — `GET /authors` utilise `ListAuthorsQuery`
+- `backend/src/modules/catalog/works.service.ts` — `visibleWithinOwnTenant`, `findBySlug()`/`buildFilters()` mis à jour
+- `backend/src/modules/catalog/authors.service.ts` — même distinction agrégat/vitrine pour le comptage d'œuvres
+- `backend/prisma/migrations/20260829000000_works_select_tenant_only_public/migration.sql` (nouveau)
+- `backend/test/admin-works-tenant.e2e-spec.ts` — test Phase 4 mis à jour + nouveau bloc « vitrine publique »
+- `frontend/src/lib/catalog.ts`, `frontend/src/lib/tenant-public.ts` (nouveau), `frontend/src/lib/tenant-type.ts` (nouveau)
+- `frontend/app/(site)/espaces/[slug]/page.tsx` (nouveau)
+- `frontend/src/components/account/create-workspace-form.tsx` — réutilise `TENANT_TYPE_OPTIONS` partagé
+- `frontend/src/components/admin/tenant-settings-manager.tsx` — lien vers la vitrine
+
+### Base de données / migrations
+
+Une migration (`20260829000000_works_select_tenant_only_public`) — élargit 3 policies RLS `SELECT` (`works_select`, `work_translations_select`, `work_formats_select`) pour laisser passer `tenant_only` en plus de `public`, sans jamais laisser passer `private`. Aucun changement de schéma (colonnes/tables) — uniquement des policies. Appliquée avec `pnpm db:deploy`, vérifiée par les tests avant et après.
+
+### Tests exécutés
+
+```text
+backend   pnpm exec tsc --noEmit          → OK
+backend   pnpm lint                       → OK
+backend   pnpm test (unitaires)           → 12 suites / 81 tests
+backend   pnpm db:deploy                  → migration appliquée avec succès
+backend   admin-works-tenant + catalog    → 47/47 (isolé, avant la suite complète)
+backend   pnpm test:e2e (suite complète)  → 14/14 suites, 198/198 tests (195 + 3 nouveaux)
+frontend  pnpm typecheck                  → OK
+frontend  pnpm lint                       → 0 erreur, 3 avertissements préexistants et sans rapport
+```
+
+**Limite honnête à signaler** : la vitrine elle-même (page frontend) n'a pas été vérifiée dans un navigateur réel — même limite que les Phases 2/3/4. Le comportement backend qu'elle consomme (profil public, œuvres/auteurs filtrés par tenant, `tenant_only` visible par lien direct et absente de l'agrégat) est, lui, entièrement vérifié par les tests e2e.
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| `GET /tenants/public/:slug` | VALIDÉ (2 tests e2e : profil existant, slug inconnu) |
+| `GET /works?tenant=X` / `GET /authors?tenant=X` | VALIDÉ |
+| `tenant_only` visible sur sa fiche et la vitrine de son tenant, absente de l'agrégat | VALIDÉ (migration RLS + tests) |
+| `private` reste inatteignable pour un visiteur anonyme | VALIDÉ (comportement non modifié, vérifié par non-régression) |
+| Page `/espaces/[slug]` (frontend) | FONCTIONNEL — non vérifié en navigateur réel |
+| `TenantSetting` | ABSENT PAR DÉCISION — confirmé sans utilité, non touché |
+| Collections | ABSENTES PAR DÉCISION — aucun modèle de données, mention explicitement optionnelle |
+
+### Problèmes rencontrés
+
+- `pnpm db:deploy` a mis plus de 60 secondes à démarrer côté CLI (Prisma/Node), sans blocage réel côté base (aucun verrou, aucune connexion bloquante trouvée) — la migration s'est appliquée avec succès dès que le processus a réellement démarré. Pas de cause identifiée avec certitude ; pas reproduit une seconde fois.
+
+### Décisions techniques
+
+- Contrôleur public séparé (`/tenants/public/:slug`) plutôt qu'une route de plus dans `TenantsController` : évite tout risque de collision de route avec `/tenants/me`, indépendamment de l'ordre d'enregistrement.
+- RLS élargie plutôt que contournée : la policy `works_select` reste la seule autorité pour ce qu'un visiteur anonyme peut lire ; le filtre applicatif (`visibleWithinOwnTenant`) reste un filet redondant, pas un substitut — même philosophie de défense en profondeur que la Phase 0.
+- Pas de nouvel endpoint dédié à la liste d'œuvres/auteurs de la vitrine : réutilisation de `/works`/`/authors` avec un paramètre `tenant`, pour ne pas dupliquer la pagination, la recherche et la sélection déjà écrites.
+- `TENANT_TYPE_LABELS` extrait dans un fichier partagé dès qu'un deuxième appelant en a eu besoin — ni avant (aurait anticipé un besoin qui n'existait pas), ni laissé dupliqué (aurait divergé silencieusement avec le temps).
+
+### Éléments restant à traiter
+
+1. Vérification manuelle en navigateur de la page `/espaces/[slug]` — non faite, à faire avec un serveur de développement démarré.
+2. La cause exacte de la lenteur ponctuelle de `pnpm db:deploy` n'a pas été déterminée — signalé, pas creusé davantage (non reproduit).
+3. Aucune autre dette identifiée dans le périmètre de cette phase.
+
+### Validation
+
+- [x] Typecheck backend
+- [x] Lint backend
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires
+- [x] Tests e2e (suite complète + nouveaux tests ciblés)
+- [x] Vérification multi-tenant (RLS élargie précisément et testée, aucune régression d'isolation entre tenants — `private` reste bloquée, `tenant_only` d'un tenant n'apparaît jamais dans la vitrine d'un autre)
+- [x] Vérification permissions (aucun changement aux permissions d'écriture — uniquement des lectures publiques déjà anonymes)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée)
+- [x] Documentation mise à jour (ce fichier)
+
+---
+
+## PHASE 6
 
 *(non commencée)*

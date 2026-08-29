@@ -10,11 +10,17 @@ import { TenantContextService } from './tenant-context.service';
 import { TenantSettingsController } from './tenant-settings.controller';
 import { TenantSettingsService } from './tenant-settings.service';
 import { TenantsController } from './tenants.controller';
+import { TenantsPublicController } from './tenants-public.controller';
 import { TenantsService } from './tenants.service';
 
 @Module({
   imports: [AuthModule, FilesModule, CommissionsModule],
-  controllers: [TenantsController, TeamController, TenantSettingsController],
+  controllers: [
+    TenantsController,
+    TenantsPublicController,
+    TeamController,
+    TenantSettingsController,
+  ],
   providers: [
     TenantsService,
     TenantContextService,

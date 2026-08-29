@@ -39,6 +39,20 @@ export const publiclyVisible = {
   author: { status: AuthorStatus.active },
 } satisfies Prisma.WorkWhereInput;
 
+/**
+ * Visibilité d'une œuvre depuis SA PROPRE fiche ou la vitrine de SON tenant
+ * (Phase 5) : `tenant_only` s'y montre, contrairement au catalogue agrégé
+ * (`publiclyVisible` ci-dessus, qui n'accepte que `public`). Seule `private`
+ * reste exclue dans les deux cas — la nuance entre les deux constantes,
+ * c'est très exactement ce que `tenant_only` est censé vouloir dire : visible
+ * en regardant CET espace, jamais dans l'agrégat multi-tenant.
+ */
+const visibleWithinOwnTenant = {
+  status: WorkStatus.published,
+  visibility: { not: WorkVisibility.private },
+  author: { status: AuthorStatus.active },
+} satisfies Prisma.WorkWhereInput;
+
 @Injectable()
 export class WorksService {
   constructor(private readonly prisma: PrismaService) {}
@@ -81,7 +95,13 @@ export class WorksService {
       // `findFirst` et non `findUnique` : le slug est unique, mais la condition de
       // visibilité doit s'appliquer. Une œuvre en brouillon ne doit pas devenir
       // accessible simplement parce que son adresse est connue.
-      where: { slug, ...publiclyVisible },
+      //
+      // `visibleWithinOwnTenant`, pas `publiclyVisible` : une œuvre
+      // `tenant_only` reste consultable par lien direct (sa propre fiche, ou
+      // la vitrine de son tenant) — seule `private` doit rester inatteignable
+      // ici. `publiclyVisible` (strict `public`) reste réservée à l'agrégat
+      // (`list()`/`buildFilters()` sans filtre `tenant`).
+      where: { slug, ...visibleWithinOwnTenant },
       select: buildWorkDetailSelection(locale),
     });
 
@@ -95,7 +115,12 @@ export class WorksService {
   }
 
   private buildFilters(query: ListWorksQuery): Prisma.WorkWhereInput {
-    const filters: Prisma.WorkWhereInput = { ...publiclyVisible };
+    // Un filtre par tenant, c'est la vitrine de CET espace (Phase 5) : elle
+    // montre aussi ses œuvres `tenant_only`, pas seulement `public`. Sans
+    // filtre tenant, c'est l'agrégat multi-tenant — strictement `public`.
+    const filters: Prisma.WorkWhereInput = query.tenant
+      ? { ...visibleWithinOwnTenant }
+      : { ...publiclyVisible };
 
     if (query.q) {
       // Même périmètre de recherche que la version PHP : titre, auteur et catégorie —
@@ -131,6 +156,10 @@ export class WorksService {
 
     if (query.author) {
       filters.author = { ...publiclyVisible.author, slug: query.author };
+    }
+
+    if (query.tenant) {
+      filters.tenant = { slug: query.tenant };
     }
 
     if (query.format) {

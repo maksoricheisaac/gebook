@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { AuthorsService } from './authors.service';
 import { CategoriesService } from './categories.service';
 import { WorksService } from './works.service';
+import { ListAuthorsQuery } from './dto/list-authors.query';
 import { ListWorksQuery } from './dto/list-works.query';
 import { LocaleQuery } from './dto/locale.query';
 import type {
@@ -48,8 +49,10 @@ export class CatalogController {
   }
 
   @Get('authors')
-  listAuthors(@Query() query: LocaleQuery): Promise<AuthorSummaryResponse[]> {
-    return this.authors.list(query.locale);
+  listAuthors(
+    @Query() query: ListAuthorsQuery,
+  ): Promise<AuthorSummaryResponse[]> {
+    return this.authors.list(query.locale, query.tenant);
   }
 
   @Get('authors/:slug')

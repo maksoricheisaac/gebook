@@ -79,6 +79,8 @@ export interface WorksFilters {
   q?: string;
   category?: string;
   author?: string;
+  /** Slug de tenant (Phase 5, vitrine publique d'un espace). */
+  tenant?: string;
   format?: string;
   featured?: boolean;
   page?: number;
@@ -105,8 +107,11 @@ export function fetchWork(slug: string): Promise<WorkDetail> {
   });
 }
 
-export function fetchAuthors(): Promise<AuthorSummary[]> {
-  return apiFetch<AuthorSummary[]>("/authors", { revalidate: CATALOG_REVALIDATE });
+export function fetchAuthors(tenant?: string): Promise<AuthorSummary[]> {
+  return apiFetch<AuthorSummary[]>("/authors", {
+    query: tenant ? { tenant } : undefined,
+    revalidate: CATALOG_REVALIDATE,
+  });
 }
 
 export function fetchAuthor(slug: string): Promise<AuthorDetail> {
