@@ -1476,3 +1476,78 @@ Décisions :
 Commit : `feat: add a real multi-tenant shopping cart wired to checkout`
 Push : effectué
 
+
+
+### Tâche 6 — Vérifier le parcours complet depuis la boutique
+
+Objectif :
+Tester réellement (pas en théorie) le parcours entier : boutique/catalogue → œuvre → panier → checkout → connexion si nécessaire → paiement → confirmation → bibliothèque.
+
+Travaux réalisés :
+Poursuite directe de la vérification navigateur de la Tâche 4/5, sans interruption, avec la même commande (`GB-20260829-EPQUBE`) :
+1. `/mes-commandes` → commande visible, statut « En attente », bouton « Régler la commande ».
+2. `/paiement/GB-20260829-EPQUBE` → détail exact (2 lignes, 18 000 FCFA), section honnête « Le paiement en ligne n'est pas encore ouvert » (aucun vrai prestataire connecté, cohérent avec l'état réel du projet).
+3. « Ouvrir une tentative de paiement » → un `Payment` réellement créé côté API, section « Prestataire de simulation — environnement de développement » apparaît, avec l'avertissement explicite « Aucun montant n'est débité ».
+4. « Simuler un règlement réussi » → « Paiement confirmé — 18 000 FCFA réglés le 29 août 2026 à 23:59 ».
+5. `/bibliotheque` → l'œuvre numérique de la commande (« Théorie musicale simplifiée ») apparaît réellement, ajoutée le jour même — confirmation que `ReaderLibrary` a bien été créée par la confirmation de paiement, pas seulement que la commande existe.
+
+Résultat :
+VALIDÉ — parcours complet Boutique → Œuvre → Panier → Checkout → Paiement (simulé) → Bibliothèque, vérifié de bout en bout avec de vraies données créées en base, pas une supposition à partir du code.
+
+---
+
+### Tâche 7 — Vérifier les routes frontend une par une & Tâche 8 — Corriger toute route qui échoue
+
+Objectif :
+Construire la matrice de routes exigée et corriger toute route en échec.
+
+Travaux réalisés :
+Vérification par deux moyens complémentaires : statut HTTP réel (`curl`, non authentifié) pour la totalité des routes, puis navigation réelle en navigateur authentifié (session « John Doe », propriétaire de tenant) pour un échantillon représentatif de chaque catégorie (public, catalogue, panier, compte lecteur, back-office tenant, back-office plateforme).
+
+| Route | Statut HTTP (anonyme) | Vérifié en navigateur | Résultat |
+|---|---|---|---|
+| `/` | 200 | oui | FONCTIONNEL |
+| `/livres` | 200 | oui | FONCTIONNEL |
+| `/livres/[slug]` | 200 | oui (panier ajouté, deux formats testés) | VALIDÉ |
+| `/auteurs` | 200 | oui | FONCTIONNEL |
+| `/espaces/[slug]` | 200 | oui (Tâche 3) | VALIDÉ |
+| `/panier` | 200 | oui (Tâche 4/5, vide et rempli) | VALIDÉ |
+| `/connexion` | 200 | non — session déjà active | FONCTIONNEL |
+| `/inscription` | 200 | non | FONCTIONNEL |
+| `/mon-espace` | 307 anonyme, 200 authentifié | oui | VALIDÉ |
+| `/mes-commandes` | 307 anonyme, 200 authentifié | oui (Tâche 6) | VALIDÉ |
+| `/bibliotheque` | 307 anonyme, 200 authentifié | oui (Tâche 6) | VALIDÉ |
+| `/admin` | 307 anonyme, 200 authentifié (owner tenant) | oui | VALIDÉ |
+| `/admin/oeuvres` | 307 anonyme, 200 authentifié | oui | VALIDÉ |
+| `/admin/auteurs` | 307 anonyme, 200 authentifié | oui | VALIDÉ |
+| `/admin/team` | 307 anonyme, 200 authentifié | oui (Tâche 1) | VALIDÉ |
+| `/admin/parametres` | 307 anonyme, 200 authentifié | oui (Tâche 3) | VALIDÉ |
+| `/admin/commissions` | 307 anonyme ; redirige vers `/mon-espace` pour un owner de tenant non platform_admin | oui | FONCTIONNEL — comportement voulu, pas un échec (page réservée au superadmin plateforme) |
+| `/creer-un-espace` | 307 anonyme | non | FONCTIONNEL (déjà vérifié Phase 2) |
+| `/contact` | 200 | non | FONCTIONNEL |
+| `/a-propos` | 200 | non | FONCTIONNEL |
+| `/configuration-initiale` | 307 anonyme (bootstrap superadmin, jeton requis) | non | FONCTIONNEL, comportement attendu |
+
+Aucune route en échec trouvée (aucun 404/500/502 inattendu). `/admin/commissions` a d'abord semblé suspect (redirection au lieu d'un contenu) mais s'est révélé être le contrôle d'accès fonctionnant correctement : cette page (règles de commission) est réservée au platform_admin (`@Roles('admin')` côté API), et le compte de test est propriétaire de tenant, pas superadmin — la redirection vers `/mon-espace` est le comportement voulu, pas un bug.
+
+Résultat :
+VALIDÉ pour toutes les routes de la matrice — aucune correction nécessaire (Tâche 8 sans objet, faute de route cassée trouvée).
+
+---
+
+### Tâche 9 — Audit de cohérence API / Frontend
+
+Objectif :
+Vérifier que le contrat frontend, proxy, contrôleur, garde, service, Prisma, RLS est cohérent (URL, méthode, en-têtes, cookies, `credentials`, corps, DTO, réponse, gestion d'erreur).
+
+Travaux réalisés :
+L'essentiel de cet audit a déjà été fait, avec correction, en Tâche 1 (l'incohérence réelle trouvée était précisément de cette nature : l'en-tête `Origin` transmis par les relais ne correspondait pas toujours à ce que `OriginGuard` attendait). Complété ici par :
+- Vérification des appels réseau réels du navigateur (`read_network_requests`) sur chaque parcours testé (Tâches 3, 4, 5, 6) : tous les appels `/api/admin/*`, `/api/account/*` aboutissent avec le statut attendu (200/201/204/404/409 selon le cas), jamais de blocage CORS ni de 403 d'origine.
+- Vérification que `POST /orders` (checkout panier, Tâche 5) reçoit exactement `{ items: [...], ...delivery }`, conforme à `CreateOrderDto`, et que la réponse (`orderNumber`) est bien celle attendue par `checkoutCartAction`.
+- Vérification que `WorkSummaryResponse.tenant` (ajouté Tâche 4) est bien répercuté côté frontend (`WorkSummary.tenant` dans `catalog.ts`) — pas de désynchronisation de type, confirmée par le typecheck strict des deux côtés.
+
+Résultat :
+VALIDÉ — aucune nouvelle incohérence trouvée au-delà de celle déjà corrigée en Tâche 1.
+
+Commit : documentation uniquement (aucun changement de code pour les Tâches 6-9, seulement des vérifications) — inclus dans le commit suivant avec la mise à jour de `GEBOOK_PROGRESS.md`.
+
