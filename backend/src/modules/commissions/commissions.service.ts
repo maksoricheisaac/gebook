@@ -319,7 +319,7 @@ export class CommissionsService {
     const tenantId = assertCanViewTenantFinance(tenant);
     const { from, to } = resolveDateRange(range);
 
-    const [publishedWorks, activeAuthors, distributions, pending] =
+    const [publishedWorks, activeAuthors, distributions, pending, counts] =
       await this.prisma.withRlsContext(buildRlsContext(admin, tenantId), (tx) =>
         Promise.all([
           tx.work.count({ where: { tenantId, status: 'published' } }),
@@ -340,6 +340,24 @@ export class CommissionsService {
             where: { orderItem: { tenantId }, payoutStatus: 'pending' },
             _sum: { authorNetAmount: true },
           }),
+          // Distinct de `salesCount` (une ligne par `SaleDistribution`) : une
+          // commande peut porter plusieurs lignes du même tenant, et un même
+          // lecteur peut avoir acheté plusieurs fois — SQL brut pour un vrai
+          // COUNT(DISTINCT ...), impossible à exprimer avec `groupBy`/`_count`
+          // Prisma sur une relation. Même style paramétré que
+          // `revenueTimeseries()` ci-dessous ; le filtre `oi.tenant_id` est
+          // redondant avec la RLS (défense en profondeur, cf. Phase 0 §0.3).
+          tx.$queryRaw<{ orders_count: number; readers_count: number }[]>`
+            SELECT
+              COUNT(DISTINCT oi.order_id)::int AS orders_count,
+              COUNT(DISTINCT o.user_id)::int AS readers_count
+            FROM sale_distributions sd
+            JOIN order_items oi ON oi.id = sd.order_item_id
+            JOIN orders o ON o.id = oi.order_id
+            WHERE oi.tenant_id = ${tenantId}
+              AND sd.calculated_at >= ${from}
+              AND sd.calculated_at <= ${to}
+          `,
         ]),
       );
 
@@ -347,6 +365,8 @@ export class CommissionsService {
       publishedWorks,
       activeAuthors,
       salesCount: distributions._count,
+      ordersCount: counts[0]?.orders_count ?? 0,
+      readersCount: counts[0]?.readers_count ?? 0,
       revenueCollected: decimalToString(distributions._sum.grossAmount),
       commissionTotal: decimalToString(
         distributions._sum.gebookCommissionAmount,
@@ -454,6 +474,10 @@ export interface TenantStatisticsResponse {
   activeAuthors: number;
   /** Nombre de lignes vendues (une `SaleDistribution` par ligne de commande), pas de commandes. */
   salesCount: number;
+  /** Commandes distinctes contenant au moins une ligne de ce tenant, sur la période. */
+  ordersCount: number;
+  /** Lecteurs distincts ayant acheté au moins une ligne de ce tenant, sur la période. */
+  readersCount: number;
   revenueCollected: string;
   commissionTotal: string;
   authorNetTotal: string;

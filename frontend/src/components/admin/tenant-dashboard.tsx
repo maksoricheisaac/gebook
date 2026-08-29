@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { BookText, Percent, UserSquare2 } from "lucide-react";
+import { BookText, Percent, ReceiptText, Users, UserSquare2 } from "lucide-react";
 
 import {
   AdminPageHeader,
@@ -30,6 +30,8 @@ interface TenantStatistics {
   publishedWorks: number;
   activeAuthors: number;
   salesCount: number;
+  ordersCount: number;
+  readersCount: number;
   revenueCollected: string;
   commissionTotal: string;
   authorNetTotal: string;
@@ -137,6 +139,16 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
               icon={UserSquare2}
             />
             <AdminStatCard label="Ventes" value={statistics.salesCount} icon={Percent} />
+            <AdminStatCard
+              label="Commandes"
+              value={statistics.ordersCount}
+              icon={ReceiptText}
+            />
+            <AdminStatCard
+              label="Lecteurs"
+              value={statistics.readersCount}
+              icon={Users}
+            />
             <AdminStatCard
               label="Encaissé"
               value={formatPrice(statistics.revenueCollected)}

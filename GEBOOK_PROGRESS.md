@@ -2,8 +2,8 @@
 
 ## État global
 
-Phase actuelle : PHASE 2 — Expérience « Créer mon espace »
-Statut : TERMINÉE
+Phase actuelle : PHASE 3 — Transformer le tenant en « espace éditorial »
+Statut : TERMINÉE (partiellement — périmètre volontairement réduit, voir ci-dessous)
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
 
@@ -364,6 +364,133 @@ Aucun.
 
 ---
 
-## PHASE 3
+## PHASE 3 — Transformer le tenant en « espace éditorial »
+
+### Objectif
+
+Faire évoluer (pas reconstruire) le tableau de bord tenant existant vers la structure cible « Mon espace » (Dashboard/Œuvres/Auteurs/Commandes/Ventes/Revenus/Statistiques/Équipe/Apparence/Paramètres), avec une sélection de période cohérente, en gardant les statistiques strictement tenant-scopées.
+
+### Décision de périmètre — pourquoi cette phase est volontairement partielle
+
+La structure cible de la mission liste dix entrées de navigation. Six existent déjà et fonctionnent (Dashboard, Œuvres, Auteurs, Équipe, Paramètres — qui couvre aussi l'« Apparence », voir plus bas). Les quatre restantes (Commandes, Ventes, Revenus, Statistiques en tant que **pages dédiées**, distinctes du tableau de bord) demanderaient chacune une nouvelle capacité backend non triviale (listage de commandes filtré par tenant, listage de ventes par tenant au-delà de l'agrégat déjà affiché, une page de revenus séparée, des graphiques dédiés). Or l'ordre de priorité de la mission elle-même place explicitement ces sujets dans des phases ultérieures : Phase 6 « Commandes, Paiements et Commerce », Phase 7 « Commissions, Revenus et Payouts », Phase 9 « Statistiques et Analytics ». Construire ces quatre pages maintenant reviendrait à anticiper le travail de trois phases entières sous couvert du mot « structure », au prix d'une explosion de périmètre non demandée par le texte détaillé de la Phase 3 (qui, lui, ne détaille que « Dashboard » et « Périodes »).
+
+Décision : cette phase livre exactement ce que son texte détaillé décrit — l'évolution du tableau de bord existant et la sélection de période — et documente explicitement le report des quatre pages dédiées à leurs phases naturelles, plutôt que de les construire à la hâte ou de les passer sous silence.
+
+### Travaux réalisés
+
+**1. Périodes — préréglage manquant ajouté.**
+
+`frontend/src/components/admin/date-range-picker.tsx` avait déjà quatre des cinq préréglages demandés (Aujourd'hui, 7 derniers jours, 30 derniers jours, Ce mois, Personnalisée) ; seul « Cette année » manquait. Ajouté (`rangeForPreset("year")` → 1er janvier de l'année courante jusqu'à aujourd'hui). Composant partagé par `PlatformDashboard` et `TenantDashboard` : les deux en bénéficient automatiquement, sans dupliquer le changement. Les statistiques restent strictement tenant-scopées : `/admin/tenant/statistics` était déjà filtré par `tenantId` via RLS + filtre applicatif (Phase 0) — aucun changement à l'isolation nécessaire ici.
+
+**2. Dashboard — deux chiffres réellement manquants, ajoutés avec une vraie requête, testée.**
+
+Comparaison chiffre par chiffre entre la liste demandée (CA, Ventes, Commandes, Œuvres, Auteurs, Lecteurs, Commission GeBook, Part revenant, Solde disponible, Montant en attente) et ce que `TenantDashboard`/`tenantStatistics()` affichaient déjà :
+
+| Demandé | Déjà présent avant cette phase | Action |
+|---|---|---|
+| Œuvres | ✓ (`publishedWorks`) | aucune |
+| Auteurs | ✓ (`activeAuthors`) | aucune |
+| Ventes | ✓ (`salesCount` — nombre de *lignes* vendues, déjà documenté comme tel dans le code) | aucune |
+| CA | ✓ (`revenueCollected`, « Encaissé ») | aucune |
+| Commission GeBook | ✓ (`commissionTotal`) | aucune |
+| Part revenant | ✓ (`authorNetTotal`, « Dû aux auteurs ») | aucune |
+| Montant en attente | ✓ (`pendingPayout`, déjà affiché en sous-texte de « Dû aux auteurs ») | aucune |
+| **Commandes** | absent (confondu avec `salesCount`, qui compte des lignes, pas des commandes) | **ajouté** |
+| **Lecteurs** | absent | **ajouté** |
+| Solde disponible | absent, et **restera absent** | **volontairement non ajouté** (voir ci-dessous) |
+
+`Commandes`/`Lecteurs` ajoutés : `backend/src/modules/commissions/commissions.service.ts#tenantStatistics()` calcule désormais aussi `ordersCount` (commandes distinctes contenant au moins une ligne de ce tenant, sur la période) et `readersCount` (lecteurs distincts ayant acheté chez ce tenant, sur la période) — une vraie requête `COUNT(DISTINCT …)` en SQL brut paramétré (`$queryRaw`, même style que `revenueTimeseries()` déjà présent dans le même fichier ; `groupBy`/`_count` de Prisma ne sait pas exprimer un `COUNT(DISTINCT)` sur une relation). Filtre `tenant_id` redondant avec la RLS, même logique de défense en profondeur qu'en Phase 0. Deux cartes ajoutées côté `TenantDashboard`.
+
+**« Solde disponible » — décision explicite de ne rien afficher, plutôt que d'afficher une valeur toujours fausse.** Vérifié : `SaleDistribution.payoutStatus` ne quitte jamais `pending` nulle part dans le code (confirmé dans l'audit initial et revérifié ici) — aucune ligne n'atteint jamais le statut `available`. Un « solde disponible » calculé aujourd'hui vaudrait donc **zéro pour tout tenant, indéfiniment**, jusqu'à ce que la Phase 7 construise le mécanisme de reversement. Afficher une carte figée à 0 pour toujours ressemblerait à un bug plutôt qu'à une fonctionnalité en construction — plus trompeur qu'utile. Conforme à la consigne explicite de la mission : « ne simule pas les reversements… si le provider de payout n'est pas encore intégré, attendre le vrai mécanisme. » Le « Montant en attente » (`pendingPayout`), lui, est une donnée réelle et déjà affichée — conservé tel quel.
+
+**3. Nouveau test — l'endpoint étendu n'avait aucune couverture.**
+
+`GET /admin/tenant/statistics` n'était exercé par aucun test e2e avant cette phase (vérifié par recherche exhaustive). Comme cette phase y ajoute une requête SQL brute, un test a été ajouté dans `backend/test/commissions.e2e-spec.ts` (nouveau bloc « Statistiques du tableau de bord (tenant, Phase 3) ») : il calcule les commandes/lecteurs distincts attendus **indépendamment**, à partir des lignes brutes de `sale_distributions`, puis compare au résultat de l'API — pas un simple miroir de la requête du service. Exécuté isolément (16/16 tests du fichier, dont les 2 nouveaux) puis dans la suite complète (14/14 suites, 191/191 tests) : tout passe.
+
+**4. Décisions documentées sur le reste de la structure cible.**
+
+- **Apparence vs Paramètres** : la mission les liste comme deux entrées séparées ; le code existant les fusionne en une seule page (`/admin/parametres`, `TenantSettingsManager` : nom/description/site web/réseaux sociaux + logo + couverture). Vérifié : cette page reste courte et cohérente, rien n'indique qu'elle soit devenue trop chargée pour justifier une scission. Décision : ne pas scinder — aucune perte fonctionnelle, la mission elle-même prévient de ne pas complexifier sans valeur immédiate.
+- **Commandes (page dédiée, commandes du tenant)**, **Ventes (page dédiée, au-delà de l'agrégat du dashboard)**, **Revenus (page dédiée)**, **Statistiques (page dédiée avec graphiques)** : reportées à leurs phases respectives (6, 7, 9) — voir « Décision de périmètre » ci-dessus. Rien n'a été construit ici qui devrait l'être ; rien n'a été oublié sans le dire.
+- **Types d'espace** et **branding à la création** : déjà traités et documentés en Phase 2, non revisités ici.
+
+### Fichiers modifiés
+
+- `frontend/src/components/admin/date-range-picker.tsx` — ajout du préréglage « Cette année ».
+- `backend/src/modules/commissions/commissions.service.ts` — `tenantStatistics()` calcule et renvoie désormais `ordersCount`/`readersCount` (champs additifs, aucun champ existant retiré ou renommé).
+- `frontend/src/components/admin/tenant-dashboard.tsx` — deux nouvelles cartes (« Commandes », « Lecteurs ») dans la grille existante.
+- `backend/test/commissions.e2e-spec.ts` — nouveau bloc de test pour `GET /admin/tenant/statistics` (endpoint jusque-là non testé).
+
+### Base de données / migrations
+
+Aucune. Les deux nouveaux chiffres se calculent sur des tables et colonnes déjà existantes (`sale_distributions`, `order_items`, `orders`) — aucun changement de schéma nécessaire.
+
+### Backend
+
+Voir « Fichiers modifiés ». Un seul service touché, une seule méthode étendue, changement additif sur la réponse (`TenantStatisticsResponse`). Aucune route ajoutée ou supprimée.
+
+### Frontend
+
+Voir « Fichiers modifiés ». Deux composants déjà existants complétés (pas recréés) : `DateRangePicker` (un préréglage de plus) et `TenantDashboard` (deux cartes de plus dans une grille qui en accueillait déjà quatre).
+
+### Tests exécutés
+
+```text
+backend   pnpm exec tsc --noEmit          → OK
+backend   pnpm lint                       → OK
+backend   pnpm test (unitaires)           → 12 suites / 81 tests, tous passés
+backend   commissions.e2e-spec.ts (isolé) → 16/16 tests (14 préexistants + 2 nouveaux)
+backend   pnpm test:e2e (suite complète)  → 14/14 suites, 191/191 tests (189 + 2 nouveaux)
+frontend  pnpm typecheck                  → OK
+frontend  pnpm lint                       → 0 erreur, 3 avertissements préexistants et sans rapport
+```
+
+Vérifié en base réelle avant d'écrire le test : requête directe confirmant que la nouvelle jointure SQL s'exécute sans erreur sur des tenants réels (résultat 0/0 à ce moment-là, faute de données de vente vivantes dans la base de développement — chaque suite e2e nettoie ses propres données en `afterAll`) ; le test e2e ajouté ensuite confirme la valeur non nulle en conditions réelles, avec des données créées et nettoyées par le test lui-même.
+
+**Limite honnête à signaler** : les nouvelles cartes du tableau de bord n'ont pas été vérifiées dans un navigateur réel (même limite qu'en Phase 2 — aucun serveur de développement démarré dans cette phase). Le calcul backend, lui, est vérifié en conditions réelles par le nouveau test e2e.
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| Préréglage « Cette année » | FONCTIONNEL |
+| Carte « Commandes » (tenant, distinct des lignes vendues) | FONCTIONNEL, vérifié par test e2e sur données réelles |
+| Carte « Lecteurs » (tenant, distinct) | FONCTIONNEL, vérifié par test e2e sur données réelles |
+| « Solde disponible » | ABSENT PAR DÉCISION — dépend du mécanisme de payout, Phase 7 |
+| Fusion Apparence/Paramètres | FONCTIONNEL EN L'ÉTAT — décision documentée de ne pas scinder |
+| Pages dédiées Commandes/Ventes/Revenus/Statistiques | REPORTÉES aux Phases 6/7/9 — décision documentée, pas un oubli |
+
+### Problèmes rencontrés
+
+Aucun. La base de développement ne contenait aucune ligne `sale_distributions` au moment de la vérification manuelle (toutes les données de test précédentes avaient été nettoyées par les suites e2e) — contourné en écrivant un vrai test e2e plutôt qu'en se fiant à une vérification manuelle ponctuelle, ce qui laisse une protection permanente plutôt qu'une confiance one-shot.
+
+### Décisions techniques
+
+- SQL brut paramétré pour `ordersCount`/`readersCount` plutôt qu'une tentative de le faire tenir dans l'API `groupBy`/`_count` de Prisma : `COUNT(DISTINCT ...)` sur un champ de relation n'a pas d'équivalent direct, et le fichier avait déjà un précédent exact (`revenueTimeseries()`) à suivre plutôt qu'à réinventer.
+- Filtre `oi.tenant_id` répété dans le SQL brut malgré la RLS déjà active sur `sale_distributions`/`order_items`/`orders` : même principe de défense en profondeur qu'en Phase 0, pas une nouvelle règle inventée.
+- Ne pas fabriquer de valeur pour « Solde disponible » : décision directement dictée par une règle explicite de la mission plutôt qu'un choix arbitraire.
+- Écrire un test plutôt que de se contenter d'une vérification manuelle sur la base de dev : l'endpoint n'avait aucune couverture avant cette phase, et le README du projet est explicite sur le fait que les tests de commissions doivent précéder ou accompagner le code, jamais le suivre après coup en espérant que ça tienne.
+
+### Éléments restant à traiter
+
+1. Vérification manuelle en navigateur des deux nouvelles cartes — non faite (voir « Tests exécutés »), à faire avec un serveur de développement démarré.
+2. Pages dédiées Commandes/Ventes/Revenus/Statistiques — à construire dans les Phases 6, 7 et 9 respectivement, pas avant.
+3. « Solde disponible » ne pourra être affiché honnêtement qu'une fois la Phase 7 (payouts) livrée un vrai mécanisme de transition de `payoutStatus`.
+
+### Validation
+
+- [x] Typecheck backend
+- [x] Lint backend
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires
+- [x] Tests e2e (suite complète + nouveau test ciblé)
+- [x] Vérification multi-tenant (nouvelle requête filtrée par `tenantId`, RLS + filtre applicatif — aucune régression d'isolation)
+- [x] Vérification permissions (route déjà protégée par `TenantAccessGuard` + `assertCanViewTenantFinance`, testée y compris le refus à un lecteur)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée)
+- [x] Documentation mise à jour (ce fichier)
+
+---
+
+## PHASE 4
 
 *(non commencée)*

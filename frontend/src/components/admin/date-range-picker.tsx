@@ -12,13 +12,14 @@ export interface DateRange {
   to: string;
 }
 
-type Preset = "today" | "7d" | "30d" | "month" | "custom";
+type Preset = "today" | "7d" | "30d" | "month" | "year" | "custom";
 
 const PRESET_LABELS: Record<Preset, string> = {
   today: "Aujourd’hui",
   "7d": "7 derniers jours",
   "30d": "30 derniers jours",
   month: "Ce mois",
+  year: "Cette année",
   custom: "Période personnalisée",
 };
 
@@ -58,6 +59,10 @@ export function rangeForPreset(preset: Exclude<Preset, "custom">): DateRange {
     }
     case "month": {
       const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: toIso(from), to: toIso(endOfDay(now)) };
+    }
+    case "year": {
+      const from = new Date(now.getFullYear(), 0, 1);
       return { from: toIso(from), to: toIso(endOfDay(now)) };
     }
   }
@@ -101,7 +106,10 @@ export function DateRangePicker({
   return (
     <div className={cn("flex flex-wrap items-end gap-3", className)}>
       <div className="grid gap-1.5">
-        <Label htmlFor="dashboard-period" className="text-secondary text-sm font-semibold">
+        <Label
+          htmlFor="dashboard-period"
+          className="text-secondary text-sm font-semibold"
+        >
           <Calendar aria-hidden className="mr-1.5 inline size-3.5 align-[-2px]" />
           Période
         </Label>
@@ -122,7 +130,10 @@ export function DateRangePicker({
       {preset === "custom" && (
         <>
           <div className="grid gap-1.5">
-            <Label htmlFor="dashboard-from" className="text-secondary text-sm font-semibold">
+            <Label
+              htmlFor="dashboard-from"
+              className="text-secondary text-sm font-semibold"
+            >
               Du
             </Label>
             <Input
@@ -133,12 +144,18 @@ export function DateRangePicker({
               max={toDateInputValue(value.to)}
               onChange={(event) => {
                 if (!event.target.value) return;
-                onChange({ from: toIso(startOfDay(new Date(event.target.value))), to: value.to });
+                onChange({
+                  from: toIso(startOfDay(new Date(event.target.value))),
+                  to: value.to,
+                });
               }}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="dashboard-to" className="text-secondary text-sm font-semibold">
+            <Label
+              htmlFor="dashboard-to"
+              className="text-secondary text-sm font-semibold"
+            >
               Au
             </Label>
             <Input
@@ -150,7 +167,10 @@ export function DateRangePicker({
               max={toDateInputValue(toIso(new Date()))}
               onChange={(event) => {
                 if (!event.target.value) return;
-                onChange({ from: value.from, to: toIso(endOfDay(new Date(event.target.value))) });
+                onChange({
+                  from: value.from,
+                  to: toIso(endOfDay(new Date(event.target.value))),
+                });
               }}
             />
           </div>

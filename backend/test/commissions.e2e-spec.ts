@@ -514,4 +514,49 @@ describe('Commissions (e2e)', () => {
       await readerAgent.get('/admin/statistics').expect(403);
     });
   });
+
+  describe('Statistiques du tableau de bord (tenant, Phase 3)', () => {
+    it('compte les commandes et lecteurs distincts, séparément des lignes vendues', async () => {
+      const { tenantId } = await adminPrisma.author.findUniqueOrThrow({
+        where: { id: authorId },
+        select: { tenantId: true },
+      });
+
+      const response = await adminAgent
+        .get('/admin/tenant/statistics')
+        .set('Cookie', `gebook_active_tenant=${tenantId}`)
+        .expect(200);
+
+      const body = response.body as {
+        salesCount: number;
+        ordersCount: number;
+        readersCount: number;
+      };
+
+      // Calculé indépendamment de la requête SQL du service, à partir des
+      // mêmes lignes brutes — pas un simple miroir de son résultat.
+      const distributions = await adminPrisma.saleDistribution.findMany({
+        where: { authorId },
+        select: {
+          orderItem: {
+            select: { orderId: true, order: { select: { userId: true } } },
+          },
+        },
+      });
+      const expectedOrders = new Set(
+        distributions.map((d) => d.orderItem.orderId),
+      ).size;
+      const expectedReaders = new Set(
+        distributions.map((d) => d.orderItem.order.userId),
+      ).size;
+
+      expect(body.salesCount).toBe(distributions.length);
+      expect(body.ordersCount).toBe(expectedOrders);
+      expect(body.readersCount).toBe(expectedReaders);
+    });
+
+    it('refuse les statistiques de tenant à un lecteur', async () => {
+      await readerAgent.get('/admin/tenant/statistics').expect(403);
+    });
+  });
 });
