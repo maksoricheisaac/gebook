@@ -21,7 +21,11 @@ import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { resolveAssetUrl } from "@/src/lib/assets";
 import { authorInitials } from "@/src/lib/catalog";
 import { emptyToUndefined, hasAnyValue } from "@/src/lib/translation-form";
-import { WORK_STATUS_LABELS, workStatusTone, type WorkStatus } from "@/src/lib/work-status";
+import {
+  WORK_STATUS_LABELS,
+  workStatusTone,
+  type WorkStatus,
+} from "@/src/lib/work-status";
 
 interface AuthorTranslation {
   locale: "fr" | "en";
@@ -39,6 +43,8 @@ interface Author {
   country: string | null;
   city: string | null;
   status: AuthorStatus;
+  payoutMethod: string | null;
+  payoutPhone: string | null;
   translations: AuthorTranslation[];
   _count: { works: number };
 }
@@ -81,6 +87,8 @@ const authorSchema = z.object({
     .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Minuscules, chiffres et tirets uniquement."),
   country: z.string().trim().max(100).optional(),
   city: z.string().trim().max(100).optional(),
+  payoutMethod: z.string().trim().max(100).optional(),
+  payoutPhone: z.string().trim().max(30).optional(),
   status: z.enum(["draft", "active", "inactive"]),
   translations: z.object({
     fr: authorTranslationFieldsSchema,
@@ -124,6 +132,8 @@ function toFormValues(author: Author): AuthorFormValues {
     slug: author.slug,
     country: author.country ?? "",
     city: author.city ?? "",
+    payoutMethod: author.payoutMethod ?? "",
+    payoutPhone: author.payoutPhone ?? "",
     status: author.status,
     translations: {
       fr: {
@@ -189,6 +199,8 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
           slug: values.slug,
           country: values.country,
           city: values.city,
+          payoutMethod: values.payoutMethod,
+          payoutPhone: values.payoutPhone,
           status: values.status,
           translations: buildTranslationsPayload(values),
         },
@@ -243,7 +255,11 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
       <AdminPageHeader
         title={author.penName}
         description={`/auteurs/${author.slug}`}
-        actions={<Badge variant={STATUS_TONES[author.status]}>{STATUS_LABELS[author.status]}</Badge>}
+        actions={
+          <Badge variant={STATUS_TONES[author.status]}>
+            {STATUS_LABELS[author.status]}
+          </Badge>
+        }
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:items-start">
@@ -313,7 +329,12 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
                 <Input {...register("penName")} />
               </Field>
 
-              <Field id="author-slug" label="Adresse (slug)" required error={errors.slug?.message}>
+              <Field
+                id="author-slug"
+                label="Adresse (slug)"
+                required
+                error={errors.slug?.message}
+              >
                 <Input {...register("slug")} />
               </Field>
 
@@ -323,6 +344,23 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
 
               <Field id="author-city" label="Ville" optional>
                 <Input {...register("city")} />
+              </Field>
+
+              <Field
+                id="author-payout-method"
+                label="Moyen de reversement"
+                optional
+                hint="Ex. « Mobile Money », « Virement bancaire »."
+              >
+                <Input {...register("payoutMethod")} />
+              </Field>
+
+              <Field
+                id="author-payout-phone"
+                label="Téléphone / compte de reversement"
+                optional
+              >
+                <Input {...register("payoutPhone")} />
               </Field>
             </div>
 

@@ -16,6 +16,7 @@ import {
   EventProcessingStatus,
   OrderStatus,
   PaymentStatus,
+  PayoutStatus,
   ProviderStatus,
 } from '../../generated/prisma/enums';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -479,6 +480,23 @@ export class PaymentsService {
           accessStatus: AccessStatus.active,
         },
         data: { accessStatus: AccessStatus.revoked, revokedAt: now },
+      });
+
+      // Phase 7 : un remboursement annule aussi la répartition figée au
+      // moment de la vente (`sale_distributions`) — sans cela, une ligne
+      // remboursée resterait « available », comme si l'auteur avait encore
+      // droit à un montant que le lecteur a récupéré. Seules `pending`/
+      // `available` sont concernées : `paid`/`partially_paid` signifieraient
+      // qu'un versement a déjà réellement eu lieu, un cas qu'aucun mécanisme
+      // actuel ne peut produire (Phase 7, aucun prestataire de reversement
+      // intégré) — laissé en l'état plutôt que traité à la légère si un futur
+      // mécanisme de paiement le rend un jour possible.
+      await tx.saleDistribution.updateMany({
+        where: {
+          orderItemId: { in: order.items.map((item) => item.id) },
+          payoutStatus: { in: [PayoutStatus.pending, PayoutStatus.available] },
+        },
+        data: { payoutStatus: PayoutStatus.cancelled },
       });
 
       return tx.order.update({

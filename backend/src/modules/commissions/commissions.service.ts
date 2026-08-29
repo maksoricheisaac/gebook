@@ -1,6 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
-import { CommissionRuleStatus } from '../../generated/prisma/enums';
+import {
+  CommissionRuleStatus,
+  PayoutStatus,
+} from '../../generated/prisma/enums';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buildRlsContext } from '../../prisma/rls-context';
 import type { RlsContext } from '../../prisma/rls-context';
@@ -124,6 +127,17 @@ export class CommissionsService {
         gebookCommissionAmount: distribution.gebookCommissionAmount,
         authorNetAmount: distribution.authorNetAmount,
         calculatedAt: params.soldAt,
+        // Phase 7 : aucun prestataire de reversement n'existe encore — en
+        // attendant, une vente confirmée est directement « disponible »
+        // plutôt que bloquée indéfiniment en « pending » (qui n'aurait
+        // jamais de mécanisme pour en sortir). `available` reste réversible :
+        // un remboursement la fait passer à `cancelled`
+        // (`PaymentsService.refund`) ; rien ici ne prétend qu'un versement a
+        // réellement eu lieu — voir le commentaire de `PayoutStatus` côté
+        // schéma et `GEBOOK_PROGRESS.md` (Phase 7) pour la décision et son
+        // alternative (délai de rétention avant disponibilité), non tranchée
+        // faute de règle métier explicite à appliquer.
+        payoutStatus: PayoutStatus.available,
       };
     });
 
@@ -201,22 +215,32 @@ export class CommissionsService {
     authorId: string,
     ctx: RlsContext,
   ): Promise<AuthorRevenueResponse> {
-    const [totals, pending] = await this.prisma.withRlsContext(ctx, (tx) =>
-      Promise.all([
-        tx.saleDistribution.aggregate({
-          where: { authorId },
-          _sum: {
-            grossAmount: true,
-            gebookCommissionAmount: true,
-            authorNetAmount: true,
-          },
-          _count: true,
-        }),
-        tx.saleDistribution.aggregate({
-          where: { authorId, payoutStatus: 'pending' },
-          _sum: { authorNetAmount: true },
-        }),
-      ]),
+    // Phase 7 : `cancelled` (remboursement, `PaymentsService.refund`) exclu
+    // des totaux cumulés — une vente annulée ne doit plus compter dans le
+    // revenu de l'auteur, exactement comme elle ne compte plus dans son
+    // solde disponible.
+    const [totals, pending, available] = await this.prisma.withRlsContext(
+      ctx,
+      (tx) =>
+        Promise.all([
+          tx.saleDistribution.aggregate({
+            where: { authorId, payoutStatus: { not: 'cancelled' } },
+            _sum: {
+              grossAmount: true,
+              gebookCommissionAmount: true,
+              authorNetAmount: true,
+            },
+            _count: true,
+          }),
+          tx.saleDistribution.aggregate({
+            where: { authorId, payoutStatus: 'pending' },
+            _sum: { authorNetAmount: true },
+          }),
+          tx.saleDistribution.aggregate({
+            where: { authorId, payoutStatus: 'available' },
+            _sum: { authorNetAmount: true },
+          }),
+        ]),
     );
 
     return {
@@ -225,6 +249,7 @@ export class CommissionsService {
       commissionTotal: decimalToString(totals._sum.gebookCommissionAmount),
       netTotal: decimalToString(totals._sum.authorNetAmount),
       pendingPayout: decimalToString(pending._sum.authorNetAmount),
+      availableBalance: decimalToString(available._sum.authorNetAmount),
     };
   }
 
@@ -263,6 +288,7 @@ export class CommissionsService {
       collected,
       distributions,
       pending,
+      available,
     ] = await this.prisma.withRlsContext(ctx, (tx) =>
       Promise.all([
         tx.work.count({ where: { status: 'published' } }),
@@ -275,12 +301,22 @@ export class CommissionsService {
           where: { status: 'successful', paidAt: { gte: from, lte: to } },
           _sum: { paidAmount: true },
         }),
+        // Phase 7 : `cancelled` (remboursement) exclu — une ligne annulée ne
+        // doit plus compter dans la commission ou le net encaissés, même
+        // pour la période où elle avait été figée à l'origine.
         tx.saleDistribution.aggregate({
-          where: { calculatedAt: { gte: from, lte: to } },
+          where: {
+            calculatedAt: { gte: from, lte: to },
+            payoutStatus: { not: 'cancelled' },
+          },
           _sum: { gebookCommissionAmount: true, authorNetAmount: true },
         }),
         tx.saleDistribution.aggregate({
           where: { payoutStatus: 'pending' },
+          _sum: { authorNetAmount: true },
+        }),
+        tx.saleDistribution.aggregate({
+          where: { payoutStatus: 'available' },
           _sum: { authorNetAmount: true },
         }),
       ]),
@@ -297,6 +333,7 @@ export class CommissionsService {
       ),
       authorNetTotal: decimalToString(distributions._sum.authorNetAmount),
       pendingPayout: decimalToString(pending._sum.authorNetAmount),
+      availableBalance: decimalToString(available._sum.authorNetAmount),
     };
   }
 
@@ -319,15 +356,26 @@ export class CommissionsService {
     const tenantId = assertCanViewTenantFinance(tenant);
     const { from, to } = resolveDateRange(range);
 
-    const [publishedWorks, activeAuthors, distributions, pending, counts] =
-      await this.prisma.withRlsContext(buildRlsContext(admin, tenantId), (tx) =>
+    const [
+      publishedWorks,
+      activeAuthors,
+      distributions,
+      pending,
+      available,
+      counts,
+    ] = await this.prisma.withRlsContext(
+      buildRlsContext(admin, tenantId),
+      (tx) =>
         Promise.all([
           tx.work.count({ where: { tenantId, status: 'published' } }),
           tx.author.count({ where: { tenantId, status: 'active' } }),
+          // Phase 7 : `cancelled` (remboursement) exclu — voir le même
+          // commentaire dans `platformStatistics()`.
           tx.saleDistribution.aggregate({
             where: {
               orderItem: { tenantId },
               calculatedAt: { gte: from, lte: to },
+              payoutStatus: { not: 'cancelled' },
             },
             _sum: {
               grossAmount: true,
@@ -338,6 +386,10 @@ export class CommissionsService {
           }),
           tx.saleDistribution.aggregate({
             where: { orderItem: { tenantId }, payoutStatus: 'pending' },
+            _sum: { authorNetAmount: true },
+          }),
+          tx.saleDistribution.aggregate({
+            where: { orderItem: { tenantId }, payoutStatus: 'available' },
             _sum: { authorNetAmount: true },
           }),
           // Distinct de `salesCount` (une ligne par `SaleDistribution`) : une
@@ -359,7 +411,7 @@ export class CommissionsService {
               AND sd.calculated_at <= ${to}
           `,
         ]),
-      );
+    );
 
     return {
       publishedWorks,
@@ -373,6 +425,7 @@ export class CommissionsService {
       ),
       authorNetTotal: decimalToString(distributions._sum.authorNetAmount),
       pendingPayout: decimalToString(pending._sum.authorNetAmount),
+      availableBalance: decimalToString(available._sum.authorNetAmount),
     };
   }
 
@@ -467,6 +520,8 @@ export interface PlatformStatisticsResponse {
   commissionTotal: string;
   authorNetTotal: string;
   pendingPayout: string;
+  /** Part disponible pour un reversement, tous auteurs confondus (Phase 7). */
+  availableBalance: string;
 }
 
 export interface TenantStatisticsResponse {
@@ -482,6 +537,8 @@ export interface TenantStatisticsResponse {
   commissionTotal: string;
   authorNetTotal: string;
   pendingPayout: string;
+  /** Part disponible pour un reversement, pour ce tenant (Phase 7). */
+  availableBalance: string;
 }
 
 export interface AuthorSaleResponse {
@@ -503,8 +560,15 @@ export interface AuthorRevenueResponse {
   grossTotal: string;
   commissionTotal: string;
   netTotal: string;
-  /** Part revenant à l'auteur et pas encore versée. */
+  /**
+   * Part encore au statut `pending` (Phase 7 : ne s'y trouve plus qu'un très
+   * bref instant, une vente devenant `available` dès son figeage — vaut donc
+   * `0` en pratique tant qu'aucun mécanisme de reversement réel n'introduit
+   * un vrai délai de rétention).
+   */
   pendingPayout: string;
+  /** Part disponible pour un reversement, aucun n'ayant encore réellement eu lieu. */
+  availableBalance: string;
 }
 
 /** Une somme sur un ensemble vide vaut `null` en SQL, pas zéro. */

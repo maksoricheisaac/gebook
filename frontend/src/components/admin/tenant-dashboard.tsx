@@ -36,6 +36,7 @@ interface TenantStatistics {
   commissionTotal: string;
   authorNetTotal: string;
   pendingPayout: string;
+  availableBalance: string;
 }
 
 function buildQuery(range: DateRange): string {
@@ -156,7 +157,7 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
           </AdminStatGrid>
 
           <section className="mt-6">
-            <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+            <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <AdminStatCard
                 label="Commission GeBook"
                 value={formatPrice(statistics.commissionTotal)}
@@ -164,7 +165,11 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
               <AdminStatCard
                 label="Dû aux auteurs"
                 value={formatPrice(statistics.authorNetTotal)}
-                hint={`dont ${formatPrice(statistics.pendingPayout)} à verser au total`}
+              />
+              <AdminStatCard
+                label="Solde disponible"
+                value={formatPrice(statistics.availableBalance)}
+                hint="Aucun reversement automatique n’existe encore — ce solde n’a pas été versé."
               />
             </dl>
           </section>

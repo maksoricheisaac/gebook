@@ -2,8 +2,8 @@
 
 ## État global
 
-Phase actuelle : PHASE 6 — Commandes, paiements et commerce
-Statut : TERMINÉE
+Phase actuelle : PHASE 7 — Commissions, revenus et payouts
+Statut : TERMINÉE (partiellement — payout réel volontairement non construit, voir ci-dessous)
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
 
@@ -835,6 +835,115 @@ Aucun.
 
 ---
 
-## PHASE 7
+## PHASE 7 — Commissions, revenus et payouts
+
+### Objectif
+
+Réutiliser le moteur de commission existant (non touché — toujours `commission.ts`, inchangé). Implémenter une vraie logique pour `PayoutStatus`, qui restait bloqué à `pending` pour toujours. Ne jamais afficher qu'un reversement est « payé » si aucun paiement réel n'a eu lieu.
+
+### Décision — `pending → available`, jamais `→ paid`
+
+La mission est explicite : « Si le provider de payout n'est pas encore intégré : statut = disponible puis attendre le vrai mécanisme de payout. » Décision : `CommissionsService.freezeForOrder()` pose désormais `payoutStatus: 'available'` dès le figeage (au moment du paiement confirmé), au lieu du défaut `pending` implicite du schéma. `paid`/`partially_paid` ne sont jamais écrits nulle part — aucun mécanisme réel de reversement n'existe, donc rien ne prétend qu'un versement a eu lieu.
+
+**Alternative non retenue, signalée plutôt que tranchée arbitrairement** : un délai de rétention avant disponibilité (ex. « disponible 14 jours après la vente ») serait plus prudent contre le risque de remboursement tardif, mais aucune règle métier de ce type n'existe nulle part dans le projet, et en inventer une (durée, déclencheur) aurait été une pure invention. La mission elle-même pousse vers la lecture la plus simple (« statut = disponible… attendre le vrai mécanisme ») — c'est celle retenue ici. Si un délai de rétention s'avère nécessaire, c'est une décision produit à trancher plus tard, pas un oubli technique.
+
+### Deux failles réelles trouvées en implémentant, corrigées dans la foulée
+
+**1. Un remboursement ne touchait jamais `sale_distributions`.** Vérifié dans `PaymentsService.refund()` avant de coder quoi que ce soit : le paiement passe à `refunded`, l'accès bibliothèque est révoqué, la commande passe à `refunded` — mais la répartition déjà figée (montant dû à l'auteur) restait intacte, comme si la vente tenait toujours. Avec `pending → available` introduit par cette phase, laisser ça tel quel aurait rendu remboursable-mais-« disponible » une vente déjà annulée — une vraie erreur comptable. Corrigé : le remboursement fait désormais passer à `cancelled` (valeur déjà prévue dans l'enum, jamais utilisée) les répartitions encore `pending`/`available` des lignes remboursées, dans la même transaction que la révocation d'accès. `paid`/`partially_paid` ne sont volontairement pas concernés — aucun mécanisme actuel ne peut les produire, et les y toucher supposerait un vrai processus de réclamation, hors périmètre.
+
+**2. `sale_distributions` n'avait aucune policy RLS `UPDATE`.** Découvert en écrivant le test du correctif ci-dessus : le commentaire du schéma dit explicitement « une répartition figée n'est jamais modifiée (règle n°13) » — une garantie pensée pour les MONTANTS, imposée en ne créant tout simplement aucune policy UPDATE. Sans policy pour une commande donnée, PostgreSQL refuse silencieusement cette commande sur toutes les lignes, y compris pour un platform_admin (aucune policy n'existe pour évaluer quoi que ce soit). Mon correctif de remboursement, tel quel, n'aurait donc jamais rien mis à jour en conditions réelles (RLS forcée). Corrigé par une nouvelle migration ajoutant une policy `sale_distributions_update` strictement réservée au platform_admin — jamais à un rôle de tenant, même owner/admin/finance, tant qu'aucun vrai mécanisme de reversement n'existe. Rien au niveau RLS ne peut garantir qu'une écriture ne touche que `payout_status` et jamais les montants : cette discipline reste portée par le code applicatif, qui ne modifie jamais que ce champ.
+
+La même migration recale aussi les répartitions déjà figées avant cette phase (`pending` → `available`, ou `cancelled` si leur commande avait déjà été remboursée), pour ne pas laisser d'anciennes lignes bloquées sur un statut devenu incohérent avec les nouvelles.
+
+### Cohérence des totaux — `cancelled` exclu partout où il ne l'était pas
+
+En ajoutant `availableBalance`, vérification des agrégats existants : `revenue()` (auteur), `platformStatistics()` et `tenantStatistics()` sommaient déjà `authorNetAmount` **sans jamais exclure `cancelled`** — un défaut resté invisible tant que rien ne passait jamais à ce statut (avant cette phase, `refunded` ne touchait jamais `sale_distributions`, donc le cas ne s'était simplement jamais produit). Corrigé dans les trois méthodes : les totaux cumulés (chiffre d'affaires, commission, part auteur) excluent désormais `payoutStatus: 'cancelled'`, pour ne plus compter une vente remboursée dans le revenu réel d'un auteur ou d'un tenant.
+
+### Paramètres de reversement — champ manquant, pas un vrai gap d'autorisation
+
+Vérifié avant de construire quoi que ce soit : la policy RLS `authors_update` permet déjà à un membre de tenant de rôle `author` de modifier son propre profil (`user_id = app_current_user_id()`) — la base autorisait donc déjà cette capacité. Le vrai manque : `payoutMethod`/`payoutPhone` (déjà sur `Author`, déjà acceptés par `UpdateAuthorDto`) n'apparaissaient dans **aucun** formulaire frontend. Ajoutés à `author-detail.tsx` — la même page d'édition déjà accessible à qui peut déjà modifier cet auteur (owner/admin/editor de son tenant, ou l'auteur lui-même pour son propre profil), sans nouvelle page ni nouveau contrôle d'accès.
+
+### Ce qui n'a délibérément pas été construit
+
+- **Aucune transition vers `paid`/`partially_paid`** — aucun mécanisme de reversement réel (virement, mobile money) n'existe, et la mission interdit explicitement de le simuler.
+- **Aucun « historique des reversements »** — rien n'atteint jamais `paid` sous cette phase, donc il n'y aurait rien de réel à afficher dans un tel historique. Construire une liste condamnée à rester vide n'aurait aucune valeur ; à faire quand un vrai mécanisme de payout existera.
+- **Aucun délai de rétention avant disponibilité** — voir la décision documentée plus haut.
+- Le moteur de commission (`commission.ts`) — non touché, comme demandé.
+
+### Fichiers modifiés / créés
+
+- `backend/src/modules/commissions/commissions.service.ts` — `freezeForOrder()` pose `available` ; `revenue()`/`platformStatistics()`/`tenantStatistics()` excluent `cancelled` des totaux et ajoutent `availableBalance`.
+- `backend/src/modules/payments/payments.service.ts` — `refund()` annule les répartitions `pending`/`available` des lignes remboursées.
+- `backend/prisma/migrations/20260829010000_sale_distributions_payout_status_update/migration.sql` (nouveau) — policy UPDATE (platform_admin uniquement) + backfill des lignes déjà figées.
+- `backend/test/commissions.e2e-spec.ts` — assertion mise à jour (`available` au lieu de `pending`).
+- `frontend/src/lib/commissions.ts` — `availableBalance` sur `AuthorRevenue`/`PlatformStatistics`.
+- `frontend/src/components/admin/tenant-dashboard.tsx`, `platform-dashboard.tsx`, `app/(site)/auteur/tableau-de-bord/page.tsx` — carte « Solde disponible », avec rappel explicite qu'aucun versement réel n'a eu lieu.
+- `frontend/src/components/admin/author-detail.tsx` — champs « Moyen de reversement » et « Téléphone / compte ».
+
+### Base de données / migrations
+
+Une migration (`20260829010000_sale_distributions_payout_status_update`) — ajoute une policy RLS UPDATE et backfille les données existantes. Aucun changement de schéma (colonnes/tables).
+
+### Tests exécutés
+
+```text
+backend   pnpm exec tsc --noEmit          → OK
+backend   pnpm lint                       → OK
+backend   pnpm test (unitaires)           → 12 suites / 81 tests
+backend   pnpm db:deploy                  → migration appliquée avec succès
+backend   commissions + payments (isolé)  → 41/41
+backend   pnpm test:e2e (suite complète)  → 14/14 suites, 199/199 tests
+frontend  pnpm typecheck                  → OK
+frontend  pnpm lint                       → 0 erreur, 3 avertissements préexistants et sans rapport
+```
+
+**Limite honnête à signaler** : les nouvelles cartes « Solde disponible » et les champs de reversement n'ont pas été vérifiés dans un navigateur réel — même limite que les phases précédentes. Le calcul backend (annulation au remboursement, disponibilité au figeage, exclusion des ventes annulées des totaux) est, lui, entièrement vérifié par les tests e2e, y compris sous RLS réellement appliquée.
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| `pending → available` au figeage | VALIDÉ (test e2e) |
+| `available/pending → cancelled` au remboursement | VALIDÉ (test e2e, sous RLS réelle) |
+| Policy RLS UPDATE sur `sale_distributions` | VALIDÉ (platform_admin uniquement) |
+| Totaux cumulés excluant les ventes annulées | VALIDÉ |
+| `availableBalance` sur les 3 niveaux (auteur/tenant/plateforme) | VALIDÉ |
+| Champs de reversement éditables | FONCTIONNEL — non vérifié en navigateur réel |
+| Transition vers `paid` | ABSENTE PAR DÉCISION — aucun mécanisme réel, interdiction explicite de simuler |
+| Historique des reversements | ABSENT PAR DÉCISION — rien de réel à y montrer tant que `paid` n'existe pas |
+
+### Problèmes rencontrés
+
+Aucun au-delà des deux failles déjà décrites (trouvées et corrigées dans le déroulement normal de cette phase, pas des incidents séparés).
+
+### Décisions techniques
+
+- `available` immédiat plutôt qu'un délai de rétention inventé : conforme à l'instruction explicite de la mission, évite d'inventer une règle métier sans source.
+- Policy RLS UPDATE restreinte au seul platform_admin, jamais étendue aux rôles de tenant : une table financière déjà protégée par « aucune modification » avant cette phase ne devait pas s'ouvrir plus largement que ce que le nouveau besoin (annuler au remboursement, depuis du code déclenché uniquement par un `@Roles('admin')`) exige réellement.
+- Exclusion de `cancelled` des totaux cumulés dans les trois méthodes de statistiques à la fois (auteur/tenant/plateforme), pas seulement celle initialement visée : la même faille existait identiquement dans les trois, silencieuse pour la même raison (rien ne passait jamais à `cancelled` avant cette phase).
+- Champs de reversement ajoutés à la page d'édition existante plutôt qu'une nouvelle page « mes paramètres de reversement » dédiée : la permission nécessaire existait déjà (RLS), il ne manquait que les champs eux-mêmes — une nouvelle page aurait été une duplication d'interface sans raison.
+
+### Éléments restant à traiter
+
+1. Vérification manuelle en navigateur des nouvelles cartes et des champs de reversement — non faite.
+2. Un vrai mécanisme de payout (virement, mobile money) reste entièrement à construire — hors périmètre explicite de cette phase.
+3. La question du délai de rétention avant disponibilité reste une décision produit ouverte, non tranchée délibérément.
+
+### Validation
+
+- [x] Typecheck backend
+- [x] Lint backend
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires
+- [x] Tests e2e (suite complète + assertion mise à jour)
+- [x] Vérification multi-tenant (policy RLS ajoutée et testée, aucune ouverture aux rôles de tenant)
+- [x] Vérification permissions (UPDATE restreint au platform_admin, conforme à l'usage réel — déclenché uniquement par des routes déjà `@Roles('admin')`)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée)
+- [x] Documentation mise à jour (ce fichier)
+
+---
+
+## PHASE 8
 
 *(non commencée)*

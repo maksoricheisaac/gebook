@@ -93,11 +93,11 @@ export default async function AuthorDashboardPage(
             label="Commission GeBook"
             value={formatPrice(revenue.commissionTotal)}
           />
+          <Metric label="Vous revient" value={formatPrice(revenue.netTotal)} emphasis />
           <Metric
-            label="Vous revient"
-            value={formatPrice(revenue.netTotal)}
-            hint={`dont ${formatPrice(revenue.pendingPayout)} à verser`}
-            emphasis
+            label="Solde disponible"
+            value={formatPrice(revenue.availableBalance)}
+            hint="Aucun reversement automatique n’existe encore — ce solde n’a pas été versé."
           />
         </dl>
 

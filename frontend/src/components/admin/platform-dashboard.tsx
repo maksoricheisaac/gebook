@@ -4,8 +4,16 @@ import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { AdminPageHeader, AdminStatCard, AdminStatGrid } from "@/src/components/admin/admin-page";
-import { DateRangePicker, rangeForPreset, type DateRange } from "@/src/components/admin/date-range-picker";
+import {
+  AdminPageHeader,
+  AdminStatCard,
+  AdminStatGrid,
+} from "@/src/components/admin/admin-page";
+import {
+  DateRangePicker,
+  rangeForPreset,
+  type DateRange,
+} from "@/src/components/admin/date-range-picker";
 import { RevenueChart } from "@/src/components/admin/revenue-chart";
 import { Button } from "@/src/components/ui/button";
 import { ErrorState } from "@/src/components/ui/states";
@@ -110,19 +118,34 @@ export function PlatformDashboard({
           </div>
         ) : isStatsError || !statistics ? (
           <ErrorState description="Les chiffres de vente n’ont pas pu être chargés.">
-            <Button type="button" variant="outline" size="sm" onClick={() => void refetchStats()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void refetchStats()}
+            >
               Réessayer
             </Button>
           </ErrorState>
         ) : (
           <AdminStatGrid>
             <AdminStatCard label="Commandes réglées" value={statistics.paidOrders} />
-            <AdminStatCard label="Encaissé" value={formatPrice(statistics.revenueCollected)} />
-            <AdminStatCard label="Commission GeBook" value={formatPrice(statistics.commissionTotal)} />
+            <AdminStatCard
+              label="Encaissé"
+              value={formatPrice(statistics.revenueCollected)}
+            />
+            <AdminStatCard
+              label="Commission GeBook"
+              value={formatPrice(statistics.commissionTotal)}
+            />
             <AdminStatCard
               label="Dû aux auteurs"
               value={formatPrice(statistics.authorNetTotal)}
-              hint={`dont ${formatPrice(statistics.pendingPayout)} à verser au total`}
+            />
+            <AdminStatCard
+              label="Solde disponible"
+              value={formatPrice(statistics.availableBalance)}
+              hint="Aucun reversement automatique n’existe encore — ce solde n’a pas été versé."
             />
           </AdminStatGrid>
         )}
@@ -137,7 +160,10 @@ export function PlatformDashboard({
           {isTimeseriesLoading ? (
             <div className="bg-paper-200 h-64 w-full animate-pulse rounded-md" />
           ) : isTimeseriesError || !timeseries ? (
-            <ErrorState description="Le graphe n’a pas pu être chargé." className="border-0 bg-transparent py-8">
+            <ErrorState
+              description="Le graphe n’a pas pu être chargé."
+              className="border-0 bg-transparent py-8"
+            >
               <Button
                 type="button"
                 variant="outline"

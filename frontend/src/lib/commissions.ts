@@ -18,6 +18,7 @@ export interface AuthorRevenue {
   commissionTotal: string;
   netTotal: string;
   pendingPayout: string;
+  availableBalance: string;
 }
 
 export interface AuthorSale {
@@ -43,6 +44,7 @@ export interface PlatformStatistics {
   commissionTotal: string;
   authorNetTotal: string;
   pendingPayout: string;
+  availableBalance: string;
 }
 
 export const PAYOUT_STATUS_LABELS: Record<string, string> = {

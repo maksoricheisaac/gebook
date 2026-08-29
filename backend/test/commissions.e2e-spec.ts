@@ -252,7 +252,9 @@ describe('Commissions (e2e)', () => {
       expect(distribution.gebookCommissionAmount.toFixed(2)).toBe('975.00');
       expect(distribution.authorNetAmount.toFixed(2)).toBe('8775.00');
       expect(distribution.commissionRuleId).toBe(ruleId);
-      expect(distribution.payoutStatus).toBe('pending');
+      // Phase 7 : disponible dès le figeage (aucun prestataire de
+      // reversement n'existe encore pour justifier un état intermédiaire).
+      expect(distribution.payoutStatus).toBe('available');
     });
 
     it('prend la quantité en compte', async () => {
