@@ -13,7 +13,9 @@ import {
   Truck,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 
+import { useCart } from "@/src/components/providers/cart-provider";
 import { Button } from "@/src/components/ui/button";
 import { Field, FormError } from "@/src/components/ui/field";
 import { Input } from "@/src/components/ui/input";
@@ -37,7 +39,7 @@ const FORMAT_ICONS: Record<string, LucideIcon> = {
  * Ces valeurs viennent du contrat de l'API (`CreateOrderDto`) : une commande
  * `physical_delivery` sans adresse, ou `pickup` sans téléphone, est refusée.
  */
-const DELIVERY_REQUIREMENTS: Record<string, "address" | "contact" | undefined> = {
+export const DELIVERY_REQUIREMENTS: Record<string, "address" | "contact" | undefined> = {
   physical_delivery: "address",
   pickup: "contact",
 };
@@ -59,15 +61,26 @@ const DELIVERY_REQUIREMENTS: Record<string, "address" | "contact" | undefined> =
 export function FormatSelector({
   formats,
   workSlug,
+  workTitle,
+  authorName,
+  coverPath,
+  tenantSlug,
+  tenantName,
   isAuthenticated,
   defaultFormatId,
 }: {
   formats: WorkFormat[];
   workSlug: string;
+  workTitle: string;
+  authorName: string;
+  coverPath: string | null;
+  tenantSlug: string;
+  tenantName: string;
   isAuthenticated: boolean;
   defaultFormatId?: string;
 }) {
   const groupId = useId();
+  const cart = useCart();
   const available = formats.filter((format) => format.isAvailable);
   const [selectedId, setSelectedId] = useState(
     (defaultFormatId && available.some((format) => format.id === defaultFormatId)
@@ -95,6 +108,23 @@ export function FormatSelector({
 
   const selected = available.find((format) => format.id === selectedId) ?? available[0]!;
   const requirement = DELIVERY_REQUIREMENTS[selected.deliveryType];
+
+  const handleAddToCart = (): void => {
+    cart.addItem({
+      workFormatId: selected.id,
+      workSlug,
+      workTitle,
+      authorName,
+      coverPath,
+      formatType: selected.formatType,
+      formatLabel: selected.label,
+      deliveryType: selected.deliveryType,
+      price: selected.price,
+      tenantSlug,
+      tenantName,
+    });
+    toast.success("Ajouté au panier.", { description: workTitle });
+  };
 
   // L'achat exige un compte. La destination souhaitée est transmise à la page de
   // connexion pour que le lecteur y revienne, son format toujours sélectionné.
@@ -190,19 +220,33 @@ export function FormatSelector({
 
       <input type="hidden" name="workSlug" value={workSlug} />
 
-      {isAuthenticated ? (
-        <Button type="submit" size="lg" isLoading={pending} className="w-full sm:w-auto">
-          {!pending && <ShoppingCart aria-hidden />}
-          {pending ? "Enregistrement de la commande…" : "Commander maintenant"}
+      <div className="flex flex-wrap gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          onClick={handleAddToCart}
+          className="w-full sm:w-auto"
+        >
+          <ShoppingCart aria-hidden />
+          Ajouter au panier
         </Button>
-      ) : (
-        <Button asChild size="lg" className="w-full sm:w-auto">
-          <Link href={purchaseHref}>
-            <ShoppingCart aria-hidden />
-            Se connecter pour commander
-          </Link>
-        </Button>
-      )}
+
+        {isAuthenticated ? (
+          <Button
+            type="submit"
+            size="lg"
+            isLoading={pending}
+            className="w-full sm:w-auto"
+          >
+            {pending ? "Enregistrement de la commande…" : "Commander maintenant"}
+          </Button>
+        ) : (
+          <Button asChild size="lg" className="w-full sm:w-auto">
+            <Link href={purchaseHref}>Se connecter pour commander</Link>
+          </Button>
+        )}
+      </div>
 
       <p className="text-muted-foreground flex items-start gap-2 text-sm">
         <Lock aria-hidden className="mt-0.5 size-3.5 shrink-0" />

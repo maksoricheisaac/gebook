@@ -229,6 +229,11 @@ export default async function WorkPage(props: PageProps<"/livres/[slug]">) {
               <FormatSelector
                 formats={work.formats}
                 workSlug={work.slug}
+                workTitle={work.title}
+                authorName={work.author.penName}
+                coverPath={work.coverPath}
+                tenantSlug={work.tenant.slug}
+                tenantName={work.tenant.name}
                 isAuthenticated={currentUser !== null}
                 defaultFormatId={defaultFormatId}
               />

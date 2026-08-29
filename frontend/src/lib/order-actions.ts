@@ -98,3 +98,65 @@ export async function purchaseAction(
 
   redirect(`/paiement/${payload.orderNumber}`);
 }
+
+export interface CheckoutCartResult {
+  orderNumber?: string;
+  error?: string;
+  fieldErrors?: Record<string, string[]>;
+}
+
+/**
+ * Checkout du panier (mission — Tâche 5) : réutilise exactement le même
+ * `POST /orders` que `purchaseAction`, avec plusieurs lignes — l'API accepte
+ * déjà ça (`CreateOrderDto.items`, panier multi-tenant, `OrdersService.create()`).
+ *
+ * Ne redirige pas elle-même (contrairement à `purchaseAction`) : le panier vit
+ * en `localStorage`, côté client — seul l'appelant (la page `/panier`) peut le
+ * vider, et seulement après un succès confirmé. Rediriger ici viderait l'ordre
+ * des opérations : le panier serait perdu même en cas d'échec réseau après
+ * l'appel.
+ */
+export async function checkoutCartAction(
+  items: { workFormatId: string; quantity: number }[],
+  delivery: Record<string, string>,
+): Promise<CheckoutCartResult> {
+  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  if (!token) {
+    return { error: "Vous devez être connecté pour finaliser votre commande." };
+  }
+
+  const cleanDelivery: Record<string, string> = {};
+  for (const field of DELIVERY_FIELDS) {
+    const value = delivery[field];
+    if (typeof value === "string" && value.trim() !== "") {
+      cleanDelivery[field] = value.trim();
+    }
+  }
+
+  const origin = (await headers()).get("origin") ?? "";
+
+  const response = await fetch(`${apiBaseUrl()}/orders`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: origin,
+      cookie: `${SESSION_COOKIE_NAME}=${token}`,
+    },
+    body: JSON.stringify({ items, ...cleanDelivery }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as {
+    orderNumber?: string;
+    message?: string;
+    errors?: Record<string, string[]>;
+  } | null;
+
+  if (!response.ok || !payload?.orderNumber) {
+    return {
+      error: payload?.message ?? "Une erreur est survenue. Veuillez réessayer.",
+      fieldErrors: payload?.errors,
+    };
+  }
+
+  return { orderNumber: payload.orderNumber };
+}

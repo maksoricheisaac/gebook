@@ -1407,3 +1407,72 @@ Décisions :
 Commit : `feat: add storefront share link and close visibility test gaps`
 Push : effectué
 
+
+
+### Tâche 4 — Construire le panier & Tâche 5 — Intégrer le panier au checkout
+
+Ces deux tâches sont documentées ensemble : elles ont été construites et testées comme une seule unité fonctionnelle (le panier n'a aucune valeur sans un checkout réel, et un panier « livré en deux commits » aurait signifié committer un état non fonctionnel entre les deux — proscrit par la mission). Chaque fichier reste néanmoins une responsabilité précise, listée ci-dessous.
+
+Objectif :
+Construire un vrai panier fonctionnel (ajouter/retirer/modifier quantité/vider/total/persister/restaurer), multi-tenant, et le connecter au checkout réel — en annulant la décision précédente (Phase 6) qui l'avait jugé facultatif.
+
+Travaux réalisés :
+
+**Décision d'architecture (avant tout code)** : panier client uniquement (`localStorage`), pas de modèle Prisma `Cart`. Inspection de `OrdersService.create()` (`backend/src/modules/orders/orders.service.ts:58`) : `POST /orders` accepte déjà `items: [{ workFormatId, quantity }]`, revalide systématiquement prix/disponibilité depuis la base (`workFormat.findMany(...)`, jamais un prix envoyé par le client), et le commentaire du code lui-même dit explicitement « panier multi-tenant » — l'API a été conçue dès le départ pour accepter plusieurs lignes de plusieurs tenants dans une même commande. Aucune modification de `OrdersService`/`CreateOrderDto` n'était donc nécessaire : construire un modèle `Cart`/`CartItem` persistant aurait dupliqué une capacité déjà présente pour rien.
+
+**Écart trouvé et comblé avant de commencer le panier lui-même** : la réponse publique d'une œuvre (`WorkSummaryResponse`) n'exposait aucune information de tenant — impossible de grouper le panier par vendeur (« Mampouya Éditions… Kongo Books… », exemple du brief) sans elle. Ajouté `tenant: { slug, name }` à `buildWorkSelection`/`toWorkSummary` (`backend/src/modules/catalog/dto/catalog.response.ts`) — champ additif, aucune route/contrat existant cassé, `Work.tenantId` étant une colonne obligatoire (toujours présente).
+
+**Panier (`localStorage`)** :
+- `frontend/src/lib/cart-shared.ts` — types (`CartLine`), lecture/écriture `localStorage` (jamais de plantage si indisponible — navigation privée, quota), regroupement par tenant, total/sous-total d'aperçu (jamais transmis au backend comme preuve de prix).
+- `frontend/src/components/providers/cart-provider.tsx` — contexte React, hydratation après montage (même motif que `AdminShell` pour sa préférence de repli de barre latérale — le rendu serveur ne connaît jamais `localStorage`), synchronisation entre onglets (`storage` event).
+- `frontend/src/components/layout/cart-link.tsx` — icône + badge dans l'en-tête public, monté dans `site-header.tsx`.
+- `frontend/app/(site)/layout.tsx` — monte `CartProvider` et `<Toaster>` : jusqu'ici, `<Toaster>` n'existait que dans `AdminShell` (back-office) — un `toast()` émis depuis le site public (dont mes propres confirmations « Ajouté au panier ») ne se serait affiché nulle part. Écart réel corrigé au passage, pas ajouté sans raison.
+- `frontend/src/components/catalog/format-selector.tsx` — bouton « Ajouter au panier » à côté de « Commander maintenant » (achat direct conservé tel quel, toujours utile pour qui veut acheter en un clic).
+
+**Page panier et checkout (`/panier`)** :
+- `frontend/src/components/catalog/cart-client.tsx` — liste des articles groupés par tenant, vignette, quantité (+/-), suppression, sous-total par ligne, total, coordonnées de livraison si un article du panier l'exige (adresse OU contact, prend la plus exigeante des lignes), bouton « Passer au paiement » / « Se connecter pour continuer » selon l'état de connexion.
+- `frontend/src/lib/order-actions.ts` — `checkoutCartAction()` (nouvelle), réutilise `POST /orders` telle quelle, ne redirige pas elle-même (contrairement à `purchaseAction`) : le panier vit côté client, seul l'appelant peut le vider, et seulement après un succès confirmé — vider avant d'avoir la confirmation aurait perdu le panier même en cas d'échec réseau.
+
+Fichiers modifiés/créés :
+- `backend/src/modules/catalog/dto/catalog.response.ts`
+- `frontend/src/lib/catalog.ts`
+- `frontend/src/lib/cart-shared.ts` (nouveau)
+- `frontend/src/components/providers/cart-provider.tsx` (nouveau)
+- `frontend/src/components/layout/cart-link.tsx` (nouveau)
+- `frontend/src/components/layout/site-header.tsx`
+- `frontend/app/(site)/layout.tsx`
+- `frontend/src/components/catalog/format-selector.tsx`
+- `frontend/app/(site)/livres/[slug]/page.tsx`
+- `frontend/src/components/catalog/cart-client.tsx` (nouveau)
+- `frontend/app/(site)/panier/page.tsx` (nouveau)
+- `frontend/src/lib/order-actions.ts`
+
+Tests :
+- `pnpm exec tsc --noEmit` + `pnpm lint` (backend) → OK
+- `pnpm test` (backend, unitaires) → 12 suites / 81 tests
+- `pnpm test:e2e catalog.e2e-spec.ts orders.e2e-spec.ts` (backend) → 45/45, aucune régression sur l'ajout du champ `tenant`
+- `pnpm exec tsc --noEmit` + `pnpm lint` (frontend) → OK, 0 erreur (3 avertissements préexistants sans rapport)
+- Parcours réel en navigateur (Claude in Chrome, session « John Doe »), de bout en bout, sans simulation :
+  1. `/livres` → ouverture d'une œuvre → « Ajouter au panier » (format numérique) → toast « Ajouté au panier », badge de l'en-tête passe à 1.
+  2. Retour au catalogue → deuxième œuvre → sélection du format « Livre imprimé » (livraison physique) → « Ajouter au panier » → badge passe à 2.
+  3. `/panier` → les deux articles bien groupés sous le même tenant (« Mampouya Éditions »), total affiché 18 000 FCFA (4 000 + 14 000, exact), champs de livraison affichés car un article l'exige.
+  4. Remplissage des coordonnées de livraison, clic « Passer au paiement ».
+  5. Commande réellement créée (`GB-20260829-EPQUBE`), redirection vers `/paiement/GB-20260829-EPQUBE`, montant et lignes exacts (4 000 FCFA + 14 000 FCFA = 18 000 FCFA), statut « En attente ».
+  6. Retour sur `/panier` : panier vide (« Votre panier est vide »), badge disparu de l'en-tête — confirmation que `cart.clear()` s'est bien déclenché seulement après le succès de la commande.
+  7. Aucune erreur réseau/console liée à l'application à aucune étape (les 2 exceptions console observées à chaque page sont un bruit d'extension navigateur tiers, « OrangeMonkey », confirmé visible via sa propre bannière — sans rapport avec GeBook, voir Tâche 1).
+
+Résultat :
+VALIDÉ — panier fonctionnel de bout en bout (ajouter, grouper par tenant, modifier quantité, supprimer, total, persister — testé implicitement par la persistance du badge après navigation), connecté à un vrai checkout qui crée une vraie commande via l'API existante, vérifié par une commande réellement passée en navigateur, pas seulement par les types/lint.
+
+Problèmes rencontrés :
+Aucun bug applicatif. Un artefact de test (dérive de coordonnées de clic entre deux captures d'écran successives dans un même lot d'actions du navigateur automatisé, remplissant le mauvais champ) a été rencontré en remplissant le formulaire de livraison — corrigé en revalidant chaque champ par capture d'écran avant le suivant ; sans rapport avec le code de l'application.
+
+Décisions :
+- Panier client (`localStorage`), pas de modèle Prisma : décision explicitement permise par la mission (« ne crée pas inutilement un modèle Prisma Cart si une solution frontend robuste suffit »), justifiée ici par le fait que `POST /orders` acceptait déjà tout ce dont un panier a besoin, sans aucune modification.
+- `checkoutCartAction` ne redirige pas elle-même (contrairement à `purchaseAction`, son équivalent pour l'achat direct) : l'ordre des opérations (créer la commande → vider le panier → naviguer) doit être garanti côté client, qui est seul à connaître l'état du panier.
+- Achat direct (« Commander maintenant ») conservé intégralement, pas remplacé par le panier : les deux répondent à des besoins différents (achat immédiat vs composition d'une sélection), et rien dans la mission ne demandait de supprimer un parcours qui fonctionnait déjà.
+- `<Toaster>` ajouté au layout du site public en même temps que `CartProvider`, pas dans un commit séparé : sans lui, aucune confirmation visuelle du panier n'aurait pu s'afficher — un correctif nécessaire à la fonctionnalité elle-même, pas une tâche indépendante.
+
+Commit : `feat: add a real multi-tenant shopping cart wired to checkout`
+Push : effectué
+

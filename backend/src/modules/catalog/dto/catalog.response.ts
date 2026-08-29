@@ -66,6 +66,8 @@ export interface WorkSummaryResponse {
   publishedAt: string | null;
   author: Pick<AuthorSummaryResponse, 'id' | 'slug' | 'penName'>;
   category: Pick<CategoryResponse, 'id' | 'slug' | 'name'> | null;
+  /** Tenant vendeur — nécessaire pour grouper le panier par vendeur (mission panier multi-tenant). */
+  tenant: { slug: string; name: string };
   formats: WorkFormatResponse[];
   /** Prix le plus bas parmi les formats disponibles, pour l'affichage « à partir de ». */
   priceFrom: string | null;
@@ -235,6 +237,7 @@ export function buildWorkSelection(locale: ContentLocale) {
     featured: true,
     publishedAt: true,
     author: { select: { id: true, slug: true, penName: true } },
+    tenant: { select: { slug: true, name: true } },
     category: {
       select: {
         id: true,
@@ -329,6 +332,7 @@ export function toWorkSummary(
     featured: work.featured,
     publishedAt: work.publishedAt?.toISOString() ?? null,
     author: work.author,
+    tenant: work.tenant,
     category: work.category
       ? {
           id: work.category.id,

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/src/components/ui/button";
 import { destinationFor, getCurrentUser } from "@/src/lib/auth";
+import { CartLink } from "./cart-link";
 import { LogoLink } from "./logo";
 import { MainNav } from "./main-nav";
 import { MobileMenu } from "./mobile-menu";
@@ -35,6 +36,8 @@ export async function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-2 lg:gap-3">
           <SearchField className="hidden w-56 xl:block xl:w-64" />
+
+          <CartLink />
 
           {user ? (
             <UserMenu user={user} destination={destinationFor(user.roles)} />

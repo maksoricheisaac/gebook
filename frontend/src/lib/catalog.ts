@@ -34,6 +34,7 @@ export interface WorkSummary {
   featured: boolean;
   publishedAt: string | null;
   author: { id: string; slug: string; penName: string };
+  tenant: { slug: string; name: string };
   category: { id: string; slug: string; name: string } | null;
   formats: WorkFormat[];
   priceFrom: string | null;
