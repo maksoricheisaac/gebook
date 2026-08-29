@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ArrowRight, BookOpen, Library, Rocket } from "lucide-react";
 
 import { AccountShell } from "@/src/components/account/account-shell";
+import { InvitationAcceptCard } from "@/src/components/account/invitation-accept-card";
 import { Button } from "@/src/components/ui/button";
 import { OrderStatusBadge, isPayable } from "@/src/lib/order-status";
 import { requireRole } from "@/src/lib/auth";
@@ -40,6 +41,7 @@ export default async function ReaderSpacePage() {
   // n'est jamais membre d'un tenant, mais accède à `/admin` tout de même.
   const hasTenantAccess =
     memberships.some((m) => m.status === "active") || user.roles.includes("admin");
+  const pendingInvitations = memberships.filter((m) => m.status === "invited");
 
   return (
     <AccountShell
@@ -75,6 +77,24 @@ export default async function ReaderSpacePage() {
             }
           />
         </dl>
+
+        {pendingInvitations.length > 0 && (
+          <section className="border-accent/40 bg-accent-muted/50 rounded-lg border p-5">
+            <h2 className="type-h3 text-secondary">
+              {pendingInvitations.length > 1
+                ? `${pendingInvitations.length} invitations à rejoindre une équipe`
+                : "Une invitation à rejoindre une équipe"}
+            </h2>
+            <p className="text-muted-foreground mt-1.5 text-sm">
+              Acceptez pour accéder à l’espace éditeur avec le rôle proposé.
+            </p>
+            <ul className="mt-4 space-y-3">
+              {pendingInvitations.map((membership) => (
+                <InvitationAcceptCard key={membership.tenantId} membership={membership} />
+              ))}
+            </ul>
+          </section>
+        )}
 
         {toSettle.length > 0 && (
           <section className="border-accent/40 bg-accent-muted/50 rounded-lg border p-5">
@@ -208,7 +228,9 @@ export default async function ReaderSpacePage() {
                 </>
               ) : (
                 <>
-                  <h2 className="type-h3 text-secondary">Vous êtes auteur ou éditeur ?</h2>
+                  <h2 className="type-h3 text-secondary">
+                    Vous êtes auteur ou éditeur ?
+                  </h2>
                   <p className="text-muted-foreground mt-1.5 max-w-lg text-sm leading-relaxed text-pretty">
                     Ouvrez votre espace pour publier vos œuvres, suivre vos ventes et
                     inviter une équipe — gratuitement, en quelques informations.

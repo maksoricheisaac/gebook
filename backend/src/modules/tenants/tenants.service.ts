@@ -118,6 +118,40 @@ export class TenantsService {
   }
 
   /**
+   * Acceptation d'une invitation (Phase 8) : `TeamService.invite()` crée
+   * désormais la ligne en `invited`, jamais `active` — la personne invitée
+   * devient réellement membre ici, en acceptant elle-même, pas au moment où
+   * quelqu'un d'autre l'a ajoutée. `userId = user.id` dans le `WHERE` garantit
+   * qu'on ne peut accepter que sa propre invitation, jamais celle de
+   * quelqu'un d'autre.
+   */
+  async acceptInvitation(
+    tenantId: string,
+    user: AuthenticatedUser,
+  ): Promise<TenantMembershipResponse> {
+    const member = await this.prisma.withRlsContext(
+      buildRlsContext(user),
+      async (tx) => {
+        const existing = await tx.tenantMember.findFirst({
+          where: { tenantId, userId: user.id, status: 'invited' },
+        });
+        if (!existing) {
+          throw new NotFoundException(
+            'Aucune invitation en attente pour cet espace.',
+          );
+        }
+        return tx.tenantMember.update({
+          where: { id: existing.id },
+          data: { status: 'active' },
+          include: { tenant: true },
+        });
+      },
+    );
+
+    return toTenantMembershipResponse(member);
+  }
+
+  /**
    * Profil public d'un tenant (Phase 5, vitrine). Aucun contexte RLS posé,
    * comme `WorksService`/`AuthorsService` pour leurs lectures publiques : la
    * policy `tenants_select` porte elle-même la condition `status = 'active'`

@@ -106,8 +106,17 @@ export class TeamService {
           );
         }
 
+        // Phase 8 : `invited`, pas `active` — l'ajout immédiat ignorait le
+        // statut prévu par le schéma. La personne devient réellement membre
+        // à l'acceptation (`TenantsService.acceptInvitation`), pas à
+        // l'invitation elle-même.
         return tx.tenantMember.create({
-          data: { tenantId, userId: user.id, role: dto.role, status: 'active' },
+          data: {
+            tenantId,
+            userId: user.id,
+            role: dto.role,
+            status: 'invited',
+          },
           include: memberInclude,
         });
       })

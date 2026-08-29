@@ -145,3 +145,60 @@ export async function setActiveTenantAction(
 export async function clearActiveTenantAction(): Promise<void> {
   (await cookies()).delete(ACTIVE_TENANT_COOKIE_NAME);
 }
+
+export interface AcceptInvitationResult {
+  error?: string;
+}
+
+/**
+ * Acceptation d'une invitation d'équipe (Phase 8, `POST /tenants/:tenantId/accept`).
+ *
+ * Même schéma que `setActiveTenantAction` : le cookie d'espace actif est posé
+ * ici, sur l'origine du frontend, jamais relayé tel quel depuis la réponse de
+ * l'API — et l'API reste seule juge de la validité de l'invitation (la ligne
+ * `tenant_members` doit être `invited` et appartenir à l'utilisateur courant).
+ *
+ * Signature `(état précédent, tenantId)` pour être utilisable directement
+ * avec `useActionState` (`InvitationAcceptButton`), comme `createTenantAction`.
+ */
+export async function acceptInvitationAction(
+  _previous: AcceptInvitationResult,
+  tenantId: string,
+): Promise<AcceptInvitationResult> {
+  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  if (!token) {
+    return { error: "Vous devez être connecté." };
+  }
+
+  const origin = (await headers()).get("origin") ?? "";
+
+  const response = await fetch(`${apiBaseUrl()}/tenants/${tenantId}/accept`, {
+    method: "POST",
+    headers: {
+      Origin: origin,
+      cookie: `${SESSION_COOKIE_NAME}=${token}`,
+    },
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    (TenantMembership & Record<string, unknown>) | { message?: string } | null;
+
+  if (!response.ok) {
+    const record = (payload ?? {}) as { message?: string };
+    return {
+      error: record.message ?? "Impossible d'accepter cette invitation pour le moment.",
+    };
+  }
+
+  const membership = payload as TenantMembership;
+
+  (await cookies()).set(ACTIVE_TENANT_COOKIE_NAME, membership.tenantId, {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+
+  redirect("/admin?invitation_acceptee=1");
+}

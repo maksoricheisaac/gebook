@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Res,
   UseGuards,
@@ -97,5 +98,30 @@ export class TenantsController {
       ACTIVE_TENANT_COOKIE_NAME,
       clearedActiveTenantCookieOptions(),
     );
+  }
+
+  /**
+   * Acceptation d'une invitation (Phase 8). `AuthGuard` seul, jamais
+   * `TenantAccessGuard` : la personne n'a par définition pas encore d'accès
+   * à ce tenant tant qu'elle n'a pas accepté.
+   */
+  @Post(':tenantId/accept')
+  @HttpCode(HttpStatus.OK)
+  async accept(
+    @Param('tenantId') tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<TenantMembershipResponse> {
+    const membership = await this.tenants.acceptInvitation(tenantId, user);
+
+    // Comme à la création : atterrir directement sur un espace actif plutôt
+    // que devoir le sélectionner soi-même juste après avoir accepté.
+    response.cookie(
+      ACTIVE_TENANT_COOKIE_NAME,
+      membership.tenantId,
+      activeTenantCookieOptions(),
+    );
+
+    return membership;
   }
 }

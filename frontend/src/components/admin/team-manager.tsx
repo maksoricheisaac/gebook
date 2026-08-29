@@ -8,7 +8,11 @@ import { z } from "zod";
 import { Crown, Shield, Trash2, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 
-import { AdminStatCard, AdminStatGrid, AdminTablePanel } from "@/src/components/admin/admin-page";
+import {
+  AdminStatCard,
+  AdminStatGrid,
+  AdminTablePanel,
+} from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
@@ -123,7 +127,9 @@ export function TeamManager() {
     mutationFn: ({ id, role }: { id: string; role: string }) =>
       adminFetch<TeamMember>(`/team/${id}`, { method: "PATCH", body: { role } }),
     onSuccess: async (member) => {
-      toast.success(`Rôle de ${member.firstName} mis à jour : ${ROLE_LABELS[member.role]}.`);
+      toast.success(
+        `Rôle de ${member.firstName} mis à jour : ${ROLE_LABELS[member.role]}.`,
+      );
       await invalidate();
     },
     onError: (error: unknown) => toast.error(errorMessage(error)),
@@ -190,8 +196,13 @@ export function TeamManager() {
               members.map((member) => (
                 <DataRow key={member.id}>
                   <td>
-                    <span className="text-secondary block font-medium">
+                    <span className="text-secondary flex items-center gap-2 font-medium">
                       {member.firstName} {member.lastName ?? ""}
+                      {member.status === "invited" && (
+                        <span className="bg-accent-muted text-accent-foreground rounded-full px-2 py-0.5 text-xs font-medium">
+                          En attente d&apos;acceptation
+                        </span>
+                      )}
                     </span>
                     <span className="text-muted-foreground block text-sm">
                       {member.email}
@@ -261,7 +272,9 @@ export function TeamManager() {
             <DialogBody className="space-y-5">
               <FormError message={serverError ?? undefined} />
               <p className="text-muted-foreground text-sm">
-                {"La personne doit déjà avoir un compte GeBook (lecteur) pour rejoindre l'équipe."}
+                {
+                  "La personne doit déjà avoir un compte GeBook (lecteur) pour rejoindre l'équipe."
+                }
               </p>
 
               <Field
@@ -285,7 +298,11 @@ export function TeamManager() {
             </DialogBody>
 
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setIsInviteOpen(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsInviteOpen(false)}
+              >
                 Annuler
               </Button>
               <Button type="submit" isLoading={isSubmitting || inviteMutation.isPending}>

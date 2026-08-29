@@ -260,6 +260,28 @@ describe('Équipe de tenant (e2e)', () => {
         .expect(201);
 
       expect((response.body as { role: string }).role).toBe('owner');
+      // Phase 8 : `invited`, pas encore membre actif — le reste de cette
+      // suite agit avec `owner2Agent` comme un vrai propriétaire, donc
+      // l'invitation doit être acceptée avant de continuer.
+      expect((response.body as { status: string }).status).toBe('invited');
+    });
+
+    it("owner2 n'a pas encore accès au tenant avant d'accepter", async () => {
+      await owner2Agent
+        .post('/tenants/me/active')
+        .set('Origin', ORIGIN)
+        .send({ tenantId: tenantAId })
+        .expect(403);
+    });
+
+    it("owner2 accepte l'invitation et devient membre actif", async () => {
+      const response = await owner2Agent
+        .post(`/tenants/${tenantAId}/accept`)
+        .set('Origin', ORIGIN)
+        .expect(200);
+
+      expect((response.body as { status: string }).status).toBe('active');
+      await activate(owner2Agent, tenantAId);
     });
 
     it("refuse d'inviter une adresse sans compte GeBook", async () => {

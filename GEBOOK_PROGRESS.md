@@ -2,8 +2,8 @@
 
 ## État global
 
-Phase actuelle : PHASE 7 — Commissions, revenus et payouts
-Statut : TERMINÉE (partiellement — payout réel volontairement non construit, voir ci-dessous)
+Phase actuelle : PHASE 8 — Équipe, invitations et permissions
+Statut : TERMINÉE
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
 
@@ -944,6 +944,132 @@ Aucun au-delà des deux failles déjà décrites (trouvées et corrigées dans l
 
 ---
 
-## PHASE 8
+## PHASE 8 — Équipe, invitations et permissions
 
-*(non commencée)*
+### Objectif
+
+Faire correspondre le comportement réel de `TeamService.invite()` au workflow décrit par le schéma (`TenantMemberStatus`: `active`/`invited`/`suspended`) : avant cette phase, une invitation créait directement un membre `active`, sans jamais passer par `invited`, ce qui vidait le statut de tout sens. Documenter aussi la matrice de permissions rôle × action déjà en vigueur (RLS + garde applicative), sans réinventer de règles métier.
+
+### Travaux réalisés
+
+**8.1 — Invitation → acceptation réelle**
+
+- `TeamService.invite()` (`backend/src/modules/tenants/team.service.ts`) crée désormais la ligne `tenant_members` avec `status: 'invited'`, plus `'active'` immédiatement.
+- Nouvelle méthode `TenantsService.acceptInvitation(tenantId, user)` (`tenants.service.ts`) : fait passer la ligne `invited` de l'utilisateur courant, pour ce tenant, à `active`. `userId = user.id` dans le `WHERE` garantit qu'on ne peut accepter que sa propre invitation.
+- Nouvelle route `POST /tenants/:tenantId/accept` (`tenants.controller.ts`), protégée par `AuthGuard` seul (jamais `TenantAccessGuard`, puisque la personne n'a par définition pas encore accès à ce tenant) — pose le cookie de tenant actif au succès, comme `POST /tenants` et `POST /tenants/me/active`.
+
+**8.2 — Faille RLS découverte et corrigée (chicken-and-egg)**
+
+`tenant_members_update` (migration `20260823020000`) n'autorisait que owner/admin **déjà actifs** à modifier une ligne. Exactement le même trou que celui déjà rencontré pour la toute première insertion d'un tenant (`20260825000000_tenant_members_owner_bootstrap`) : une personne invitée n'est par définition pas encore active dans ce tenant, donc ne pouvait jamais accepter sa propre invitation — la commande était silencieusement refusée par RLS, indépendamment du code applicatif correct.
+
+Migration `20260829020000_tenant_members_self_accept` : ajoute une branche self-accept à la policy (`DROP POLICY` + `CREATE POLICY`, jamais `ALTER`) — une personne peut faire passer SA PROPRE ligne de `invited` à `active`, rien d'autre. Appliquée avec succès via `pnpm db:deploy` et vérifiée par les tests e2e.
+
+**8.3 — Matrice de permissions rôle × action (documentation, aucun code nouveau)**
+
+Constituée en croisant les gardes applicatives déjà en place (`tenant-context.ts`, `assertCan*` des services) avec les policies RLS qui leur correspondent — pas une nouvelle règle métier, un état des lieux de ce qui existe déjà et a été vérifié phase après phase.
+
+| Action | owner | admin | editor | author | marketing | finance | viewer |
+|---|---|---|---|---|---|---|---|
+| Voir le tableau de bord de l'espace | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Modifier les paramètres / branding de l'espace (`tenants_update`) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Créer / modifier une œuvre (`TENANT_CATALOG_WRITE_ROLES`) | ✅ | ✅ | ✅ | auteur : ses œuvres seulement | ❌ | ❌ | ❌ |
+| Publier / dépublier / archiver une œuvre (`assertAllowedStatus`, Phase 4) | ✅ | ✅ | ❌ (peut soumettre à relecture, pas publier) | ❌ (peut soumettre sa propre œuvre) | ❌ | ❌ | ❌ |
+| Gérer l'équipe — inviter / changer un rôle / retirer (`TENANT_MANAGEMENT_ROLES`) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Attribuer le rôle `owner` (`assertCanAssignOwner`) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Voir les chiffres de vente / revenus (`TENANT_FINANCE_ROLES`, `sale_distributions_select`) | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Déclencher un remboursement / gérer un paiement | platform_admin uniquement (`@Roles('admin')`, `admin-payments.controller.ts`) — aucun rôle de tenant, y compris owner, n'a cet accès | | | | | | |
+| Se retirer soi-même de l'équipe | ✅ (sauf dernier owner) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+Deux points notés tels quels, sans les « corriger » (hors périmètre de cette phase, aucune ambiguïté à trancher — c'est le comportement déjà voulu et testé) :
+- Le remboursement/paiement est une capacité **plateforme**, pas une capacité de tenant : même un `owner` ne peut pas le déclencher lui-même, seul le platform_admin le peut (cohérent avec « aucun payout réel n'existe », Phase 7).
+- `marketing` et `viewer` n'ont aujourd'hui aucune capacité d'écriture distincte de leur nom — leur rôle actuel se limite à l'accès en lecture au tableau de bord ; rien dans le code n'implémente encore de permission spécifique à ces deux rôles (ex. gestion de campagnes pour `marketing`). Ce n'est pas un bug : aucune fonctionnalité de ce type n'existe encore ailleurs dans l'application pour qu'une permission s'y accroche.
+
+**8.4 — Frontend : rendre l'invitation visible et acceptable**
+
+Sans interface, une invitation `invited` aurait été invisible pour la personne invitée — elle n'aurait eu aucun moyen de la découvrir ni de l'accepter.
+
+- `frontend/src/lib/tenant-actions.ts` : nouvelle `acceptInvitationAction(previousState, tenantId)`, même schéma que `setActiveTenantAction` (cookie posé côté frontend, jamais relayé depuis l'API ; l'API reste seule juge de la validité).
+- `frontend/src/components/account/invitation-accept-card.tsx` (nouveau) : carte client (`useActionState`) affichant l'espace, son type et le rôle proposé, avec un bouton d'acceptation.
+- `frontend/app/(site)/mon-espace/page.tsx` : nouvelle section « invitations en attente », visible dès que l'utilisateur a une adhésion `invited` — placée avant la section commandes, pour qu'elle soit vue en priorité.
+- `frontend/src/components/admin/team-manager.tsx` : badge « En attente d'acceptation » à côté du nom d'un membre `invited`, dans le tableau d'équipe de l'admin.
+
+**8.5 — Test existant mis à jour**
+
+`backend/test/team.e2e-spec.ts` : le reste du fichier (changements de rôle, protection du dernier owner, retrait) utilisait `owner2Agent` comme un propriétaire déjà actif juste après invitation — supposition rendue fausse par 8.1. Corrigé par :
+- l'assertion du test d'invitation (« un propriétaire peut attribuer le rôle propriétaire ») mise à jour pour vérifier `status: 'invited'` ;
+- deux tests ajoutés juste après : `owner2` n'a pas accès au tenant avant d'accepter (`POST /tenants/me/active` → 403), puis accepte réellement via la nouvelle route et devient `active`.
+
+### Fichiers modifiés / créés
+
+- `backend/src/modules/tenants/team.service.ts` — `invite()` crée en `invited`.
+- `backend/src/modules/tenants/tenants.service.ts` — `acceptInvitation()` (nouveau).
+- `backend/src/modules/tenants/tenants.controller.ts` — route `POST :tenantId/accept` (nouvelle).
+- `backend/prisma/migrations/20260829020000_tenant_members_self_accept/migration.sql` (nouveau) — policy UPDATE self-accept.
+- `backend/test/team.e2e-spec.ts` — assertion mise à jour + 2 tests ajoutés.
+- `frontend/src/lib/tenant-actions.ts` — `acceptInvitationAction` (nouveau).
+- `frontend/src/components/account/invitation-accept-card.tsx` (nouveau).
+- `frontend/app/(site)/mon-espace/page.tsx` — section invitations en attente.
+- `frontend/src/components/admin/team-manager.tsx` — badge de statut `invited`.
+
+### Base de données / migrations
+
+Une migration (`20260829020000_tenant_members_self_accept`) — remplace la policy RLS `tenant_members_update` par une version incluant une branche self-accept. Aucun changement de schéma (colonnes/tables/enum) : `TenantMemberStatus` incluait déjà `invited`, seul le code ne l'utilisait pas.
+
+### Tests exécutés
+
+```text
+backend   pnpm exec eslint --fix (2 fichiers)   → formatage corrigé
+backend   pnpm lint                             → OK (0 erreur)
+backend   pnpm exec tsc --noEmit                → OK
+backend   pnpm test (unitaires)                 → 12 suites / 81 tests
+backend   pnpm test:e2e team.e2e-spec.ts (isolé)→ 16/16 tests (dont les 3 nouveaux)
+backend   pnpm test:e2e (suite complète)        → 14/14 suites, 201/201 tests
+frontend  pnpm exec tsc --noEmit                → OK
+frontend  pnpm lint                             → 0 erreur, 3 avertissements préexistants et sans rapport (React Compiler / react-hook-form, non touchés par cette phase)
+```
+
+**Limite honnête à signaler** : la nouvelle section « invitations en attente » et le badge admin n'ont pas été vérifiés dans un navigateur réel — même limite que les phases précédentes. Le workflow backend (invitation → 403 tant que non acceptée → acceptation → accès réel) est, lui, entièrement vérifié par les tests e2e sous RLS réellement appliquée.
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| Invitation crée `invited`, pas `active` | VALIDÉ (test e2e) |
+| Accès refusé (403) avant acceptation | VALIDÉ (test e2e, sous RLS réelle) |
+| `POST /tenants/:tenantId/accept` fait passer à `active` | VALIDÉ (test e2e) |
+| Policy RLS self-accept restreinte à sa propre ligne, `invited → active` uniquement | VALIDÉ (test e2e + lecture de la policy) |
+| Matrice de permissions documentée et vérifiée contre le code réel | VALIDÉ |
+| UI d'acceptation (lecteur) | FONCTIONNEL — non vérifié en navigateur réel |
+| UI badge « en attente » (admin) | FONCTIONNEL — non vérifié en navigateur réel |
+
+### Problèmes rencontrés
+
+Le même type de faille RLS chicken-and-egg déjà rencontré en Phase 8.2 était prévisible par analogie avec le bootstrap owner (Phase antérieure) — anticipé, cherché délibérément, trouvé et corrigé avant que les tests ne l'auraient révélé de toute façon.
+
+### Décisions techniques
+
+- Self-accept limité strictement à `user_id = soi-même` et `invited → active` (rien d'autre) dans la policy RLS : une personne ne doit jamais pouvoir modifier la ligne de quelqu'un d'autre ni changer son propre statut vers autre chose que `active` par ce biais — les changements de rôle et suppressions repassent par la règle owner/admin déjà existante, inchangée.
+- Matrice de permissions documentée plutôt que codifiée dans un nouveau mécanisme (ex. table de permissions dédiée) : le mission demande d'« adapter cette matrice au métier réel et au code existant », pas d'en construire une nouvelle — les gardes RLS et applicatives qui l'implémentent déjà (`TENANT_MANAGEMENT_ROLES`, `TENANT_CATALOG_WRITE_ROLES`, `TENANT_FINANCE_ROLES`, `assertAllowedStatus`) restent la seule source de vérité, non dupliquée.
+- `marketing`/`viewer` laissés sans permission spécifique au-delà de la lecture : inventer une capacité pour ces rôles sans fonctionnalité correspondante ailleurs dans l'application aurait été fabriquer une règle métier sans source, explicitement proscrit par la mission.
+
+### Éléments restant à traiter
+
+1. Vérification manuelle en navigateur de la section invitations et du badge admin — non faite.
+2. Les rôles `marketing` et `viewer` n'ont aucune capacité distincte de la lecture ; à réévaluer si/quand une fonctionnalité correspondante (campagnes, etc.) apparaît.
+
+### Validation
+
+- [x] Typecheck backend
+- [x] Lint backend
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires
+- [x] Tests e2e (fichier isolé + suite complète)
+- [x] Vérification migrations (policy RLS self-accept appliquée et testée)
+- [x] Vérification routes (nouvelle route `POST /tenants/:tenantId/accept`, guard correct)
+- [x] Vérification permissions (matrice documentée et croisée avec le code réel)
+- [x] Vérification multi-tenant (self-accept scopé à `user_id = soi-même`, jamais à un autre membre)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, signalée)
+- [x] Documentation mise à jour (ce fichier)
+
+---
