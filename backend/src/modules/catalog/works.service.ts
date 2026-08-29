@@ -5,6 +5,7 @@ import {
   AuthorStatus,
   ContentLocale,
   WorkStatus,
+  WorkVisibility,
 } from '../../generated/prisma/enums';
 import type { ListWorksQuery } from './dto/list-works.query';
 import {
@@ -20,14 +21,21 @@ import {
 
 /**
  * Filtre de visibilité publique, appliqué sans exception à toutes les lectures du
- * catalogue. Il reproduit la vue `vw_published_works` : une œuvre n'est visible que
- * si elle est publiée **et** que son auteur est actif.
+ * catalogue agrégé (multi-tenant, brief §14). Une œuvre n'apparaît ici que si :
  *
- * C'est la règle métier n° 3. Elle est isolée ici pour qu'aucune requête ne puisse
- * l'oublier en la réécrivant à sa façon.
+ *   - elle est publiée (`status`) ;
+ *   - son auteur est actif (`author.status`) ;
+ *   - elle est explicitement `public` (`visibility`) — une œuvre `tenant_only`
+ *     reste réservée à la vitrine propre à son tenant (Phase 5), jamais
+ *     agrégée ici ; une œuvre `private` n'est jamais publique du tout.
+ *
+ * C'est la règle métier n° 3, étendue par la Phase 4 (workflow éditorial).
+ * Elle est isolée ici pour qu'aucune requête ne puisse l'oublier en la
+ * réécrivant à sa façon.
  */
 export const publiclyVisible = {
   status: WorkStatus.published,
+  visibility: WorkVisibility.public,
   author: { status: AuthorStatus.active },
 } satisfies Prisma.WorkWhereInput;
 

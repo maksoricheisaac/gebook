@@ -46,6 +46,7 @@ interface Work {
   authorId: string;
   categoryId: string | null;
   status: WorkStatus;
+  visibility: "private" | "tenant_only" | "public";
   featured: boolean;
   translations: WorkTranslation[];
 }
@@ -71,7 +72,17 @@ const workSchema = z
   .object({
     authorId: z.string().min(1, "Choisissez un auteur."),
     categoryId: z.string().optional(),
-    status: z.enum(["draft", "submitted", "published", "inactive", "archived"]),
+    status: z.enum([
+      "draft",
+      "submitted",
+      "under_review",
+      "approved",
+      "published",
+      "rejected",
+      "inactive",
+      "archived",
+    ]),
+    visibility: z.enum(["private", "tenant_only", "public"]),
     featured: z.boolean(),
     translations: z.object({
       fr: workTranslationFieldsSchema,
@@ -107,6 +118,37 @@ const workSchema = z
 type WorkFormValues = z.infer<typeof workSchema>;
 
 /**
+ * Statuts proposés dans le menu, selon le rôle courant — un reflet indicatif
+ * de la machine à états `assertAllowedStatus` (backend), jamais son
+ * autorité : le statut déjà en base (`currentStatus`) est toujours inclus,
+ * même hors de l'ensemble « atteignable » par ce rôle, pour que le menu ne
+ * puisse jamais afficher une valeur différente de celle réellement
+ * enregistrée.
+ */
+function STATUS_OPTIONS_FOR_ROLE(
+  tier: "author" | "editor" | "unrestricted",
+  currentStatus: WorkStatus,
+): WorkStatus[] {
+  const base: WorkStatus[] =
+    tier === "author"
+      ? ["draft", "submitted"]
+      : tier === "editor"
+        ? ["draft", "submitted", "under_review"]
+        : [
+            "draft",
+            "submitted",
+            "under_review",
+            "approved",
+            "published",
+            "rejected",
+            "inactive",
+            "archived",
+          ];
+
+  return base.includes(currentStatus) ? base : [...base, currentStatus];
+}
+
+/**
  * Éditeur d'une œuvre.
  *
  * Trois blocs séparés — couverture, informations, formats — au lieu d'un seul
@@ -122,12 +164,15 @@ type WorkFormValues = z.infer<typeof workSchema>;
 export function WorkEditor({ workId }: { workId: string }) {
   const queryClient = useQueryClient();
   const coverInputRef = useRef<HTMLInputElement>(null);
-  // Un membre "author" ne peut donner à sa propre œuvre que ces deux statuts
-  // (règle miroir de `assertAllowedStatus` côté back-office) : publier reste
-  // un geste éditorial. Le platform_admin et les rôles owner/admin/editor
-  // n'ont pas de rôle de tenant "author" ici, donc gardent le menu complet.
+  // Reflet, côté formulaire, de la machine à états `assertAllowedStatus` du
+  // back-office (Phase 4) — une aide à l'affichage, jamais l'autorité : le
+  // backend revalide chaque transition indépendamment de ce que ce menu
+  // propose. `role === null` dans cette page signifie platform_admin (un
+  // visiteur sans aucun accès n'atteint jamais cet écran) : menu complet,
+  // comme owner/admin.
   const { role } = useTenant();
   const isAuthorOnly = role === "author";
+  const isEditorOnly = role === "editor";
 
   const { data: work, isLoading } = useQuery({
     queryKey: ["admin", "works", workId],
@@ -174,6 +219,7 @@ export function WorkEditor({ workId }: { workId: string }) {
           authorId: values.authorId,
           categoryId: values.categoryId || undefined,
           status: values.status,
+          visibility: values.visibility,
           featured: values.featured,
           translations: buildTranslationsPayload(values),
         },
@@ -348,38 +394,51 @@ export function WorkEditor({ workId }: { workId: string }) {
                 hint={
                   isAuthorOnly
                     ? "La publication revient à l’équipe éditoriale : soumettez l’œuvre une fois prête."
-                    : "Seules les œuvres publiées apparaissent sur le site."
+                    : isEditorOnly
+                      ? "Faites passer une œuvre soumise en relecture — l’approbation et la publication reviennent à la direction de l’espace."
+                      : "Seules les œuvres publiées, en visibilité publique, apparaissent sur le catalogue."
                 }
               >
                 <Select {...register("status")}>
-                  <option value="draft">Brouillon</option>
-                  <option value="submitted">Soumise à la relecture</option>
-                  {!isAuthorOnly && (
-                    <>
-                      <option value="published">Publiée</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="archived">Archivée</option>
-                    </>
-                  )}
+                  {STATUS_OPTIONS_FOR_ROLE(
+                    isAuthorOnly ? "author" : isEditorOnly ? "editor" : "unrestricted",
+                    work.status,
+                  ).map((status) => (
+                    <option key={status} value={status}>
+                      {WORK_STATUS_LABELS[status]}
+                    </option>
+                  ))}
                 </Select>
               </Field>
 
-              <label className="flex cursor-pointer items-start gap-3 self-end pb-3 text-sm">
-                <input
-                  type="checkbox"
-                  className="accent-primary mt-0.5 size-4 cursor-pointer"
-                  {...register("featured")}
-                />
-                <span>
-                  <span className="text-secondary block font-medium">
-                    Mettre en avant
-                  </span>
-                  <span className="type-caption">
-                    Affichée dans la sélection de l’accueil.
-                  </span>
-                </span>
-              </label>
+              <Field
+                id="work-visibility"
+                label="Visibilité"
+                hint="Ne s’applique qu’à une œuvre publiée — sans effet sur un brouillon."
+              >
+                <Select {...register("visibility")}>
+                  <option value="public">Publique (catalogue GeBook)</option>
+                  <option value="tenant_only">
+                    Réservée à mon espace (pas encore de vitrine dédiée)
+                  </option>
+                  <option value="private">Privée</option>
+                </Select>
+              </Field>
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                className="accent-primary mt-0.5 size-4 cursor-pointer"
+                {...register("featured")}
+              />
+              <span>
+                <span className="text-secondary block font-medium">Mettre en avant</span>
+                <span className="type-caption">
+                  Affichée dans la sélection de l’accueil.
+                </span>
+              </span>
+            </label>
 
             <LocaleTabs
               isEnTranslated={isEnTranslated}
@@ -490,6 +549,7 @@ function toFormValues(work: Work): WorkFormValues {
     authorId: work.authorId,
     categoryId: work.categoryId ?? "",
     status: work.status,
+    visibility: work.visibility,
     featured: work.featured,
     translations: {
       fr: {

@@ -18,6 +18,7 @@ import {
   FileType,
   FormatType,
   WorkStatus,
+  WorkVisibility,
 } from '../../../../generated/prisma/enums';
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -133,6 +134,16 @@ export class CreateWorkDto {
   @IsEnum(WorkStatus)
   status?: WorkStatus;
 
+  /**
+   * `private` par défaut (schéma) si omis à la création avec un statut non
+   * publié ; `public` par défaut si le statut vaut `published` sans valeur
+   * explicite — voir `resolveVisibility()` dans `admin-works.service.ts`.
+   * Une valeur explicite ici l'emporte toujours sur ce défaut.
+   */
+  @IsOptional()
+  @IsEnum(WorkVisibility)
+  visibility?: WorkVisibility;
+
   @IsOptional()
   @IsBoolean()
   featured?: boolean;
@@ -185,6 +196,11 @@ export class UpdateWorkDto {
   @IsOptional()
   @IsEnum(WorkStatus)
   status?: WorkStatus;
+
+  /** Voir le commentaire équivalent sur `CreateWorkDto.visibility`. */
+  @IsOptional()
+  @IsEnum(WorkVisibility)
+  visibility?: WorkVisibility;
 
   @IsOptional()
   @IsBoolean()

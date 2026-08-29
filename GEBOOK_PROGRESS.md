@@ -2,8 +2,8 @@
 
 ## État global
 
-Phase actuelle : PHASE 3 — Transformer le tenant en « espace éditorial »
-Statut : TERMINÉE (partiellement — périmètre volontairement réduit, voir ci-dessous)
+Phase actuelle : PHASE 4 — Système éditorial et publication
+Statut : TERMINÉE
 Dernière mise à jour : 2026-08-29
 Commit de référence au début de la Phase 0 : `2a5ddce` (« chore: divers ajustements de configuration et ports »)
 
@@ -491,6 +491,136 @@ Aucun. La base de développement ne contenait aucune ligne `sale_distributions` 
 
 ---
 
-## PHASE 4
+## PHASE 4 — Système éditorial et publication
+
+### Objectif
+
+Transformer l'enum `WorkStatus` en véritable machine à états vérifiée côté backend (pas seulement un bouton frontend caché), avec des droits différents par rôle, et corriger `WorkVisibility` pour que le catalogue public respecte réellement `status` + `visibility` + tenant.
+
+### Décision empirique clé — pas de pipeline linéaire strict pour owner/admin
+
+Le diagramme cible de la mission (`draft → submitted → under_review → approved → published`, avec `rejected → draft` et `published → inactive → archived`) suggère une chaîne stricte. Avant d'implémenter quoi que ce soit, recherche de tout endroit où le comportement actuel pourrait déjà encoder une règle métier différente — et un test existant l'a confirmé : `admin-works-tenant.e2e-spec.ts`, ligne ~304-308, teste explicitement et avec succès (200 attendu) qu'un **owner** de tenant peut faire passer une œuvre directement de `submitted` à `published`, **sans passer par `under_review`/`approved`**. Ce n'est pas un bug — c'est un choix déjà testé et donc déjà « validé » par l'équipe précédente.
+
+Décision : ne pas casser ce test ni cette règle. Le rôle table de la mission elle-même dit « ADMIN/OWNER : … et gérer la publication selon les règles métier » — volontairement large. La restriction réellement demandée par la mission, et absente aujourd'hui, concerne le rôle `editor` : avant cette phase, `editor` avait exactement les mêmes pouvoirs qu'`owner`/`admin` (même case « editorial » indifférenciée), ce qui contredit directement la mission (« EDITOR : Peut : SUBMITTED → UNDER_REVIEW », rien de plus). C'est cette restriction précise qui a été implémentée — pas un pipeline linéaire universel qui aurait cassé un comportement déjà intentionnel et testé.
+
+Vérifié également, avant de toucher au catalogue public : aucun test n'atteste que la fuite `tenant_only` (déjà signalée dans l'audit) soit un comportement voulu — recherche exhaustive de `tenant_only` dans `backend/test/`, zéro résultat. Cette correction-là ne rencontrait donc aucune ambiguïté de ce type.
+
+### Travaux réalisés — Backend
+
+**Machine à états (`admin-works.service.ts`)** :
+- `assertAllowedStatus()` réécrite : reçoit désormais `tenantRole` et `currentStatus` en plus de `permission`/`nextStatus`.
+  - `author-self` : inchangé (`draft`/`submitted` uniquement, même message d'erreur — le test existant qui vérifie ce message littéral continue de passer).
+  - rôle de tenant `editor` (nouveau) : à la création, seulement `draft`/`submitted` (même latitude qu'un auteur) ; en modification, seulement la transition `submitted → under_review`. Toute autre valeur est refusée avec un message explicite.
+  - `owner`/`admin`/`platform_admin` : aucune restriction nouvelle — comportement inchangé.
+  - **Bug trouvé et corrigé pendant l'implémentation** : un rôle restreint (author-self ou editor) qui enregistre le formulaire sans toucher au statut renvoie quand même la valeur affichée (`status: 'published'` par exemple) — sans garde, cela aurait été refusé à tort, alors que ce n'est pas une transition. Ajout d'un cas `nextStatus === currentStatus` toujours accepté, quel que soit le rôle. Couvert par un nouveau test (voir plus bas).
+- `resolveVisibility()` remplace `visibilityForStatus()` : une valeur `visibility` explicite l'emporte toujours ; sans valeur explicite, le comportement historique est préservé (`published` → `public`, tout le reste → `private`) pour ne rien casser côté appelants existants.
+- `CreateWorkDto`/`UpdateWorkDto` : ajout du champ optionnel `visibility` (`IsEnum(WorkVisibility)`).
+- `getWorkWithAuthorOrThrow()` : ajout d'un filtre `tenantId` (défense en profondeur, même correctif que la Phase 0 — repéré par cohérence en touchant ce fichier, pas explicitement demandé par cette phase mais de la même catégorie que le correctif déjà appliqué à `findOne()`/`remove()`).
+
+**Visibilité publique (`works.service.ts`)** :
+- `publiclyVisible` (le filtre unique et partagé, déjà utilisé par toutes les lectures du catalogue public) exige désormais aussi `visibility: 'public'`, en plus de `status: 'published'` et `author.status: 'active'`. Une œuvre `tenant_only` ou `private` publiée ne peut plus jamais apparaître dans le catalogue public agrégé, quel que soit son statut.
+- Limite explicitement documentée dans le commentaire du code : `tenant_only` n'a aujourd'hui **aucune vitrine dédiée** pour l'afficher (c'est l'objet de la Phase 5) — en attendant, une œuvre `tenant_only` est donc invisible partout publiquement, exactement comme `private`. Ce n'est pas un défaut de cette phase, c'est une conséquence honnête de l'ordre des phases : construire une vitrine tenant maintenant aurait anticipé la Phase 5 elle-même.
+
+### Travaux réalisés — Frontend
+
+- `src/lib/work-status.ts` : les trois statuts jusque-là absents du frontend (`under_review`, `approved`, `rejected`) ont désormais un libellé français et une teinte, alignés sur l'enum backend complet.
+- `src/components/admin/work-editor.tsx` :
+  - Le menu de statut n'est plus un simple `!isAuthorOnly` binaire : `STATUS_OPTIONS_FOR_ROLE()` calcule les options selon le rôle (auteur / editor / sans restriction), en incluant toujours le statut réellement en base même s'il est hors de portée de ce rôle — pour que le menu n'affiche jamais une valeur différente de celle enregistrée. **Ceci reste un affichage indicatif, jamais l'autorité** : le backend revalide indépendamment chaque tentative, commentaire explicite dans le code pour que personne ne s'y trompe plus tard.
+  - Ajout d'un champ « Visibilité » (public / réservée à l'espace / privée), relié au nouveau champ `visibility` du DTO.
+  - Message d'aide contextuel selon le rôle (auteur / editor / sans restriction).
+
+### Tests ajoutés
+
+Tout dans `backend/test/admin-works-tenant.e2e-spec.ts` (fixtures étendues avec un compte `editorAgent`, rôle de tenant `editor`) :
+- Un `editor` peut créer une œuvre en brouillon, mais pas directement publiée (403, message contient « éditeur »).
+- Un `editor` peut faire passer une œuvre soumise en relecture (`submitted → under_review`, 200), mais ne peut ni l'approuver ni la publier (403 dans les deux cas) — la direction de l'espace (owner) conserve l'autorité déjà testée par ailleurs.
+- Renvoyer le même statut qu'actuellement en base (formulaire qui touche un autre champ) est toujours accepté, y compris pour un rôle qui ne pourrait pas *atteindre* ce statut lui-même — couvre directement le bug corrigé pendant cette phase.
+- Une œuvre publiée en `tenant_only` n'apparaît ni par recherche (`GET /works?q=`) ni par accès direct (`GET /works/:slug` → 404) dans le catalogue public, mais reste visible et correctement étiquetée dans le back-office du tenant.
+- Une œuvre publiée sans visibilité explicite reste `public` par défaut (comportement historique préservé) et reste visible dans le catalogue.
+
+Exécution : suite isolée 11/11 (7 tests précédents + 4 nouveaux), suite complète 14/14 suites / 195/195 tests.
+
+### Fiabilité des tests e2e — nouvelle observation
+
+Pendant cette phase, la suite e2e complète a planté trois fois de suite avec un code de sortie natif inhabituel (`3221226505`, sans le moindre résumé Jest — signature d'un crash processus plutôt que d'un test qui échoue), toujours au même point du journal, après les tests négatifs de `payments`/`library`. Vérifications faites avant d'agir :
+- Isolé (`admin-works-tenant.e2e-spec.ts` seul, ou avec `multi-tenant-rls`/`library`) : toujours vert, à 100 %, sur de nombreuses répétitions.
+- Connexions PostgreSQL au moment du crash : 1 seule active sur 100 disponibles — ce n'est pas un épuisement de pool comme en Phase 0.
+- Ce schéma (plante seulement sur la suite complète, jamais isolément) correspond exactement à l'avertissement déjà noté en Phase 0 (« A worker process has failed to exit gracefully… Active timers can also cause this ») — pas une régression introduite par cette phase.
+
+Mitigation appliquée, strictement configuration : `"workerIdleMemoryLimit": "512MB"` ajouté à `jest-e2e.json`, qui force Jest à redémarrer le worker si sa mémoire dépasse ce seuil entre deux fichiers de test. Résultat après ce changement : 3 exécutions complètes sur 4 vertes (contre 0 sur 3 juste avant) — amélioration nette, mais pas une élimination totale de la variabilité résiduelle. Documenté honnêtement plutôt que présenté comme définitivement résolu : un diagnostic complet (`--detectOpenHandles` sur l'ensemble des 14 suites) resterait à faire pour l'éliminer tout à fait, et dépasse le périmètre de cette phase (déjà signalé comme tel en Phase 0).
+
+### Fichiers modifiés
+
+- `backend/src/modules/catalog/admin/admin-works.service.ts` — machine à états, `resolveVisibility()`, filtre tenant sur `getWorkWithAuthorOrThrow()`.
+- `backend/src/modules/catalog/admin/dto/work.dto.ts` — champ `visibility` sur `CreateWorkDto`/`UpdateWorkDto`.
+- `backend/src/modules/catalog/works.service.ts` — `publiclyVisible` exige désormais `visibility: 'public'`.
+- `backend/test/admin-works-tenant.e2e-spec.ts` — compte `editorAgent` + 5 nouvelles assertions.
+- `backend/test/jest-e2e.json` — `workerIdleMemoryLimit: "512MB"`.
+- `frontend/src/lib/work-status.ts` — libellés/teintes pour les 3 statuts manquants.
+- `frontend/src/components/admin/work-editor.tsx` — menu de statut par rôle, champ visibilité.
+
+### Base de données / migrations
+
+Aucune. `WorkStatus` et `WorkVisibility` existaient déjà intégralement dans le schéma (migration `20260823010000_add_multi_tenant_core`) — cette phase active leur usage réel, elle n'ajoute aucune valeur d'enum ni colonne.
+
+### Tests exécutés
+
+```text
+backend   pnpm exec tsc --noEmit          → OK
+backend   pnpm lint                       → OK
+backend   pnpm test (unitaires)           → 12 suites / 81 tests, tous passés
+backend   admin-works-tenant (isolé)      → 11/11
+backend   pnpm test:e2e (suite complète)  → 14/14 suites, 195/195 tests (dernière exécution confirmée)
+frontend  pnpm typecheck                  → OK
+frontend  pnpm lint                       → 0 erreur, 3 avertissements préexistants et sans rapport
+```
+
+### Résultats
+
+| Point de contrôle | Statut |
+|---|---|
+| Machine à états `WorkStatus` — author-self | VALIDÉ (comportement préexistant, revérifié) |
+| Machine à états `WorkStatus` — editor (nouvelle restriction) | VALIDÉ (4 nouveaux tests e2e) |
+| Machine à états `WorkStatus` — owner/admin/platform_admin | VALIDÉ (comportement préexistant intentionnellement conservé, test existant toujours vert) |
+| Correctif « même statut renvoyé = pas une transition » | VALIDÉ (test dédié) |
+| `WorkVisibility` pilotable explicitement | FONCTIONNEL (DTO + UI) |
+| Catalogue public respecte `status` + `visibility` + auteur actif | VALIDÉ (2 tests e2e, fuite `tenant_only` fermée) |
+| Vitrine dédiée pour `tenant_only` | ABSENTE PAR DÉCISION — Phase 5, pas avant |
+| Fiabilité de la suite e2e complète | PARTIEL — nette amélioration (0/3 → 3/4 exécutions vertes) après mitigation config-only, pas encore parfaite |
+
+### Problèmes rencontrés
+
+- Plantage processus intermittent de la suite e2e complète (voir section dédiée ci-dessus) — mitigé, pas éliminé.
+- Un run e2e antérieur, avorté par ce plantage, avait laissé des données de test orphelines (`orders` référençant des `users` du domaine `@phase10.e2e.test`, bloquant leur suppression par une contrainte `RESTRICT`) — nettoyées manuellement en reproduisant exactement le mécanisme RLS `platform_admin` d'`adminPrismaProxy` (une seule transaction, GUC posé puis toutes les suppressions dans la même transaction) avant de reprendre les tests.
+
+### Décisions techniques
+
+- Réutiliser un test e2e préexistant comme source de vérité du comportement métier voulu (owner peut publier directement) plutôt que d'imposer ma propre lecture du diagramme cible : évite de casser une règle déjà délibérément conçue et testée, conformément à l'instruction de ne pas inventer de règle métier quand le code répond déjà à la question.
+- `nextStatus === currentStatus` toujours accepté, sans exception de rôle : une transition non demandée ne doit jamais être bloquée par une règle conçue pour les transitions réellement demandées — sans quoi chaque sauvegarde partielle par un rôle restreint casserait silencieusement.
+- Menu de statut frontend calculé par rôle mais **incluant toujours le statut réel** : priorité donnée à ne jamais désynchroniser l'affichage de la valeur en base, quitte à laisser apparaître une option que ce rôle ne peut pas choisir comme nouvelle valeur (le backend refuserait de toute façon un vrai changement vers cette valeur).
+- `workerIdleMemoryLimit` plutôt qu'une investigation complète des handles ouverts : proportionné au périmètre de cette phase (publication, pas infrastructure de test), documenté comme amélioration partielle plutôt que present comme résolu.
+
+### Éléments restant à traiter
+
+1. Fiabilité totale de la suite e2e complète — un diagnostic `--detectOpenHandles` complet reste à faire (signalé aussi en Phase 0), au-delà du périmètre de cette phase.
+2. Vitrine publique tenant pour `tenant_only` — Phase 5.
+3. Aucune nouvelle dette identifiée côté machine à états ou visibilité au-delà de ce qui précède.
+
+### Validation
+
+- [x] Typecheck backend
+- [x] Lint backend
+- [x] Typecheck frontend
+- [x] Lint frontend
+- [x] Tests unitaires
+- [x] Tests e2e (suite complète confirmée verte à la dernière exécution ; flakiness résiduelle documentée, pas cachée)
+- [x] Vérification multi-tenant (catalogue public re-filtré par tenant via `visibility`, aucune régression d'isolation)
+- [x] Vérification permissions (nouvelle restriction du rôle `editor` testée explicitement, dans les deux sens — refus ET acceptation)
+- [x] Vérification frontend (typecheck + lint verts ; vérification manuelle en navigateur non faite, même limite que les Phases 2/3)
+- [x] Documentation mise à jour (ce fichier)
+
+---
+
+## PHASE 5
 
 *(non commencée)*

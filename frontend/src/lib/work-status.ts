@@ -7,12 +7,23 @@
  * leur donner aussi une teinte, cohérente avec celle des statuts de commande.
  */
 
-export type WorkStatus = "draft" | "submitted" | "published" | "inactive" | "archived";
+export type WorkStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "published"
+  | "rejected"
+  | "inactive"
+  | "archived";
 
 export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
   draft: "Brouillon",
   submitted: "Soumise à la relecture",
+  under_review: "En relecture",
+  approved: "Approuvée",
   published: "Publiée",
+  rejected: "Rejetée",
   inactive: "Inactive",
   archived: "Archivée",
 };
@@ -20,7 +31,10 @@ export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
 const TONES: Record<WorkStatus, "neutral" | "success" | "warning"> = {
   draft: "warning",
   submitted: "warning",
+  under_review: "warning",
+  approved: "success",
   published: "success",
+  rejected: "neutral",
   inactive: "neutral",
   archived: "neutral",
 };

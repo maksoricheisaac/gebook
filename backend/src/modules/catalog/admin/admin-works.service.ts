@@ -17,6 +17,7 @@ import {
   WorkStatus,
   WorkVisibility,
 } from '../../../generated/prisma/enums';
+import type { TenantMemberRole } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { buildRlsContext } from '../../../prisma/rls-context';
 import type { AuthenticatedUser } from '../../auth/auth.types';
@@ -62,19 +63,21 @@ const workInclude = {
 };
 
 /**
- * `visibility` (Phase 3) n'est pas encore exposée dans `CreateWorkDto` /
- * `UpdateWorkDto` — aucune interface de tenant n'existe pour la piloter
- * (Phase 9, workflow de publication). En attendant, on préserve exactement le
- * comportement d'avant le multi-tenant, où `status = 'published'` suffisait à
- * rendre une œuvre publique : publier une œuvre la rend donc automatiquement
- * `visibility: 'public'`. Sans ceci, toute œuvre créée après la Phase 4
- * hériterait du défaut sûr `'private'` du schéma et disparaîtrait du
- * catalogue public malgré son statut publié (régression constatée en testant
- * cette phase — voir `works.service.ts#publiclyVisible`).
+ * `visibility` est désormais pilotable explicitement (Phase 4) : une valeur
+ * fournie l'emporte toujours. Sans valeur explicite, le comportement
+ * historique d'avant cette phase est préservé — publier une œuvre la rend
+ * automatiquement `public`, tout autre statut la rend `private` — pour ne pas
+ * casser les appels existants qui ignorent encore ce champ. Un statut non
+ * fourni (`undefined`, mise à jour d'un autre champ) ne touche jamais la
+ * visibilité déjà en base.
  */
-function visibilityForStatus(
+function resolveVisibility(
   status: WorkStatus | undefined,
+  explicitVisibility: WorkVisibility | undefined,
 ): WorkVisibility | undefined {
+  if (explicitVisibility !== undefined) {
+    return explicitVisibility;
+  }
   if (status === undefined) {
     return undefined;
   }
@@ -123,29 +126,74 @@ function assertCanWriteWork(
 }
 
 /**
- * Statuts qu'un auteur peut donner lui-même à sa propre œuvre : préparer
- * (`draft`) et soumettre à la relecture (`submitted`). Publier, dépublier ou
- * archiver reste un geste éditorial, réservé aux rôles owner/admin/editor
- * (ou au platform_admin) — sans quoi un auteur seul pourrait publier sans
- * aucune relecture, ce que `WritePermission` visait justement à empêcher.
+ * Statuts qu'un auteur peut donner lui-même à sa propre œuvre — ou qu'un
+ * `editor` peut choisir à la *création* d'une œuvre : préparer (`draft`) et
+ * soumettre à la relecture (`submitted`). Ni l'un ni l'autre ne peut publier,
+ * dépublier ou archiver — seuls owner/admin (ou le platform_admin) le
+ * peuvent, sans quoi le geste éditorial (relecture) n'aurait aucun sens.
  */
-const AUTHOR_SELF_STATUSES: WorkStatus[] = [
+const PRE_REVIEW_STATUSES: WorkStatus[] = [
   WorkStatus.draft,
   WorkStatus.submitted,
 ];
 
+/**
+ * Machine à états du workflow éditorial (Phase 4). Vérifie une transition de
+ * statut selon le niveau d'autorisation ET, pour un rôle d'édition, le rôle
+ * de tenant précis :
+ *
+ *   - `author-self` : peut aller et venir entre `draft`/`submitted`
+ *     (soumettre, ou retirer sa soumission pour continuer à modifier) — ne
+ *     peut jamais publier lui-même.
+ *   - rôle de tenant `editor` : peut créer en `draft`/`submitted` (même
+ *     latitude qu'un auteur) et faire passer une œuvre `submitted` en
+ *     `under_review` — c'est sa seule transition propre. Approuver, rejeter,
+ *     publier, dépublier ou archiver reste hors de sa portée.
+ *   - owner/admin (et platform_admin, qui ne passe jamais par cette
+ *     fonction — voir `assertCanWriteWork`) : aucune restriction
+ *     supplémentaire. Comportement inchangé et déjà couvert par un test
+ *     existant (`admin-works-tenant.e2e-spec.ts` : un owner publie
+ *     directement une œuvre soumise, sans étape intermédiaire — "gérer la
+ *     publication selon les règles métier" est resté volontairement large
+ *     pour ce rôle, seul `editor` est nouvellement restreint par cette
+ *     phase).
+ *
+ * `currentStatus` vaut `undefined` à la création (aucun statut préalable).
+ */
 function assertAllowedStatus(
   permission: WritePermission,
-  status: WorkStatus | undefined,
+  tenantRole: TenantMemberRole | null,
+  currentStatus: WorkStatus | undefined,
+  nextStatus: WorkStatus | undefined,
 ): void {
-  if (
-    status !== undefined &&
-    permission === 'author-self' &&
-    !AUTHOR_SELF_STATUSES.includes(status)
-  ) {
-    throw new ForbiddenException(
-      'En tant qu’auteur, vous pouvez enregistrer un brouillon ou le soumettre à la relecture — la publication revient à l’équipe éditoriale.',
-    );
+  if (nextStatus === undefined || nextStatus === currentStatus) {
+    // Statut absent du corps de la requête, ou renvoyé inchangé (un
+    // formulaire qui ne touche qu'un autre champ soumet quand même la valeur
+    // affichée) : ce n'est pas une transition, elle n'a pas à être vérifiée.
+    return;
+  }
+
+  if (permission === 'author-self') {
+    if (!PRE_REVIEW_STATUSES.includes(nextStatus)) {
+      throw new ForbiddenException(
+        'En tant qu’auteur, vous pouvez enregistrer un brouillon ou le soumettre à la relecture — la publication revient à l’équipe éditoriale.',
+      );
+    }
+    return;
+  }
+
+  if (tenantRole === 'editor') {
+    const isSubmittingForReview =
+      currentStatus === WorkStatus.submitted &&
+      nextStatus === WorkStatus.under_review;
+    const isCreatingPreReview =
+      currentStatus === undefined && PRE_REVIEW_STATUSES.includes(nextStatus);
+
+    if (!isSubmittingForReview && !isCreatingPreReview) {
+      throw new ForbiddenException(
+        'En tant qu’éditeur, vous pouvez faire passer une œuvre soumise en relecture — l’approbation et la publication reviennent à la direction de l’espace.',
+      );
+    }
   }
 }
 
@@ -283,9 +331,9 @@ export class AdminWorksService {
           { tenantId: author.tenantId, authorUserId: author.userId },
           admin.id,
         );
-        assertAllowedStatus(permission, rest.status);
+        assertAllowedStatus(permission, tenant.role, undefined, rest.status);
 
-        const visibility = visibilityForStatus(rest.status);
+        const visibility = resolveVisibility(rest.status, rest.visibility);
         return tx.work.create({
           data: {
             ...rest,
@@ -339,15 +387,24 @@ export class AdminWorksService {
 
     const work = await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
-        const existing = await this.getWorkWithAuthorOrThrow(tx, id);
+        const existing = await this.getWorkWithAuthorOrThrow(
+          tx,
+          id,
+          tenant.tenantId,
+        );
         const permission = assertCanWriteWork(
           tenant,
           { tenantId: existing.tenantId, authorUserId: existing.author.userId },
           admin.id,
         );
-        assertAllowedStatus(permission, rest.status);
+        assertAllowedStatus(
+          permission,
+          tenant.role,
+          existing.status,
+          rest.status,
+        );
 
-        const visibility = visibilityForStatus(rest.status);
+        const visibility = resolveVisibility(rest.status, rest.visibility);
         const updated = await tx.work.update({
           where: { id },
           data: {
@@ -483,7 +540,11 @@ export class AdminWorksService {
   ): Promise<WorkFormat> {
     const format = await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
-        const work = await this.getWorkWithAuthorOrThrow(tx, workId);
+        const work = await this.getWorkWithAuthorOrThrow(
+          tx,
+          workId,
+          tenant.tenantId,
+        );
         assertCanWriteWork(
           tenant,
           { tenantId: work.tenantId, authorUserId: work.author.userId },
@@ -565,7 +626,11 @@ export class AdminWorksService {
     const format = await this.prisma.withRlsContext(
       buildRlsContext(admin, tenant.tenantId),
       async (tx) => {
-        const work = await this.getWorkWithAuthorOrThrow(tx, workId);
+        const work = await this.getWorkWithAuthorOrThrow(
+          tx,
+          workId,
+          tenant.tenantId,
+        );
         assertCanWriteWork(
           tenant,
           { tenantId: work.tenantId, authorUserId: work.author.userId },
@@ -626,9 +691,15 @@ export class AdminWorksService {
   private async getWorkWithAuthorOrThrow(
     tx: Prisma.TransactionClient,
     workId: string,
+    tenantId: string | null = null,
   ): Promise<Work & { author: { userId: string | null } }> {
-    const work = await tx.work.findUnique({
-      where: { id: workId },
+    // Filtre applicatif redondant avec la RLS (défense en profondeur, audit
+    // Phase 0 §0.3, même correctif que `findOne()`/`remove()`).
+    const work = await tx.work.findFirst({
+      where: {
+        id: workId,
+        ...(tenantId !== null && { tenantId }),
+      },
       include: { author: { select: { userId: true } } },
     });
     if (!work) {
