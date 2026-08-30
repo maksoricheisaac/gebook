@@ -1618,3 +1618,118 @@ Douze tâches exécutées de façon autonome, dans l'ordre demandé, chacune tes
 
 Le panier — la lacune explicitement signalée comme la plus importante en début de mission — est maintenant réel, testé, et fonctionne de bout en bout avec l'infrastructure de commande existante, sans l'avoir dupliquée.
 
+
+
+---
+
+## PHASE 13 — Validation finale réelle et correction des dernières lacunes
+
+Contre-validation technique et fonctionnelle réelle du travail décrit dans les commits précédents (Tâches 1-12). Objectif : vérifier avec de vraies données, un vrai navigateur, une vraie base — pas seulement relire le code.
+
+### 1. État Git
+
+`git status` → working tree propre, `git log -20` → tous les commits précédents bien poussés. Aucune action nécessaire.
+
+### 2-3. Panier — audit UX complet et sécurité
+
+Travaux réalisés :
+- Données de test réelles créées : publication du brouillon existant de John Ecrit (« Premier livre de John Write », `admin/oeuvres`, statut `draft`→`published`, visibilité `private`→`public`, via le vrai flux d'édition) pour obtenir un second tenant réel avec une œuvre publiée, en plus de « Mampouya Éditions » (5 œuvres publiées déjà réelles).
+- Panier testé en navigateur réel : ajout de 3 articles (2 tenants différents), badge d'en-tête mis à jour à chaque ajout (1 → 2 → 3), page `/panier` groupant correctement par tenant (« Mampouya Éditions » : 2 articles ; « John Ecrit » : 1 article), total exact (4000+5500+5000=14500 FCFA).
+- Quantité : incrément (+2, 5000→15000 FCFA, total 24500 FCFA, badge 5), décrément jusqu'à 0 → suppression automatique de la ligne (comportement voulu, testé et confirmé), bouton « Supprimer » testé indépendamment.
+- Sécurité (falsification de prix) : `localStorage` modifié manuellement pour forcer `price: "1.00"` sur les deux lignes restantes. L'affichage panier reflète bien la valeur falsifiée (« 2 FCFA », comportement attendu — c'est un aperçu client, jamais une preuve). Checkout déclenché : la commande réellement créée en base (`GB-20260830-MQYYVN`) porte le vrai montant recalculé côté serveur (4000+5500=9500 FCFA), vérifié directement en base — la falsification du frontend n'a eu strictement aucun effet sur le montant facturé. Confirme que `POST /orders` ne transmet que `workFormatId`/`quantity`, jamais de prix.
+
+Bug réel trouvé et corrigé : un rechargement de `/panier` avec un panier réellement rempli affichait un instant « Votre panier est vide » avant de se corriger — `cart.lines` vaut `[]` tant que l'effet de lecture de `localStorage` ne s'est pas exécuté, et `CartClient` ne distinguait pas « pas encore lu » de « réellement vide ». Corrigé : `isHydrated` exposé par `CartProvider`, `CartClient` affiche un squelette de chargement tant que non hydraté. Vérifié en navigateur : le flash trompeur a disparu, remplacé par un squelette neutre.
+
+Résultat : VALIDÉ (ajout, quantité, suppression, total, groupement multi-tenant, persistance, sécurité des prix) — corrigé et re-testé pour le flash d'hydratation.
+
+### 5/13. Responsive
+
+Le redimensionnement réel de la fenêtre du navigateur (`resize_window`) s'est révélé sans effet réel dans cet environnement (le viewport reste à sa largeur desktop quel que soit ce que l'outil rapporte comme succès — vérifié via `window.innerWidth`, testé deux fois, y compris sur un nouvel onglet créé après le redimensionnement). Limitation d'outillage, pas du code.
+
+En conséquence, le responsive des nouveaux composants (panier, lien panier de l'en-tête) a été vérifié par relecture de code uniquement, pas par rendu réel à 375/390/768/1024/1440 : `grid lg:grid-cols-[1fr_22rem]` (une colonne par défaut, deux à partir de `lg`), `min-w-0 flex-1` + `shrink-0` sur les lignes de panier (évite tout débordement horizontal, motif déjà utilisé ailleurs dans le code de base), icône panier toujours visible (pas de classe `hidden`, contrairement à la recherche/aux boutons d'authentification qui basculent dans le menu mobile).
+
+Résultat : FONCTIONNEL (motif structurel correct, cohérent avec le reste d'une base déjà durcie pour le mobile lors de commits précédents), NON VALIDÉ au sens strict — aucun rendu réel à ces dimensions n'a pu être observé dans cet environnement.
+
+### 6-7. Boutique avec vraies données et partage
+
+Travaux réalisés :
+- `/espaces/mampouya-editions` (données réelles, pas de tenant de test) : logo (initiales), nom, description réelle (« Tenant historique créé lors de la migration vers GeBook V2… »), équipe éditoriale (2 auteurs), 5 œuvres avec couvertures, catégories, prix, badges de format — tout vérifié visuellement.
+- `/espaces/john-ecrit` : même vérification sur le second tenant réel créé pour ce test — a d'abord affiché « Aucune œuvre publiée » juste après publication (cache de 60 s du catalogue, `CATALOG_REVALIDATE`, documenté dans le code : « jamais retarder une publication de plus d'une minute ») ; confirmé correct après expiration du cache. Pas un bug — comportement délibéré déjà documenté, vérifié une seconde fois pour confirmer qu'il s'auto-corrige bien.
+- Partage : lien copié depuis `/admin/parametres` déjà vérifié en Tâche 3 de la session précédente (`http://localhost:3000/espaces/john-ecrit`, exact).
+
+Résultat : VALIDÉ.
+
+### 8. Isolation multi-tenant
+
+`/espaces/mampouya-editions` n'affiche jamais l'œuvre ou l'auteur de « John Ecrit », et inversement — vérifié visuellement sur les deux vitrines réelles. Les 2 œuvres `draft`/`private` de Mampouya Éditions (« Mémoire des rives », « test-verification-modal ») n'apparaissent dans aucune des deux vitrines. Complète la couverture déjà testée en e2e (Tâche 3 : tenant suspendu, œuvre privée, œuvre d'un autre tenant).
+
+Résultat : VALIDÉ.
+
+### 9. CORS en conditions réelles
+
+Écritures réellement déclenchées en navigateur (cookies réels, en-tête `Origin` réel, à travers les relais corrigés en Tâche 1) :
+- Équipe : `POST /api/admin/team` → 409 métier (logique atteinte, pas de blocage d'origine).
+- Œuvres : `PATCH /api/admin/works/:id` → 200 (publication réelle d'une œuvre).
+- Auteurs : `PATCH /api/admin/authors/:id` → 200 (après une première tentative à 400 pour un nom de champ erroné de ma part — confirme que la validation, pas l'origine, a traité la requête).
+- Paramètres : `PATCH /api/admin/tenant` → 200.
+- Commandes : checkout du panier → commande réellement créée (2 fois dans cette session).
+
+Aucune erreur CORS, aucun 403 `OriginGuard` inattendu, aucun problème de cookie/`credentials` sur aucune des 5 catégories exigées.
+
+Résultat : VALIDÉ.
+
+### 10. Docker — `.next/cache`
+
+Contrairement à la session précédente (bloquée par une limitation réseau du sandbox empêchant `apt-get update`), l'accès réseau fonctionnait cette fois. Build complet réussi (`docker build`, `--chown=node:node` appliqué correctement à l'étape `COPY`), conteneur démarré, testé en conditions réelles :
+- `docker exec … touch .next/cache/verify-write-test.tmp` → écriture réussie, en tant qu'utilisateur `node` (confirmé non-root via `whoami` et `docker inspect --format '{{.Config.User}}'` → `node`).
+- Logs du conteneur : aucune occurrence d'`EACCES`/`permission denied`/`fetch-cache` sur toute la durée de vie du conteneur.
+- Reconstruit avec `--build-arg NEXT_PUBLIC_API_URL` pointant vers le vrai backend local (`host-gateway`) : `curl` renvoie 200, `/livres` affiche les vraies données du catalogue (« Théorie musicale simplifiée ») rendues côté serveur depuis le conteneur, `docker inspect --format '{{.State.Health.Status}}'` → `healthy`.
+- Conteneurs et images de test supprimés après vérification.
+
+Résultat : VALIDÉ (mise à jour honnête par rapport à la session précédente, qui l'avait documenté comme FONCTIONNEL mais non vérifié en conditions complètes faute d'accès réseau à ce moment-là).
+
+### 11. Test production-like
+
+Le frontend conteneurisé a été testé contre le vrai backend (hôte local), pas contre un backend factice — c'est un test de production partiel réel. La pile complète (reverse proxy + PostgreSQL également conteneurisés, comme le prévoit `docker-compose.yml`) n'a pas été lancée dans cette session : `docker-compose.yml` cible spécifiquement Traefik/Dokploy (labels de routage, cookie `__Host-`, domaines réels) et n'est pas conçu pour un test local direct (commentaire du fichier lui-même : `docker-compose.local.yml` sert « uniquement à vérifier que les images se construisent… pas à s'y connecter »). Non traité comme un manque : c'est la conception assumée du projet, pas une lacune de cette validation.
+
+Résultat : FONCTIONNEL (le composant conteneurisé le plus à risque — le frontend et son `.next/cache` — est validé de bout en bout contre un vrai backend), pile complète avec reverse proxy non testée dans cet environnement.
+
+### 12. Audit des erreurs console
+
+11 parcours vérifiés en navigateur réel avec session active (Accueil, Catalogue, boutique tenant ×2, Panier, Connexion, Mes commandes, Bibliothèque, Équipe, entre autres) : exactement 2 exceptions identiques sur chaque page, sans exception, quel que soit le contenu — confirmées comme bruit d'une extension navigateur tierce (« OrangeMonkey », déjà identifiée visuellement Tâche 1 via sa propre bannière de permission). Aucune erreur applicative, aucun 404/500/CORS, aucune erreur d'hydratation propre à GeBook trouvée sur l'un quelconque de ces parcours.
+
+Résultat : OK — aucun problème applicatif.
+
+### 14. Test financier final
+
+Deuxième parcours d'achat complet réalisé cette session (en plus de celui de la Tâche 6 précédente) : boutique → panier (2 articles, falsifiés puis re-vérifiés) → checkout → commande `GB-20260830-MQYYVN` → vérifiée en base avec le montant exact recalculé (9500 FCFA, aucun rapport avec les prix falsifiés côté client). Aucun montant doublé, aucune ligne dupliquée.
+
+Résultat : VALIDÉ.
+
+### 15. Ne pas simuler ce qui n'existe pas
+
+Aucune tentative de faire fonctionner MTN MoMo/Chariow/un vrai payout. Le paiement de simulation reste explicitement présenté comme tel dans l'interface (« Prestataire de simulation — environnement de développement… Aucun montant n'est débité »), inchangé. Respecté.
+
+### 16-18. Tests automatiques, correction, commit/push
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 12 suites / 81 tests
+backend   pnpm test:e2e (complète)  → 14/14 suites, 206/206 tests
+frontend  pnpm exec tsc --noEmit    → OK
+frontend  pnpm lint                 → 0 erreur, 3 avertissements préexistants sans rapport
+frontend  pnpm build (production)   → OK, /panier compilée
+```
+
+Un seul bug réel trouvé cette session (flash « panier vide » avant hydratation) — diagnostiqué, corrigé, re-testé en navigateur, commité et poussé séparément avant de poursuivre.
+
+### Fichiers modifiés
+
+- `frontend/src/components/providers/cart-provider.tsx` — `isHydrated` exposé.
+- `frontend/src/components/catalog/cart-client.tsx` — squelette de chargement tant que non hydraté.
+
+### Commit / Push
+
+`fix: prevent misleading empty-cart flash before localStorage hydrates` — commité et poussé.
+
