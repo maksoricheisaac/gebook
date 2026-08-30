@@ -220,3 +220,145 @@ changement de prestataire sans redéploiement.
 
 Poursuite immédiate vers Phase 2 (Configuration Superadmin), sans attendre de
 confirmation (brief : autonomie totale entre phases).
+
+---
+
+## Phase 2 — Configuration Superadmin (Paramètres → Paiements)
+
+### Objectif
+
+Une page Superadmin qui montre l'état réel de chaque prestataire (pay-in et
+payout) sans jamais exposer un secret ni prétendre gérer en base ce qui ne
+vit que dans l'environnement serveur, avec un vrai bouton « Tester la
+connexion » par prestataire.
+
+### Analyse
+
+Aucune interface de gestion des prestataires n'existait avant cette phase —
+seul `Setting.default_payment_provider` (déjà existant) permet de choisir le
+prestataire pay-in par défaut, sans UI dédiée. Le brief est explicite (§9) :
+si les secrets restent dans `.env`, ne pas construire une UI qui prétend les
+gérer en base — un affichage en lecture seule dérivé de l'environnement
+suffit et est plus honnête.
+
+### Implémentation
+
+Backend :
+- `payment-driver.ts`/`payout-driver.ts` — méthode optionnelle
+  `testConnection?(): Promise<ConnectionTestResult>` ajoutée aux deux
+  contrats (`{ ok: boolean; detail: string }`), implémentée pour `fake` des
+  deux côtés (vérifie que `PAYMENT_WEBHOOK_SECRET` est bien configuré — le
+  seul vrai prérequis d'un pilote qui ne sollicite aucun réseau).
+- `admin-payment-providers.service.ts` — `list()` (catalogue + drapeaux
+  dérivés : pilote installé ou non par direction, configuration complète ou
+  non) et `testConnection(code)` (appelle le vrai `testConnection()` du
+  pilote résolu ; un prestataire sans pilote installé répond honnêtement
+  « aucun pilote installé », jamais un succès fabriqué).
+- `admin-payment-providers.controller.ts` — `GET /admin/payment-providers`,
+  `POST /admin/payment-providers/:code/test-connection`, `@Roles('admin')`.
+- `prisma/seed.ts` — 3 lignes catalogue ajoutées (`pawapay`, `cinetpay`,
+  `feexpay`), `inactive`, capacités limitées à ce que le brief affirme
+  explicitement (jamais supposées depuis la documentation du prestataire).
+
+Frontend :
+- `app/(admin)/admin/paiements/page.tsx` + `payment-providers-manager.tsx` —
+  cartes de synthèse (prestataires/actifs/configurés/en production),
+  tableau avec badges SANDBOX/PRODUCTION (rouge en production — volontaire,
+  brief : « la production doit être sans équivoque »), pilote installé
+  pay-in/payout, configuration complète (jamais la valeur, seulement les
+  noms des variables manquantes), bouton « Tester la connexion » avec
+  résultat affiché en ligne (texte, pas seulement un toast qui disparaît).
+- `admin-sidebar.tsx` — ajout de « Paiements » et « Commissions » à la nav
+  (`platformOnly`) ; corrige au passage un vrai défaut préexistant :
+  `/admin/commissions` (créée lors d'une mission antérieure) n'avait
+  **aucune entrée de navigation nulle part** — trouvée en grep, seulement
+  atteignable en tapant l'URL. Corrigé dans le même mouvement, cohérent avec
+  ce qui était déjà en cours d'édition dans ce fichier.
+
+### API
+
+`GET /admin/payment-providers`, `POST /admin/payment-providers/:code/test-connection`
+— voir Phase 1 pour la matrice complète des routes déjà existantes.
+
+### Frontend
+
+`/admin/paiements` — nouvelle page, Superadmin uniquement.
+
+### Sécurité
+
+Vérifié par un test e2e dédié (`admin-payment-providers.e2e-spec.ts`) : la
+réponse de `GET /admin/payment-providers` n'expose **que** un jeu de champs
+whitelistés exact (`toEqual` sur `Object.keys`) — aucune valeur de secret ne
+peut s'y glisser sans faire échouer le test, pas seulement une recherche de
+motif approximative. `missingEnvVars` ne contient que des noms de variable.
+
+### Tests
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 13/13 suites, 90/90 tests
+backend   pnpm test:e2e (complète)  → 15/15 suites, 211/211 tests (+5 nouveaux)
+frontend  pnpm exec tsc --noEmit    → OK
+frontend  pnpm lint                 → 0 nouvelle erreur/avertissement (3 avertissements préexistants sans rapport, React Compiler/react-hook-form)
+frontend  pnpm build (production)   → OK, /admin/paiements compilée
+```
+
+**Vérification navigateur réelle** (pas seulement « ça compile », brief §100) :
+serveurs dev backend/frontend redémarrés (l'un tournait depuis la veille, un
+process worker Next.js avait fini par planter — « Jest worker encountered 2
+child process exceptions » — cause d'un premier 500 rencontré pendant ce test,
+sans rapport avec le code de cette phase, corrigé par un simple redémarrage).
+Compte de test jetable créé (`browsercheck@paymentplatform.dev.test`, promu
+admin en base comme le font les e2e), jamais le vrai compte Superadmin de
+l'utilisateur (mot de passe inconnu de cette session, jamais touché) :
+- Page chargée : 6 prestataires réels affichés, `fake` actif/configuré/deux
+  pilotes installés, PawaPay/CinetPay/FeexPay inactifs/incomplets avec les
+  noms exacts des variables manquantes.
+- « Tester la connexion » sur `fake` → succès réel (toast + détail en ligne
+  « Connexion réussie… »).
+- « Tester la connexion » sur `pawapay` → échec honnête (« aucun pilote
+  pay-in installé pour ce prestataire »), pas de succès fabriqué.
+- Accès refusé aux deux niveaux : un compte lecteur simple est redirigé hors
+  de `/admin/paiements` côté frontend, et l'appel API direct renvoie 403.
+- Aucune erreur console.
+- Comptes de test supprimés après vérification.
+
+### Résultats
+
+`AdminPaymentProvidersService`/`Controller` : VALIDÉ (testé e2e + navigateur
+réel). Page `/admin/paiements` : VALIDÉ. Modification des identifiants
+réels des prestataires : NON APPLICABLE par conception — reste
+exclusivement dans `.env`, jamais géré depuis cette interface.
+
+### Problèmes rencontrés
+
+Un 500 rencontré pendant la vérification navigateur, dû à un worker Next.js
+planté sur un serveur de développement resté ouvert depuis la session
+précédente — pas un bug de cette phase. Diagnostiqué (`Jest worker
+encountered 2 child process exceptions`), corrigé par redémarrage propre des
+deux serveurs de développement.
+
+### Corrections
+
+Import `useQueryClient` laissé inutilisé après une réécriture — retiré avant
+lint.
+
+### Commit
+
+`feat(payments): Phase 2 - Superadmin payment providers config (read-only, env-derived)` (`e54ca2a`)
+`feat(admin): Phase 2 - Superadmin Paiements page, wire up nav` (`44c95cc`)
+
+### Push
+
+Effectué sur `feature/payment-platform`.
+
+### Merge main
+
+Non fusionné — poursuite immédiate vers Phase 3 (Commissions et conditions),
+dont le schéma de fondation (`CommissionRule.tenantId`/`tenantType`,
+`DistributionTerms`, `TenantTermsAcceptance`) est déjà posé depuis Phase 1.
+
+### État
+
+**VALIDÉ.**
