@@ -3,6 +3,7 @@ import { ActivityLogService } from '../../common/activity-log.service';
 import { AuthModule } from '../auth/auth.module';
 import { CommissionsModule } from '../commissions/commissions.module';
 import { FilesModule } from '../files/files.module';
+import { AdminTenantsController } from './admin-tenants.controller';
 import { TenantAccessGuard } from './guards/tenant-access.guard';
 import { TeamController } from './team.controller';
 import { TeamService } from './team.service';
@@ -20,6 +21,7 @@ import { TenantsService } from './tenants.service';
     TenantsPublicController,
     TeamController,
     TenantSettingsController,
+    AdminTenantsController,
   ],
   providers: [
     TenantsService,

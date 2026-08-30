@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
+import type { TenantType } from '../../generated/prisma/enums';
 import { PrismaService } from '../../prisma/prisma.service';
-import { buildRlsContext } from '../../prisma/rls-context';
+import { buildRlsContext, SYSTEM_CONTEXT } from '../../prisma/rls-context';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import type { CreateTenantDto } from './dto/create-tenant.dto';
 import {
@@ -170,5 +171,28 @@ export class TenantsService {
     }
 
     return toTenantPublicProfile(tenant);
+  }
+
+  /**
+   * Répertoire complet des tenants pour un platform_admin — aucun équivalent
+   * n'existait avant la plateforme de paiement (mission dédiée) : nécessaire
+   * pour choisir un tenant précis lors de la création d'une règle de
+   * commission ou de conditions de distribution qui lui sont propres. Appelée
+   * uniquement depuis une route `@Roles('admin')` : pas de RLS ici, un
+   * platform_admin voit tout, comme partout ailleurs dans le back-office.
+   */
+  async listAllForAdmin(
+    search?: string,
+  ): Promise<{ id: string; name: string; slug: string; type: TenantType }[]> {
+    return this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
+      tx.tenant.findMany({
+        where: search
+          ? { name: { contains: search, mode: 'insensitive' } }
+          : undefined,
+        select: { id: true, name: true, slug: true, type: true },
+        orderBy: { name: 'asc' },
+        take: 100,
+      }),
+    );
   }
 }

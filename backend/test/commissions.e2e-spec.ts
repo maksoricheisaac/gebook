@@ -396,6 +396,40 @@ describe('Commissions (e2e)', () => {
     });
   });
 
+  describe('Répertoire des tenants pour le Superadmin', () => {
+    it('refuse un lecteur', async () => {
+      await readerAgent.get('/admin/tenants').expect(403);
+    });
+
+    it('liste les tenants, filtrable par nom', async () => {
+      const author = await adminPrisma.author.findUniqueOrThrow({
+        where: { id: authorId },
+        select: { tenant: { select: { name: true } } },
+      });
+
+      const response = await adminAgent
+        .get('/admin/tenants')
+        .set('Origin', ORIGIN)
+        .expect(200);
+
+      const tenants = response.body as Array<{ id: string; name: string }>;
+      expect(tenants.length).toBeGreaterThan(0);
+      expect(tenants.some((t) => t.name === author.tenant.name)).toBe(true);
+
+      const filtered = await adminAgent
+        .get('/admin/tenants')
+        .query({ search: author.tenant.name })
+        .set('Origin', ORIGIN)
+        .expect(200);
+      const filteredTenants = filtered.body as Array<{ name: string }>;
+      expect(
+        filteredTenants.every((t) =>
+          t.name.toLowerCase().includes(author.tenant.name.toLowerCase()),
+        ),
+      ).toBe(true);
+    });
+  });
+
   describe('Portée tenant / type de tenant (mission plateforme de paiement, Phase 3)', () => {
     it('refuse une règle qui cible auteur et tenant à la fois', async () => {
       const author = await adminPrisma.author.findUniqueOrThrow({
