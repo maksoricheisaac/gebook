@@ -6,10 +6,12 @@ import {
   BookText,
   FolderTree,
   LayoutDashboard,
+  Percent,
   ReceiptText,
   Settings,
   Users,
   UserSquare2,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -60,6 +62,20 @@ const ADMIN_NAV: AdminNavItem[] = [
     href: "/admin/commandes",
     label: "Commandes",
     icon: ReceiptText,
+    platformOnly: true,
+    group: "Opérations",
+  },
+  {
+    href: "/admin/paiements",
+    label: "Paiements",
+    icon: Wallet,
+    platformOnly: true,
+    group: "Opérations",
+  },
+  {
+    href: "/admin/commissions",
+    label: "Commissions",
+    icon: Percent,
     platformOnly: true,
     group: "Opérations",
   },
