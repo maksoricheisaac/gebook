@@ -13,6 +13,15 @@ import {
 interface CartContextValue {
   lines: CartLine[];
   itemCount: number;
+  /**
+   * Faux tant que `localStorage` n'a pas été lu (premier rendu, serveur et
+   * client avant montage). Sans lui, un panier réellement rempli s'afficherait
+   * un instant comme vide à chaque rechargement — `lines` vaut `[]` jusqu'à ce
+   * que l'effet de lecture s'exécute. Les pages qui distinguent « vide » de
+   * « en cours de lecture » (ex. `/panier`) doivent l'utiliser plutôt que de
+   * décider sur `lines.length === 0` seul.
+   */
+  isHydrated: boolean;
   /** Fusionne avec la ligne existante (même format) en additionnant la quantité, sinon ajoute une nouvelle ligne. */
   addItem: (line: Omit<CartLine, "quantity">, quantity?: number) => void;
   removeItem: (workFormatId: string) => void;
@@ -98,6 +107,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const value: CartContextValue = {
     lines,
     itemCount: cartItemCount(lines),
+    isHydrated: hydrated,
     addItem,
     removeItem,
     setQuantity,

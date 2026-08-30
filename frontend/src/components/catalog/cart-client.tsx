@@ -9,6 +9,7 @@ import { useCart } from "@/src/components/providers/cart-provider";
 import { DELIVERY_REQUIREMENTS } from "@/src/components/catalog/format-selector";
 import { Button } from "@/src/components/ui/button";
 import { FormError } from "@/src/components/ui/field";
+import { Skeleton } from "@/src/components/ui/states";
 import { cartLineSubtotal, cartTotal, groupByTenant } from "@/src/lib/cart-shared";
 import { checkoutCartAction } from "@/src/lib/order-actions";
 import { formatPrice, deliveryTypeLabel, formatTypeLabel } from "@/src/lib/format";
@@ -29,6 +30,24 @@ export function CartClient({ isAuthenticated }: { isAuthenticated: boolean }) {
   const [error, setError] = useState<string | undefined>();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | undefined>();
   const [delivery, setDelivery] = useState<Record<string, string>>({});
+
+  // Tant que `localStorage` n'a pas été lu, `cart.lines` vaut toujours `[]` —
+  // ce n'est pas encore une preuve que le panier est vide. Afficher l'état
+  // « vide » ici afficherait, à chaque rechargement, un message trompeur à
+  // quelqu'un dont le panier est en réalité plein (bug réel constaté en
+  // navigateur : flash de « Votre panier est vide » avant que la lecture ne
+  // rattrape l'affichage).
+  if (!cart.isHydrated) {
+    return (
+      <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
+        <div className="space-y-4">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
 
   if (cart.lines.length === 0) {
     return (
