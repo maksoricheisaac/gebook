@@ -249,6 +249,21 @@ enum PayoutStatus {
   @@map("payout_status")
 }
 
+/// État d'une demande de reversement (`Payout`), distinct de `PayoutStatus`
+/// (qui vit sur `SaleDistribution`, à la granularité de la ligne vendue). Une
+/// transition vers `paid` ne doit jamais avoir lieu sans confirmation réelle du
+/// prestataire — jamais sur une simple réponse de redirection (brief §26, §60).
+enum PayoutRequestStatus {
+  pending
+  approved
+  processing
+  paid
+  failed
+  cancelled
+
+  @@map("payout_request_status")
+}
+
 enum SettingValueType {
   string
   integer
@@ -284,13 +299,16 @@ model Tenant {
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  creator      User?           @relation(fields: [createdBy], references: [id], onDelete: SetNull, map: "fk_tenants_created_by")
-  members      TenantMember[]
-  settings     TenantSetting[]
-  authors      Author[]
-  works        Work[]
-  orderItems   OrderItem[]
-  activityLogs ActivityLog[]
+  creator          User?                    @relation(fields: [createdBy], references: [id], onDelete: SetNull, map: "fk_tenants_created_by")
+  members          TenantMember[]
+  settings         TenantSetting[]
+  authors          Author[]
+  works            Work[]
+  orderItems       OrderItem[]
+  activityLogs     ActivityLog[]
+  commissionRules  CommissionRule[]
+  payouts          Payout[]
+  termsAcceptances TenantTermsAcceptance[]
 
   @@index([status], map: "idx_tenants_status")
   @@index([createdBy], map: "idx_tenants_created_by")
@@ -363,6 +381,9 @@ model User {
   activityLogs      ActivityLog[]
   tenantMemberships TenantMember[]
   createdTenants    Tenant[]
+  payoutsRequested  Payout[]                @relation("PayoutRequester")
+  payoutsApproved   Payout[]                @relation("PayoutApprover")
+  termsAcceptances  TenantTermsAcceptance[]
 
   @@index([status], map: "idx_users_status")
   @@index([phone], map: "idx_users_phone")
@@ -763,13 +784,20 @@ model PaymentProvider {
   supportsMobileMoney Boolean             @default(false) @map("supports_mobile_money")
   supportsCard        Boolean             @default(false) @map("supports_card")
   supportsRefund      Boolean             @default(false) @map("supports_refund")
+  /// Capacité PAYOUT distincte de PAY-IN (brief §1-2) : un même prestataire
+  /// (PawaPay, CinetPay, FeexPay) peut n'exposer que l'une des deux selon ce qui
+  /// est réellement activé sur le compte marchand — jamais supposé depuis la
+  /// documentation du prestataire (brief §1).
+  supportsPayout      Boolean             @default(false) @map("supports_payout")
   priority            Int                 @default(1)
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  payments Payment[]
-  events   PaymentEvent[]
-  products ProviderProduct[]
+  payments     Payment[]
+  events       PaymentEvent[]
+  products     ProviderProduct[]
+  payouts      Payout[]
+  payoutEvents PayoutEvent[]     @relation("PayoutProviderEvents")
 
   @@index([status, priority], map: "idx_payment_providers_status_priority")
   @@map("payment_providers")
@@ -927,10 +955,21 @@ model Download {
 // Finance auteur
 // ---------------------------------------------------------------------------
 
+/// Priorité de résolution (brief §12-15, `selectRule()` dans `commission.ts`) :
+/// règle propre à l'auteur > règle propre au tenant > règle par type de tenant >
+/// règle globale GeBook. Ces trois colonnes de portée sont mutuellement
+/// exclusives (`chk_commission_rules_scope`, migration `add_payment_platform_phase1`) :
+/// une règle cible au plus un axe à la fois, jamais deux.
 model CommissionRule {
   id              String               @id @default(uuid(7)) @db.Uuid
   /// `null` désigne la règle générale, applicable à tous les auteurs.
   authorId        String?              @map("author_id") @db.Uuid
+  /// Règle propre à UN tenant précis (tous ses auteurs), au-dessus de la règle
+  /// de type mais en-dessous d'une règle auteur-spécifique.
+  tenantId        String?              @map("tenant_id") @db.Uuid
+  /// Règle par type de tenant (`independent_author`/`publishing_house`/...),
+  /// au-dessus de la règle globale mais en-dessous des deux précédentes.
+  tenantType      TenantType?          @map("tenant_type")
   name            String               @db.VarChar(150)
   commissionType  CommissionType       @default(percentage) @map("commission_type")
   commissionValue Decimal              @map("commission_value") @db.Decimal(12, 4)
@@ -941,9 +980,12 @@ model CommissionRule {
   createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
   author            Author?            @relation(fields: [authorId], references: [id], onDelete: Cascade, map: "fk_commission_rules_author")
+  tenant            Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "fk_commission_rules_tenant")
   saleDistributions SaleDistribution[]
 
   @@index([authorId], map: "idx_commission_rules_author")
+  @@index([tenantId], map: "idx_commission_rules_tenant")
+  @@index([tenantType], map: "idx_commission_rules_tenant_type")
   @@index([status, effectiveFrom, effectiveTo], map: "idx_commission_rules_status_dates")
   @@map("commission_rules")
 }
@@ -964,16 +1006,146 @@ model SaleDistribution {
   gebookCommissionAmount Decimal      @map("gebook_commission_amount") @db.Decimal(12, 2)
   authorNetAmount        Decimal      @map("author_net_amount") @db.Decimal(12, 2)
   payoutStatus           PayoutStatus @default(pending) @map("payout_status")
+  /// Demande de reversement qui a consommé cette ligne. `null` tant qu'elle est
+  /// seulement `available` ; renseigné dès qu'un `Payout` la revendique
+  /// (`processing`), remis à `null` si ce `Payout` échoue ou est annulé — la
+  /// ligne redevient alors `available` (brief §20-22, jamais un double
+  /// engagement sur la même ligne grâce à cette référence unique).
+  payoutId               String?      @map("payout_id") @db.Uuid
   calculatedAt           DateTime     @default(now()) @map("calculated_at") @db.Timestamptz(6)
 
   orderItem      OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Restrict, map: "fk_distributions_order_item")
   author         Author          @relation(fields: [authorId], references: [id], onDelete: Restrict, map: "fk_distributions_author")
   commissionRule CommissionRule? @relation(fields: [commissionRuleId], references: [id], onDelete: SetNull, map: "fk_distributions_rule")
+  payout         Payout?         @relation(fields: [payoutId], references: [id], onDelete: SetNull, map: "fk_distributions_payout")
 
   @@index([authorId], map: "idx_sale_distributions_author")
   @@index([payoutStatus], map: "idx_sale_distributions_payout_status")
   @@index([commissionRuleId], map: "idx_sale_distributions_rule")
+  @@index([payoutId], map: "idx_sale_distributions_payout")
   @@map("sale_distributions")
+}
+
+/// Demande de reversement à un tenant (auteur indépendant ou maison d'édition —
+/// chaque vendeur EST un tenant dans ce modèle, brief §20). Passe toujours par
+/// l'abstraction `PayoutProvider`, jamais par un pilote concret (brief §22).
+model Payout {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  /// Qui a déclenché la demande (owner/admin/finance du tenant, ou un
+  /// platform_admin agissant pour son compte).
+  requestedBy String @map("requested_by") @db.Uuid
+
+  amount   Decimal @db.Decimal(12, 2)
+  currency String  @default("XAF") @db.Char(3)
+  method   String  @db.VarChar(100)
+
+  /// Coordonnées du bénéficiaire — donnée sensible, jamais journalisée en clair
+  /// (brief §21, §71 : jamais de secret/donnée sensible en logs).
+  beneficiaryName    String @map("beneficiary_name") @db.VarChar(150)
+  beneficiaryCountry String @map("beneficiary_country") @db.VarChar(100)
+  beneficiaryAccount String @map("beneficiary_account") @db.VarChar(190)
+
+  payoutProviderId  String?             @map("payout_provider_id") @db.Uuid
+  providerReference String?             @map("provider_reference") @db.VarChar(190)
+  status            PayoutRequestStatus @default(pending)
+
+  /// Validation manuelle (brief §23 : « commence par une architecture permettant
+  /// le mode manuel si le payout automatique n'est pas encore suffisamment
+  /// sécurisé »). `null` tant qu'aucun superadmin n'a statué.
+  approvedBy    String?   @map("approved_by") @db.Uuid
+  approvedAt    DateTime? @map("approved_at") @db.Timestamptz(6)
+  failureReason String?   @map("failure_reason") @db.Text
+
+  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict, map: "fk_payouts_tenant")
+  requester      User               @relation("PayoutRequester", fields: [requestedBy], references: [id], onDelete: Restrict, map: "fk_payouts_requester")
+  approver       User?              @relation("PayoutApprover", fields: [approvedBy], references: [id], onDelete: SetNull, map: "fk_payouts_approver")
+  payoutProvider PaymentProvider?   @relation(fields: [payoutProviderId], references: [id], onDelete: SetNull, map: "fk_payouts_provider")
+  events         PayoutEvent[]
+  lines          SaleDistribution[]
+
+  @@index([tenantId, status], map: "idx_payouts_tenant_status")
+  @@index([status], map: "idx_payouts_status")
+  @@index([payoutProviderId], map: "idx_payouts_provider")
+  @@map("payouts")
+}
+
+/// Trace brute de chaque notification de reversement reçue d'un prestataire —
+/// même contrat que `PaymentEvent` côté pay-in (enregistrée avant tout
+/// traitement, idempotence portée par la contrainte unique en base, pas par le
+/// code applicatif — brief §8, §33).
+model PayoutEvent {
+  id               String                @id @default(uuid(7)) @db.Uuid
+  payoutId         String?               @map("payout_id") @db.Uuid
+  payoutProviderId String                @map("payout_provider_id") @db.Uuid
+  eventId          String?               @map("event_id") @db.VarChar(190)
+  eventType        String?               @map("event_type") @db.VarChar(100)
+  payload          Json
+  signatureValid   Boolean               @default(false) @map("signature_valid")
+  processingStatus EventProcessingStatus @default(received) @map("processing_status")
+  errorMessage     String?               @map("error_message") @db.Text
+  receivedAt       DateTime              @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt      DateTime?             @map("processed_at") @db.Timestamptz(6)
+
+  payout         Payout?         @relation(fields: [payoutId], references: [id], onDelete: SetNull, map: "fk_payout_events_payout")
+  payoutProvider PaymentProvider @relation("PayoutProviderEvents", fields: [payoutProviderId], references: [id], onDelete: Restrict, map: "fk_payout_events_provider")
+
+  @@unique([payoutProviderId, eventId], map: "uq_payout_events_provider_event")
+  @@index([payoutId], map: "idx_payout_events_payout")
+  @@index([payoutProviderId], map: "idx_payout_events_provider")
+  @@index([processingStatus], map: "idx_payout_events_status")
+  @@map("payout_events")
+}
+
+/// Conditions de distribution versionnées, par type de tenant (brief §16-19).
+/// Une nouvelle version n'affecte jamais l'acceptation déjà enregistrée pour une
+/// version antérieure — `TenantTermsAcceptance` fige quelle version était en
+/// vigueur au moment de l'acceptation, jamais recalculée.
+model DistributionTerms {
+  id     String     @id @default(uuid(7)) @db.Uuid
+  tenantType TenantType @map("tenant_type")
+  version Int
+  title   String     @db.VarChar(200)
+  /// Contenu administrable. Tant qu'aucun texte juridique définitif n'est fourni,
+  /// doit rester une structure clairement marquée « à compléter » — jamais de
+  /// contenu juridique fictif (brief §16, §92).
+  content     String   @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  acceptances TenantTermsAcceptance[]
+
+  @@unique([tenantType, version], map: "uq_distribution_terms_type_version")
+  @@index([tenantType, isActive], map: "idx_distribution_terms_type_active")
+  @@map("distribution_terms")
+}
+
+/// Acceptation enregistrée à la création/activation-commerciale d'un tenant
+/// (brief §17) : qui, quand, quelle version. Une vente reste toujours liée à la
+/// version en vigueur au moment de la vente via cette table, jamais recalculée
+/// après une nouvelle version (brief §18-19).
+model TenantTermsAcceptance {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  termsId    String   @map("terms_id") @db.Uuid
+  acceptedAt DateTime @default(now()) @map("accepted_at") @db.Timestamptz(6)
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "fk_terms_acceptance_tenant")
+  user   User              @relation(fields: [userId], references: [id], onDelete: Restrict, map: "fk_terms_acceptance_user")
+  terms  DistributionTerms @relation(fields: [termsId], references: [id], onDelete: Restrict, map: "fk_terms_acceptance_terms")
+
+  @@unique([tenantId, termsId], map: "uq_terms_acceptance_tenant_terms")
+  @@index([tenantId], map: "idx_terms_acceptance_tenant")
+  @@index([termsId], map: "idx_terms_acceptance_terms")
+  @@map("tenant_terms_acceptances")
 }
 
 // ---------------------------------------------------------------------------

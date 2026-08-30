@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Max,
   Min,
@@ -15,6 +16,17 @@ import {
 export enum NodeEnvironment {
   development = 'development',
   test = 'test',
+  production = 'production',
+}
+
+/**
+ * Environnement de paiement, indépendant de `NODE_ENV` : un serveur en
+ * `NODE_ENV=production` peut délibérément rester en `PAYMENT_ENV=sandbox`
+ * tant que les identifiants réels des prestataires n'ont pas été fournis
+ * (brief : « sandbox-first, aucune clé de production pendant ce chantier »).
+ */
+export enum PaymentEnvironment {
+  sandbox = 'sandbox',
   production = 'production',
 }
 
@@ -107,6 +119,59 @@ export class Environment {
       'SETUP_TOKEN doit compter au moins 32 caractères pour protéger la création du superadmin.',
   })
   SETUP_TOKEN: string = DEVELOPMENT_SETUP_TOKEN;
+
+  // ---------------------------------------------------------------------
+  // Plateforme de paiement (Phase 1) — routage pay-in/payout configurable
+  // par variable d'environnement uniquement, sans toucher au code (brief §2).
+  // Toutes les clés de prestataire sont optionnelles : leur absence ne bloque
+  // pas le démarrage, elle rend seulement ce prestataire indisponible
+  // (`PaymentDriverRegistry`/`PayoutDriverRegistry` renvoient 503, pas une
+  // erreur de configuration au démarrage).
+  // ---------------------------------------------------------------------
+
+  @IsEnum(PaymentEnvironment, {
+    message: 'PAYMENT_ENV doit valoir « sandbox » ou « production ».',
+  })
+  PAYMENT_ENV: PaymentEnvironment = PaymentEnvironment.sandbox;
+
+  /** Code `payment_providers.code` du pilote pay-in par défaut (ex. `fake`, `pawapay`). */
+  @IsOptional()
+  @IsString()
+  PAYIN_PROVIDER?: string;
+
+  /** Code `payment_providers.code` du pilote payout par défaut. */
+  @IsOptional()
+  @IsString()
+  PAYOUT_PROVIDER?: string;
+
+  @IsOptional()
+  @IsString()
+  PAWAPAY_API_URL?: string;
+
+  /** Jamais journalisée, jamais renvoyée par une route Superadmin — brief : « ne jamais exposer les secrets ». */
+  @IsOptional()
+  @IsString()
+  PAWAPAY_API_TOKEN?: string;
+
+  @IsOptional()
+  @IsString()
+  CINETPAY_API_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  CINETPAY_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  CINETPAY_SITE_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  FEEXPAY_API_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  FEEXPAY_API_KEY?: string;
 }
 
 /**
