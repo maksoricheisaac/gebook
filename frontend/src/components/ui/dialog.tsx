@@ -70,6 +70,14 @@ function DialogContent({
         className={cn(
           "bg-card shadow-overlay fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
           "flex max-h-[calc(100vh-3rem)] w-[calc(100vw-2rem)] flex-col rounded-xl",
+          // Un formulaire long (`<form>` enveloppant DialogBody + DialogFooter,
+          // ex. commission-rule-manager.tsx) casse sinon la chaîne flex/overflow :
+          // un <form> sans classe est un bloc ordinaire, pas un item flex
+          // contraint — DialogBody grandit alors à sa hauteur naturelle au lieu
+          // de défiler, et le pied de formulaire (bouton d'envoi) finit hors
+          // écran, inatteignable. Cible tout <form> enfant direct plutôt que de
+          // corriger chaque appelant un par un.
+          "[&>form]:flex [&>form]:min-h-0 [&>form]:flex-1 [&>form]:flex-col",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
