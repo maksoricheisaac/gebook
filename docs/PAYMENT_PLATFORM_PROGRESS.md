@@ -486,6 +486,102 @@ n'est pas construit.
 
 ### État
 
-**PARTIEL** — commissions (moteur + API + UI) VALIDÉ ; conditions de
-distribution non commencées. Poursuite immédiate, sans attendre de
-confirmation (brief : autonomie totale entre phases).
+**VALIDÉ** — commissions (moteur + API + UI) et conditions de distribution
+toutes deux terminées et vérifiées (voir la suite ci-dessous). Phase 3
+close.
+
+---
+
+## Phase 3 (suite) — Conditions de distribution
+
+### Objectif
+
+Conditions de distribution versionnées par type de tenant, jamais de contenu
+juridique fictif, acceptation réellement enregistrée à la création d'un
+tenant — pas affichée pour la forme.
+
+### Implémentation
+
+**Schéma** : déjà posé en Phase 1 (`DistributionTerms`, `TenantTermsAcceptance`).
+
+**Seed** : une version 1 par type de tenant (4 lignes), contenu explicitement
+marqué `[À COMPLÉTER]` — jamais de texte juridique inventé (brief §16). Sans
+ce placeholder, le circuit d'acceptation n'aurait rien de réel à exercer tant
+qu'un Superadmin n'a rien publié.
+
+**Backend** (`distribution-terms.service.ts`, deux contrôleurs) :
+- `GET /distribution-terms/:tenantType` — n'importe quel compte authentifié,
+  version en vigueur pour l'onboarding.
+- `GET/POST /admin/distribution-terms` — Superadmin, liste et publication.
+  `publish()` calcule la version suivante et désactive l'ancienne dans la
+  même transaction (au plus une version active par type), audité
+  (`ActivityLogService`).
+- `CreateTenantDto.acceptTerms` (requis `true`, même motif qu'`RegisterDto`).
+  `TenantsService.create()` cherche la version active du type choisi et crée
+  la ligne `TenantTermsAcceptance` **dans la même transaction** que la
+  création du tenant — jamais une étape séparée qui pourrait être oubliée.
+
+**Frontend** : `creer-un-espace/page.tsx` charge les 4 versions en vigueur
+côté serveur en un seul chargement de page ; `CreateWorkspaceForm` affiche le
+texte du type sélectionné et exige une case à cocher native (`required`)
+avant l'envoi — aucun aller-retour réseau supplémentaire au changement de
+type.
+
+### Tests
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 13/13 suites, 94/94 tests
+backend   pnpm test:e2e (complète)  → 16/16 suites, 221/221 tests (+5 nouveaux, +1 corrigé)
+frontend  pnpm exec tsc --noEmit    → OK
+frontend  pnpm lint                 → 0 nouvelle erreur
+frontend  pnpm build (production)   → OK
+```
+
+**Vérification navigateur réelle**, compte de test jetable (créé, supprimé
+après coup) :
+- Texte réel affiché (« [À COMPLÉTER]… », version 1) pour le type par défaut.
+- Soumission sans cocher la case → bloquée par la validation native du
+  navigateur (« Veuillez cocher cette case… »), aucune requête envoyée.
+- Case cochée puis soumission → tenant réellement créé, redirection vers
+  `/admin`.
+- Vérifié directement en base (pas seulement au succès HTTP) : ligne
+  `TenantTermsAcceptance` présente, `termsVersion: 1`,
+  `termsType: independent_author`, `acceptedAt` réel, `ipAddress` réelle.
+- Aucune erreur console. Tenant et compte de test supprimés après vérification.
+
+### Résultats
+
+Publication/versionnage : VALIDÉ. Acceptation à la création : VALIDÉ
+(vérifiée en base, pas seulement en façade). Affichage tenant-facing dans
+« Paramètres → Distribution » (montrer la version acceptée sur la page de
+paramètres du tenant, après création) : NON FAIT — hors périmètre immédiat,
+non explicitement requis pour que l'acceptation elle-même soit fonctionnelle ;
+noté comme reste à faire si le brief y revient explicitement en Phase 8/9.
+
+### Commit
+
+`feat(tenants): Phase 3 - Conditions de distribution (Terms/Conditions)` (`2fd6d62`)
+
+### Push
+
+Effectué sur `feature/payment-platform`.
+
+### État
+
+**VALIDÉ.**
+
+---
+
+## Bilan de la Phase 3
+
+Commissions (moteur + API + UI Superadmin) : VALIDÉ.
+Conditions de distribution (versionnage + acceptation) : VALIDÉ.
+Phase 3 entièrement close. Poursuite immédiate vers la Phase 4 (Pay-in
+PawaPay), sans attendre de confirmation (brief : autonomie totale entre
+phases) — étant entendu qu'aucune clé sandbox PawaPay n'existe encore dans
+cet environnement, donc le travail possible sans elles (architecture du
+pilote, mapping des méthodes de paiement) sera fait en premier, et tout ce
+qui exige un vrai appel réseau sera honnêtement étiqueté NON TESTÉ tant que
+l'utilisateur ne fournit pas les identifiants.
