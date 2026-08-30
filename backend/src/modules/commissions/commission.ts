@@ -1,5 +1,9 @@
 import { Prisma } from '../../generated/prisma/client';
-import { CalculationBase, CommissionType } from '../../generated/prisma/enums';
+import {
+  CalculationBase,
+  CommissionType,
+  TenantType,
+} from '../../generated/prisma/enums';
 
 /**
  * Calcul de la répartition d'une vente.
@@ -167,32 +171,82 @@ export function allocateProviderFee(
   return shares;
 }
 
+/** Ce qu'il faut connaître de la vente pour choisir la règle applicable. */
+export interface RuleSelectionContext {
+  authorId: string;
+  /** `null` quand la ligne n'a pas de tenant vendeur identifiable (ne devrait pas arriver en pratique — chaque `OrderItem` porte un `tenantId`). */
+  tenantId: string | null;
+  tenantType: TenantType | null;
+}
+
 /**
  * Choisit la règle applicable à une vente, parmi celles en vigueur à sa date.
  *
- * Une règle propre à l'auteur l'emporte toujours sur la règle générale : c'est ce
- * qui permet de négocier un taux particulier sans toucher au reste du catalogue.
- * À portée égale, la plus récemment entrée en vigueur gagne.
+ * Portée, de la plus spécifique à la plus générale :
+ *
+ *   1. propre à l'auteur       (existant — négocier un taux sans toucher au reste)
+ *   2. propre au tenant        (mission plateforme de paiement, §12-15)
+ *   3. par type de tenant      (ex. « maison d'édition » vs « auteur indépendant »)
+ *   4. globale GeBook
+ *
+ * Le niveau 1 n'est pas nommé dans la chaîne du brief (« tenant-spécifique >
+ * type de tenant > globale »), mais c'est le niveau déjà existant et testé de
+ * ce moteur — le préserver au sommet, plutôt que de le supprimer, est ce qui
+ * permet de continuer à négocier un taux avec un auteur précis sans changer
+ * le comportement du reste de son tenant. À portée égale, la règle la plus
+ * récemment entrée en vigueur gagne (inchangé).
  */
 export function selectRule<
   T extends {
     id: string;
     authorId: string | null;
+    tenantId: string | null;
+    tenantType: TenantType | null;
     effectiveFrom: Date;
   },
->(rules: T[], authorId: string, soldAt: Date): T | null {
-  const applicable = rules.filter(
+>(rules: T[], context: RuleSelectionContext, soldAt: Date): T | null {
+  const inEffect = rules.filter((rule) => rule.effectiveFrom <= soldAt);
+
+  const mostRecent = (candidates: T[]): T | null =>
+    candidates.length === 0
+      ? null
+      : candidates.reduce((latest, rule) =>
+          rule.effectiveFrom > latest.effectiveFrom ? rule : latest,
+        );
+
+  const authorSpecific = inEffect.filter(
+    (rule) => rule.authorId === context.authorId,
+  );
+  if (authorSpecific.length > 0) {
+    return mostRecent(authorSpecific);
+  }
+
+  if (context.tenantId !== null) {
+    const tenantSpecific = inEffect.filter(
+      (rule) => rule.authorId === null && rule.tenantId === context.tenantId,
+    );
+    if (tenantSpecific.length > 0) {
+      return mostRecent(tenantSpecific);
+    }
+  }
+
+  if (context.tenantType !== null) {
+    const byTenantType = inEffect.filter(
+      (rule) =>
+        rule.authorId === null &&
+        rule.tenantId === null &&
+        rule.tenantType === context.tenantType,
+    );
+    if (byTenantType.length > 0) {
+      return mostRecent(byTenantType);
+    }
+  }
+
+  const global = inEffect.filter(
     (rule) =>
-      (rule.authorId === authorId || rule.authorId === null) &&
-      rule.effectiveFrom <= soldAt,
+      rule.authorId === null &&
+      rule.tenantId === null &&
+      rule.tenantType === null,
   );
-
-  const specific = applicable.filter((rule) => rule.authorId === authorId);
-  const candidates = specific.length > 0 ? specific : applicable;
-
-  return (
-    candidates.sort(
-      (a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime(),
-    )[0] ?? null
-  );
+  return mostRecent(global);
 }

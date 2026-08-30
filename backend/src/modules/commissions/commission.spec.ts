@@ -1,5 +1,9 @@
 import { Prisma } from '../../generated/prisma/client';
-import { CalculationBase, CommissionType } from '../../generated/prisma/enums';
+import {
+  CalculationBase,
+  CommissionType,
+  TenantType,
+} from '../../generated/prisma/enums';
 import {
   allocateProviderFee,
   computeDistribution,
@@ -238,28 +242,52 @@ describe('Répartition d’une vente', () => {
   });
 
   describe('Choix de la règle applicable', () => {
+    const TENANT_A = 'tenant-a';
+    const TENANT_B = 'tenant-b';
+
     const generale = {
       id: 'generale',
       authorId: null,
+      tenantId: null,
+      tenantType: null,
       effectiveFrom: new Date('2026-01-01T00:00:00Z'),
     };
     const propre = {
       id: 'propre-auteur',
       authorId: 'auteur-1',
+      tenantId: null,
+      tenantType: null,
       effectiveFrom: new Date('2026-02-01T00:00:00Z'),
     };
     const vente = new Date('2026-06-01T00:00:00Z');
 
+    const contexte = (
+      overrides: Partial<{
+        authorId: string;
+        tenantId: string | null;
+        tenantType: TenantType | null;
+      }> = {},
+    ) => ({
+      authorId: 'auteur-1',
+      tenantId: null,
+      tenantType: null,
+      ...overrides,
+    });
+
     it('retient la règle propre à l’auteur plutôt que la générale', () => {
-      expect(selectRule([generale, propre], 'auteur-1', vente)?.id).toBe(
+      expect(selectRule([generale, propre], contexte(), vente)?.id).toBe(
         'propre-auteur',
       );
     });
 
     it('retient la règle générale pour un auteur sans règle propre', () => {
-      expect(selectRule([generale, propre], 'auteur-2', vente)?.id).toBe(
-        'generale',
-      );
+      expect(
+        selectRule(
+          [generale, propre],
+          contexte({ authorId: 'auteur-2' }),
+          vente,
+        )?.id,
+      ).toBe('generale');
     });
 
     it('préfère une règle propre même plus ancienne que la générale', () => {
@@ -268,10 +296,12 @@ describe('Répartition d’une vente', () => {
       const generaleRecente = {
         id: 'generale-recente',
         authorId: null,
+        tenantId: null,
+        tenantType: null,
         effectiveFrom: new Date('2026-05-01T00:00:00Z'),
       };
 
-      expect(selectRule([generaleRecente, propre], 'auteur-1', vente)?.id).toBe(
+      expect(selectRule([generaleRecente, propre], contexte(), vente)?.id).toBe(
         'propre-auteur',
       );
     });
@@ -280,10 +310,12 @@ describe('Répartition d’une vente', () => {
       const ancienne = {
         id: 'ancienne',
         authorId: null,
+        tenantId: null,
+        tenantType: null,
         effectiveFrom: new Date('2025-01-01T00:00:00Z'),
       };
 
-      expect(selectRule([ancienne, generale], 'auteur-1', vente)?.id).toBe(
+      expect(selectRule([ancienne, generale], contexte(), vente)?.id).toBe(
         'generale',
       );
     });
@@ -292,16 +324,105 @@ describe('Répartition d’une vente', () => {
       const future = {
         id: 'future',
         authorId: 'auteur-1',
+        tenantId: null,
+        tenantType: null,
         effectiveFrom: new Date('2027-01-01T00:00:00Z'),
       };
 
-      expect(selectRule([generale, future], 'auteur-1', vente)?.id).toBe(
+      expect(selectRule([generale, future], contexte(), vente)?.id).toBe(
         'generale',
       );
     });
 
     it('ne retourne aucune règle quand rien ne s’applique', () => {
-      expect(selectRule([], 'auteur-1', vente)).toBeNull();
+      expect(selectRule([], contexte(), vente)).toBeNull();
+    });
+
+    it('retient la règle propre au tenant plutôt que la générale', () => {
+      const parTenant = {
+        id: 'tenant-a-specifique',
+        authorId: null,
+        tenantId: TENANT_A,
+        tenantType: null,
+        effectiveFrom: new Date('2026-01-15T00:00:00Z'),
+      };
+
+      expect(
+        selectRule(
+          [generale, parTenant],
+          contexte({ tenantId: TENANT_A }),
+          vente,
+        )?.id,
+      ).toBe('tenant-a-specifique');
+    });
+
+    it('ignore la règle d’un autre tenant', () => {
+      const parTenantB = {
+        id: 'tenant-b-specifique',
+        authorId: null,
+        tenantId: TENANT_B,
+        tenantType: null,
+        effectiveFrom: new Date('2026-01-15T00:00:00Z'),
+      };
+
+      expect(
+        selectRule(
+          [generale, parTenantB],
+          contexte({ tenantId: TENANT_A }),
+          vente,
+        )?.id,
+      ).toBe('generale');
+    });
+
+    it('retient la règle par type de tenant plutôt que la générale', () => {
+      const parType = {
+        id: 'type-maison-edition',
+        authorId: null,
+        tenantId: null,
+        tenantType: TenantType.publishing_house,
+        effectiveFrom: new Date('2026-01-15T00:00:00Z'),
+      };
+
+      expect(
+        selectRule(
+          [generale, parType],
+          contexte({ tenantType: TenantType.publishing_house }),
+          vente,
+        )?.id,
+      ).toBe('type-maison-edition');
+    });
+
+    it('respecte la chaîne complète : auteur > tenant > type de tenant > globale', () => {
+      const parType = {
+        id: 'type-maison-edition',
+        authorId: null,
+        tenantId: null,
+        tenantType: TenantType.publishing_house,
+        effectiveFrom: new Date('2026-01-15T00:00:00Z'),
+      };
+      const parTenant = {
+        id: 'tenant-a-specifique',
+        authorId: null,
+        tenantId: TENANT_A,
+        tenantType: null,
+        effectiveFrom: new Date('2026-01-20T00:00:00Z'),
+      };
+      const toutes = [generale, parType, parTenant, propre];
+      const ctx = contexte({
+        tenantId: TENANT_A,
+        tenantType: TenantType.publishing_house,
+      });
+
+      // L'auteur a une règle propre : elle gagne malgré les règles tenant/type.
+      expect(selectRule(toutes, ctx, vente)?.id).toBe('propre-auteur');
+      // Sans règle auteur, la règle tenant gagne sur le type et le global.
+      expect(selectRule([generale, parType, parTenant], ctx, vente)?.id).toBe(
+        'tenant-a-specifique',
+      );
+      // Sans règle tenant, la règle de type gagne sur le global.
+      expect(selectRule([generale, parType], ctx, vente)?.id).toBe(
+        'type-maison-edition',
+      );
     });
   });
 });

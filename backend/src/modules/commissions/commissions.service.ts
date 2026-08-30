@@ -56,6 +56,8 @@ function assertCanViewTenantFinance(tenant: TenantContext): string {
 export interface FreezableItem {
   id: string;
   authorId: string;
+  /** Tenant vendeur de cette ligne — porte la portée « règle propre au tenant » (`selectRule`). */
+  tenantId: string;
   lineTotal: Prisma.Decimal;
   quantity: number;
 }
@@ -102,13 +104,31 @@ export class CommissionsService {
       },
     });
 
+    // Le type de chaque tenant vendeur (brief §12-15, portée « par type de
+    // tenant ») : une seule requête pour toute la commande, quel que soit le
+    // nombre de lignes ou de tenants distincts qu'elle contient.
+    const tenantIds = [...new Set(params.items.map((item) => item.tenantId))];
+    const tenants = await tx.tenant.findMany({
+      where: { id: { in: tenantIds } },
+      select: { id: true, type: true },
+    });
+    const tenantTypeById = new Map(tenants.map((t) => [t.id, t.type]));
+
     const fees = allocateProviderFee(
       params.items.map((item) => item.lineTotal),
       params.providerFee,
     );
 
     const data = params.items.map((item, index) => {
-      const rule = selectRule(rules, item.authorId, params.soldAt);
+      const rule = selectRule(
+        rules,
+        {
+          authorId: item.authorId,
+          tenantId: item.tenantId,
+          tenantType: tenantTypeById.get(item.tenantId) ?? null,
+        },
+        params.soldAt,
+      );
       const distribution = computeDistribution({
         grossAmount: item.lineTotal,
         providerFee: fees[index],
