@@ -15,6 +15,7 @@ import {
   CalculationBase,
   CommissionRuleStatus,
   CommissionType,
+  TenantType,
 } from '../../../generated/prisma/enums';
 
 /** Valeur décimale à quatre décimales : `commission_value` est un DECIMAL(12,4). */
@@ -28,10 +29,24 @@ export class CreateCommissionRuleDto {
   @Transform(({ value }): string => String(value ?? '').trim())
   name!: string;
 
-  /** `null` ou absent désigne la règle générale, applicable à tous les auteurs. */
+  /**
+   * Au plus un des trois champs de portée ci-dessous peut être renseigné —
+   * `chk_commission_rules_scope` porte la même règle en base. `null`/absent
+   * partout désigne la règle générale, applicable à tous.
+   */
   @IsOptional()
   @IsUUID()
   authorId?: string;
+
+  /** Portée « propre à un tenant » (mission plateforme de paiement, §12-15). */
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
+
+  /** Portée « par type de tenant ». */
+  @IsOptional()
+  @IsEnum(TenantType)
+  tenantType?: TenantType;
 
   @IsEnum(CommissionType)
   commissionType!: CommissionType;
@@ -60,6 +75,18 @@ export class UpdateCommissionRuleDto {
   @Length(1, 150)
   @Transform(({ value }): string => String(value ?? '').trim())
   name?: string;
+
+  @IsOptional()
+  @IsUUID()
+  authorId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
+
+  @IsOptional()
+  @IsEnum(TenantType)
+  tenantType?: TenantType;
 
   @IsOptional()
   @IsEnum(CommissionType)

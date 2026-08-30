@@ -39,7 +39,10 @@ export class AdminCommissionRulesService {
       Promise.all([
         tx.commissionRule.count(),
         tx.commissionRule.findMany({
-          include: { author: { select: { penName: true } } },
+          include: {
+            author: { select: { penName: true } },
+            tenant: { select: { name: true } },
+          },
           orderBy: [{ effectiveFrom: 'desc' }],
           skip: (query.page - 1) * query.perPage,
           take: query.perPage,
@@ -64,11 +67,14 @@ export class AdminCommissionRulesService {
   ): Promise<CommissionRule> {
     this.assertConsistent(dto.commissionType, dto.commissionValue);
     this.assertPeriod(dto.effectiveFrom, dto.effectiveTo);
+    this.assertScope(dto.authorId, dto.tenantId, dto.tenantType);
 
     const rule = await this.prisma.commissionRule.create({
       data: {
         name: dto.name,
         authorId: dto.authorId ?? null,
+        tenantId: dto.tenantId ?? null,
+        tenantType: dto.tenantType ?? null,
         commissionType: dto.commissionType,
         commissionValue: new Prisma.Decimal(dto.commissionValue),
         calculationBase: dto.calculationBase,
@@ -107,11 +113,25 @@ export class AdminCommissionRulesService {
       dto.effectiveFrom ?? existing.effectiveFrom.toISOString(),
       dto.effectiveTo ?? existing.effectiveTo?.toISOString(),
     );
+    this.assertScope(
+      dto.authorId !== undefined
+        ? dto.authorId
+        : (existing.authorId ?? undefined),
+      dto.tenantId !== undefined
+        ? dto.tenantId
+        : (existing.tenantId ?? undefined),
+      dto.tenantType !== undefined
+        ? dto.tenantType
+        : (existing.tenantType ?? undefined),
+    );
 
     const rule = await this.prisma.commissionRule.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.authorId !== undefined && { authorId: dto.authorId }),
+        ...(dto.tenantId !== undefined && { tenantId: dto.tenantId }),
+        ...(dto.tenantType !== undefined && { tenantType: dto.tenantType }),
         ...(dto.commissionType !== undefined && {
           commissionType: dto.commissionType,
         }),
@@ -184,6 +204,29 @@ export class AdminCommissionRulesService {
     if (to && new Date(to) < new Date(from)) {
       throw new BadRequestException(
         'La fin de validité ne peut pas précéder son début.',
+      );
+    }
+  }
+
+  /**
+   * Même règle que `chk_commission_rules_scope` en base, vérifiée ici pour
+   * répondre un message clair plutôt qu'une erreur 500 de contrainte violée.
+   * Une règle cible au plus un axe de portée : auteur précis, tenant précis,
+   * ou type de tenant — jamais deux à la fois (brief §12-15, priorité
+   * documentée dans `selectRule()`).
+   */
+  private assertScope(
+    authorId?: string,
+    tenantId?: string,
+    tenantType?: string,
+  ): void {
+    const scopesSet = [authorId, tenantId, tenantType].filter(
+      (value) => value !== undefined && value !== null,
+    ).length;
+
+    if (scopesSet > 1) {
+      throw new BadRequestException(
+        'Une règle de commission ne peut cibler qu’un seul niveau à la fois : auteur, tenant, ou type de tenant.',
       );
     }
   }

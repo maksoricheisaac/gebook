@@ -218,7 +218,14 @@ describe('Commissions (e2e)', () => {
 
   afterAll(async () => {
     const userFilter = { user: { email: { endsWith: EMAIL_DOMAIN } } };
-    await adminPrisma.saleDistribution.deleteMany({ where: { authorId } });
+    // Filtré par acheteur (le lecteur de ce fichier), pas par `authorId` seul :
+    // la Phase 3 (portée tenant) fait vendre un second auteur du même tenant,
+    // et `sale_distributions.author_id` est `ON DELETE RESTRICT` — le
+    // supprimer avant `author.deleteMany()` ci-dessous est indispensable pour
+    // CE second auteur aussi, pas seulement le premier.
+    await adminPrisma.saleDistribution.deleteMany({
+      where: { orderItem: { order: userFilter } },
+    });
     await adminPrisma.paymentEvent.deleteMany({
       where: { eventId: { startsWith: 'evt_phase10_' } },
     });
@@ -384,6 +391,135 @@ describe('Commissions (e2e)', () => {
 
       await adminAgent
         .delete(`/admin/commission-rules/${(rule.body as { id: string }).id}`)
+        .set('Origin', ORIGIN)
+        .expect(204);
+    });
+  });
+
+  describe('Portée tenant / type de tenant (mission plateforme de paiement, Phase 3)', () => {
+    it('refuse une règle qui cible auteur et tenant à la fois', async () => {
+      const author = await adminPrisma.author.findUniqueOrThrow({
+        where: { id: authorId },
+        select: { tenantId: true },
+      });
+
+      const response = await adminAgent
+        .post('/admin/commission-rules')
+        .set('Origin', ORIGIN)
+        .send({
+          name: `Règle phase 10 ${RUN_ID} double portée`,
+          authorId,
+          tenantId: author.tenantId,
+          commissionType: 'percentage',
+          commissionValue: '5',
+          calculationBase: 'gross_amount',
+          effectiveFrom: '2026-01-01T00:00:00.000Z',
+        })
+        .expect(400);
+
+      expect((response.body as { message: string }).message).toContain(
+        'un seul niveau',
+      );
+    });
+
+    it('applique la règle propre au tenant à un auteur sans règle propre du même tenant', async () => {
+      const primaryAuthor = await adminPrisma.author.findUniqueOrThrow({
+        where: { id: authorId },
+        select: { tenantId: true },
+      });
+
+      // Second auteur, même tenant, sans règle propre : c'est lui qui doit
+      // révéler si la règle de portée tenant est vraiment appliquée par
+      // `freezeForOrder`, pas seulement par la fonction pure testée à part.
+      const secondAuthor = await adminAgent
+        .post('/admin/authors')
+        .set('Origin', ORIGIN)
+        .send({
+          penName: `Auteur Phase 10 Tenant ${RUN_ID}`,
+          slug: `phase10-auteur-tenant-${RUN_ID}`,
+          status: 'active',
+        })
+        .expect(201);
+      const secondAuthorId = (secondAuthor.body as { id: string }).id;
+
+      const secondWork = await adminAgent
+        .post('/admin/works')
+        .set('Origin', ORIGIN)
+        .send({
+          authorId: secondAuthorId,
+          translations: { fr: { title: `Œuvre Phase 10 Tenant ${RUN_ID}` } },
+          slug: `phase10-oeuvre-tenant-${RUN_ID}`,
+          status: 'published',
+        })
+        .expect(201);
+
+      const secondFormat = await adminAgent
+        .post(`/admin/works/${(secondWork.body as { id: string }).id}/formats`)
+        .set('Origin', ORIGIN)
+        .send({
+          formatType: 'pdf',
+          price: PRICE,
+          deliveryType: 'digital_download',
+        })
+        .expect(201);
+      const secondFormatId = (secondFormat.body as { id: string }).id;
+
+      const tenantRule = await adminAgent
+        .post('/admin/commission-rules')
+        .set('Origin', ORIGIN)
+        .send({
+          name: `Règle phase 10 ${RUN_ID} tenant`,
+          tenantId: primaryAuthor.tenantId,
+          commissionType: 'percentage',
+          commissionValue: '15',
+          calculationBase: 'gross_amount',
+          effectiveFrom: '2026-01-01T00:00:00.000Z',
+        })
+        .expect(201);
+      const tenantRuleId = (tenantRule.body as { id: string }).id;
+
+      const order = await readerAgent
+        .post('/orders')
+        .set('Origin', ORIGIN)
+        .send({ items: [{ workFormatId: secondFormatId, quantity: 1 }] })
+        .expect(201);
+      const orderNumber = (order.body as { orderNumber: string }).orderNumber;
+
+      const payment = await readerAgent
+        .post('/payments')
+        .set('Origin', ORIGIN)
+        .send({ orderNumber })
+        .expect(201);
+      const stored = await adminPrisma.payment.findUniqueOrThrow({
+        where: { id: (payment.body as { id: string }).id },
+      });
+
+      const rawBody = Buffer.from(
+        JSON.stringify({
+          eventId: `evt_phase10_tenant_${RUN_ID}`,
+          transactionId: stored.providerTransactionId,
+          status: 'successful',
+          amountMinor: PRICE_MINOR,
+          feeMinor: 0,
+        }),
+        'utf8',
+      );
+
+      await request(app.getHttpServer())
+        .post('/webhooks/fake')
+        .set('Content-Type', 'application/json')
+        .set(fakeDriver.signWebhook(rawBody))
+        .send(rawBody.toString('utf8'))
+        .expect(200);
+
+      const distribution = await distributionOf(orderNumber);
+      // 15 % de 10 000 (brut) = 1 500 — preuve que la règle de portée tenant,
+      // pas la règle générale du seed, a été retenue pour ce second auteur.
+      expect(distribution.commissionRuleId).toBe(tenantRuleId);
+      expect(distribution.gebookCommissionAmount.toFixed(2)).toBe('1500.00');
+
+      await adminAgent
+        .delete(`/admin/commission-rules/${tenantRuleId}`)
         .set('Origin', ORIGIN)
         .expect(204);
     });
