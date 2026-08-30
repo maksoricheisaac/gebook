@@ -48,6 +48,7 @@ export async function createTenantAction(
       slug: formData.get("slug"),
       type: formData.get("type"),
       description: formData.get("description") || undefined,
+      acceptTerms: formData.get("acceptTerms") === "on",
     }),
   });
 

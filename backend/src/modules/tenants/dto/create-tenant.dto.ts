@@ -1,5 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
+  Equals,
+  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -40,4 +42,16 @@ export class CreateTenantDto {
   @IsString()
   @MaxLength(2000)
   description?: string;
+
+  /**
+   * Acceptation des conditions de distribution en vigueur pour `type`
+   * (mission plateforme de paiement, §17) : enregistrée dans la même
+   * transaction que la création — jamais après coup, jamais silencieuse
+   * (« l'utilisateur ne doit pas découvrir les conditions après une vente »).
+   */
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Vous devez accepter les conditions de distribution.',
+  })
+  acceptTerms!: boolean;
 }

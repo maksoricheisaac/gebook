@@ -32,6 +32,7 @@ export class TenantsService {
   async create(
     dto: CreateTenantDto,
     user: AuthenticatedUser,
+    ipAddress?: string,
   ): Promise<TenantMembershipResponse> {
     const member = await this.prisma
       .withRlsContext(buildRlsContext(user), async (tx) => {
@@ -45,6 +46,30 @@ export class TenantsService {
             createdBy: user.id,
           },
         });
+
+        // Acceptation des conditions de distribution en vigueur pour ce type
+        // de tenant, dans la même transaction que la création — jamais après
+        // coup (mission plateforme de paiement, brief §17). `dto.acceptTerms`
+        // est déjà garanti `true` par le DTO (`@Equals(true)`) ; si aucune
+        // version n'est publiée pour ce type (ne devrait pas arriver — le
+        // seed en pose une par type — mais un Superadmin pourrait en théorie
+        // désactiver la dernière sans en republier une), la création n'est
+        // pas bloquée pour autant : on ne peut pas faire accepter un texte
+        // qui n'existe pas.
+        const activeTerms = await tx.distributionTerms.findFirst({
+          where: { tenantType: dto.type, isActive: true },
+          orderBy: { version: 'desc' },
+        });
+        if (activeTerms) {
+          await tx.tenantTermsAcceptance.create({
+            data: {
+              tenantId: tenant.id,
+              userId: user.id,
+              termsId: activeTerms.id,
+              ipAddress: ipAddress ?? null,
+            },
+          });
+        }
 
         return tx.tenantMember.create({
           data: {

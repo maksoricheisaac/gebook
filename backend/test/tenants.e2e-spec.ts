@@ -172,6 +172,7 @@ describe('Tenants — support TenantContext (e2e)', () => {
           name: `Espace libre-service ${RUN_ID}`,
           slug: `phase5-self-service-${RUN_ID}`,
           type: 'independent_author',
+          acceptTerms: true,
         })
         .expect(201);
 
