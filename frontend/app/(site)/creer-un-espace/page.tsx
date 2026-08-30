@@ -4,6 +4,11 @@ import type { Metadata } from "next";
 import { AuthLayout } from "@/src/components/auth/auth-layout";
 import { CreateWorkspaceForm } from "@/src/components/account/create-workspace-form";
 import { requireUser } from "@/src/lib/auth";
+import {
+  getActiveDistributionTerms,
+  type DistributionTerms,
+} from "@/src/lib/distribution-terms";
+import { TENANT_TYPE_OPTIONS } from "@/src/lib/tenant-type";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +30,18 @@ export const metadata: Metadata = {
 export default async function CreateWorkspacePage() {
   await requireUser("/creer-un-espace");
 
+  // Les quatre versions en vigueur sont chargées une fois, côté serveur : le
+  // sélecteur de type change côté client sans aller-retour réseau
+  // supplémentaire (mission plateforme de paiement §17).
+  const termsEntries = await Promise.all(
+    TENANT_TYPE_OPTIONS.map(
+      async (option) =>
+        [option.value, await getActiveDistributionTerms(option.value)] as const,
+    ),
+  );
+  const termsByType: Record<string, DistributionTerms | null> =
+    Object.fromEntries(termsEntries);
+
   return (
     <AuthLayout
       aside="publisher"
@@ -41,7 +58,7 @@ export default async function CreateWorkspacePage() {
         </p>
       }
     >
-      <CreateWorkspaceForm />
+      <CreateWorkspaceForm termsByType={termsByType} />
     </AuthLayout>
   );
 }

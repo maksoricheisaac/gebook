@@ -362,3 +362,226 @@ dont le schéma de fondation (`CommissionRule.tenantId`/`tenantType`,
 ### État
 
 **VALIDÉ.**
+
+---
+
+## Phase 3 — Commissions et conditions (partie « Commissions »)
+
+### Objectif
+
+Chaîne de priorité auteur > tenant > type de tenant > globale, réellement
+appliquée au moment de la vente, et une interface Superadmin pour créer ces
+règles à chaque niveau — pas seulement la portée globale déjà existante.
+
+### Implémentation
+
+**Moteur (`commission.ts`)** : `selectRule()` étendu (`RuleSelectionContext`
+remplace le simple `authorId`), 4 paliers testés unitairement un par un plus
+la chaîne complète (`commission.spec.ts`, +4 tests). `freezeForOrder()`
+(`commissions.service.ts`) résout le type de chaque tenant vendeur en une
+seule requête par commande et construit le contexte complet.
+
+**API** (`admin-commission-rules.service.ts`, `dto/commission-rule.dto.ts`) :
+`tenantId`/`tenantType` ajoutés aux deux DTO, portée mutuellement exclusive
+vérifiée en 400 clair (`assertScope`, même règle que la contrainte `CHECK`
+posée en Phase 1). `UpdateCommissionRuleDto` distingue `undefined` (ne pas
+toucher) de `null` (effacer explicitement) sur les trois champs de portée —
+nécessaire pour repasser une règle de « propre au tenant » à « générale »
+depuis le formulaire d'édition.
+
+**Répertoire des tenants** (`GET /admin/tenants`, `AdminTenantsController`,
+Phase 3) : premier point d'accès « tous les tenants » de toute l'API — rien
+n'existait avant pour qu'un Superadmin choisisse un tenant précis par nom.
+
+**Frontend** (`commission-rule-manager.tsx`) : sélecteur « Portée »
+(Générale / Un tenant précis / Un type de tenant), listes déroulantes
+conditionnelles alimentées par `/admin/tenants` et l'énumération
+`TenantType`. Une règle propre à un auteur (créable seulement via l'API,
+comportement antérieur à cette mission, inchangé) s'affiche en lecture
+seule plutôt que de proposer un changement de portée trompeur, faute de
+sélecteur d'auteur global dans cette interface.
+
+### Bug réel trouvé et corrigé en testant en navigateur
+
+`dialog.tsx` (composant partagé, utilisé par `author-manager.tsx`,
+`category-manager.tsx`, `work-list.tsx`, `team-manager.tsx`,
+`tenant-settings-manager.tsx` et ce fichier) : la chaîne flex/`overflow-y-auto`
+entre `DialogContent`/`DialogBody`/`DialogFooter` se rompt dès que le
+`<form>` qui enveloppe `DialogBody` + `DialogFooter` n'a lui-même aucune
+classe flex — un `<form>` nu est un bloc ordinaire, pas un item flex
+contraint. `DialogBody` grandissait alors à sa hauteur naturelle plutôt que
+de défiler en interne, et le bouton d'envoi du pied de formulaire finissait
+positionné hors de la fenêtre visible, physiquement inatteignable — jamais
+déclenché avant parce qu'aucun formulaire existant n'était assez long pour
+dépasser la hauteur maximale du dialogue.
+
+Diagnostiqué par inspection directe du DOM et des styles calculés (pas
+supposé) : `document.querySelector('[data-slot="dialog-body"]')` montrait
+`clientHeight === scrollHeight` (568px des deux côtés) alors que son parent
+`dialog-content` était correctement plafonné à 550px — la preuve que le
+corps ne se voyait jamais réellement contraint par son parent flex.
+
+Corrigé à la source, dans `dialog.tsx` lui-même (`[&>form]:flex
+[&>form]:min-h-0 [&>form]:flex-1 [&>form]:flex-col` sur `DialogContent`),
+plutôt que de rustiner chaque formulaire un par un — corrige aussi tout
+formulaire futur qui grandirait suffisamment pour reproduire le même
+problème. Re-testé après correction : le corps défile bien en interne
+(`clientHeight` 410px contre 568px de contenu), le bouton reste dans la
+fenêtre visible, une vraie requête `PATCH` part au clic.
+
+### Tests
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 13/13 suites, 94/94 tests
+backend   pnpm test:e2e (complète)  → 15/15 suites, 216/216 tests
+frontend  pnpm exec tsc --noEmit    → OK
+frontend  pnpm lint                 → 0 nouvelle erreur (4 avertissements watch()/React Compiler préexistants, même motif que 3 autres fichiers)
+frontend  pnpm build (production)   → OK
+```
+
+**Vérification navigateur réelle**, compte de test jetable (créé, promu
+admin, supprimé après coup — jamais le vrai compte Superadmin de
+l'utilisateur) :
+- Création d'une règle de portée générale : réussie du premier coup, ligne
+  réelle apparue, compteurs mis à jour.
+- Édition vers portée « tenant » (Mampouya Éditions) : bloquée par le bug
+  ci-dessus lors des toutes premières tentatives (bouton inatteignable) —
+  diagnostiquée, corrigée, puis **réellement réussie** (`PATCH 200`, ligne
+  affichant « Propre à Mampouya Éditions », compteur « 1 à portée réduite »).
+- Retour à la portée générale (`tenantId: null` explicite) : réussi, ligne
+  redevenue « Règle générale ».
+- Création d'une règle de portée « type de tenant » (Maison d'édition) :
+  réussie, libellé français correct affiché.
+- Aucune erreur console sur l'ensemble de la vérification.
+- Règles et compte de test supprimés après vérification.
+
+### Résultats
+
+Chaîne de priorité (moteur) : VALIDÉ (unitaire + e2e réel via webhook).
+API de portée (tenant/type de tenant) : VALIDÉ (e2e + navigateur réel).
+UI Superadmin de sélection de portée : VALIDÉ (navigateur réel, bug trouvé
+et corrigé avant validation, pas après).
+
+### Commit
+
+`feat(commissions): Phase 3 - tenant-scoped commission rule priority chain` (`b5895b5`)
+`feat(commissions): Phase 3 - expose tenant/tenant-type scoping in the admin API` (`d7581bd`)
+`feat(tenants): Phase 3 - admin tenant directory for scope pickers` (`17aadbb`)
+`feat(commissions): Phase 3 - Superadmin UI for tenant/tenant-type commission scope` (`c68d147`)
+
+### Push
+
+Effectué sur `feature/payment-platform`.
+
+### Reste à faire en Phase 3
+
+Conditions de distribution (`DistributionTerms`/`TenantTermsAcceptance`,
+schéma déjà posé en Phase 1) : contenu administrable marqué « à compléter »,
+UI Superadmin de gestion des versions, acceptation à la création/activation
+commerciale d'un tenant, affichage tenant-facing dans « Paramètres →
+Distribution ». Non commencé — Phase 3 reste **PARTIEL** tant que ce volet
+n'est pas construit.
+
+### État
+
+**VALIDÉ** — commissions (moteur + API + UI) et conditions de distribution
+toutes deux terminées et vérifiées (voir la suite ci-dessous). Phase 3
+close.
+
+---
+
+## Phase 3 (suite) — Conditions de distribution
+
+### Objectif
+
+Conditions de distribution versionnées par type de tenant, jamais de contenu
+juridique fictif, acceptation réellement enregistrée à la création d'un
+tenant — pas affichée pour la forme.
+
+### Implémentation
+
+**Schéma** : déjà posé en Phase 1 (`DistributionTerms`, `TenantTermsAcceptance`).
+
+**Seed** : une version 1 par type de tenant (4 lignes), contenu explicitement
+marqué `[À COMPLÉTER]` — jamais de texte juridique inventé (brief §16). Sans
+ce placeholder, le circuit d'acceptation n'aurait rien de réel à exercer tant
+qu'un Superadmin n'a rien publié.
+
+**Backend** (`distribution-terms.service.ts`, deux contrôleurs) :
+- `GET /distribution-terms/:tenantType` — n'importe quel compte authentifié,
+  version en vigueur pour l'onboarding.
+- `GET/POST /admin/distribution-terms` — Superadmin, liste et publication.
+  `publish()` calcule la version suivante et désactive l'ancienne dans la
+  même transaction (au plus une version active par type), audité
+  (`ActivityLogService`).
+- `CreateTenantDto.acceptTerms` (requis `true`, même motif qu'`RegisterDto`).
+  `TenantsService.create()` cherche la version active du type choisi et crée
+  la ligne `TenantTermsAcceptance` **dans la même transaction** que la
+  création du tenant — jamais une étape séparée qui pourrait être oubliée.
+
+**Frontend** : `creer-un-espace/page.tsx` charge les 4 versions en vigueur
+côté serveur en un seul chargement de page ; `CreateWorkspaceForm` affiche le
+texte du type sélectionné et exige une case à cocher native (`required`)
+avant l'envoi — aucun aller-retour réseau supplémentaire au changement de
+type.
+
+### Tests
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 13/13 suites, 94/94 tests
+backend   pnpm test:e2e (complète)  → 16/16 suites, 221/221 tests (+5 nouveaux, +1 corrigé)
+frontend  pnpm exec tsc --noEmit    → OK
+frontend  pnpm lint                 → 0 nouvelle erreur
+frontend  pnpm build (production)   → OK
+```
+
+**Vérification navigateur réelle**, compte de test jetable (créé, supprimé
+après coup) :
+- Texte réel affiché (« [À COMPLÉTER]… », version 1) pour le type par défaut.
+- Soumission sans cocher la case → bloquée par la validation native du
+  navigateur (« Veuillez cocher cette case… »), aucune requête envoyée.
+- Case cochée puis soumission → tenant réellement créé, redirection vers
+  `/admin`.
+- Vérifié directement en base (pas seulement au succès HTTP) : ligne
+  `TenantTermsAcceptance` présente, `termsVersion: 1`,
+  `termsType: independent_author`, `acceptedAt` réel, `ipAddress` réelle.
+- Aucune erreur console. Tenant et compte de test supprimés après vérification.
+
+### Résultats
+
+Publication/versionnage : VALIDÉ. Acceptation à la création : VALIDÉ
+(vérifiée en base, pas seulement en façade). Affichage tenant-facing dans
+« Paramètres → Distribution » (montrer la version acceptée sur la page de
+paramètres du tenant, après création) : NON FAIT — hors périmètre immédiat,
+non explicitement requis pour que l'acceptation elle-même soit fonctionnelle ;
+noté comme reste à faire si le brief y revient explicitement en Phase 8/9.
+
+### Commit
+
+`feat(tenants): Phase 3 - Conditions de distribution (Terms/Conditions)` (`2fd6d62`)
+
+### Push
+
+Effectué sur `feature/payment-platform`.
+
+### État
+
+**VALIDÉ.**
+
+---
+
+## Bilan de la Phase 3
+
+Commissions (moteur + API + UI Superadmin) : VALIDÉ.
+Conditions de distribution (versionnage + acceptation) : VALIDÉ.
+Phase 3 entièrement close. Poursuite immédiate vers la Phase 4 (Pay-in
+PawaPay), sans attendre de confirmation (brief : autonomie totale entre
+phases) — étant entendu qu'aucune clé sandbox PawaPay n'existe encore dans
+cet environnement, donc le travail possible sans elles (architecture du
+pilote, mapping des méthodes de paiement) sera fait en premier, et tout ce
+qui exige un vrai appel réseau sera honnêtement étiqueté NON TESTÉ tant que
+l'utilisateur ne fournit pas les identifiants.

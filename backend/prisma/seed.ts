@@ -344,6 +344,56 @@ async function seedCommissionRules(): Promise<void> {
 }
 
 /**
+ * Conditions de distribution, version 1, une par type de tenant (mission
+ * plateforme de paiement, §16 : « ne crée pas de conditions juridiques
+ * fictives — si aucun contenu définitif n'est fourni, une structure
+ * administrable avec des textes clairement marqués comme à compléter »).
+ *
+ * Sans cette version de base, la création d'un tenant n'aurait rien à faire
+ * accepter — ce placeholder existe pour que le circuit d'acceptation
+ * (`TenantsService.create`) soit réellement exercé dès le premier tenant créé,
+ * pas seulement une fois qu'un texte juridique définitif aura été publié par
+ * un Superadmin depuis `/admin/distribution-terms`.
+ */
+async function seedDistributionTerms(): Promise<void> {
+  const placeholder =
+    '[À COMPLÉTER] Ce texte est un espace réservé administrable. ' +
+    'Aucun contenu juridique définitif n’a encore été rédigé pour ce type ' +
+    'd’espace. Il doit être remplacé par un Superadmin avant toute mise en ' +
+    'production réelle — commission, part du vendeur, délai de reversement, ' +
+    'règles de publication, règles de retrait, conditions et frais de ' +
+    'reversement, règles de remboursement, règles de contenu, propriété ' +
+    'intellectuelle, responsabilités de l’auteur/du tenant, retrait ' +
+    'd’œuvre, suspension de compte.';
+
+  const types: { type: TenantType; label: string }[] = [
+    { type: TenantType.independent_author, label: 'Auteur indépendant' },
+    { type: TenantType.publishing_house, label: 'Maison d’édition' },
+    { type: TenantType.collective, label: 'Collectif' },
+    {
+      type: TenantType.cultural_organization,
+      label: 'Organisation culturelle',
+    },
+  ];
+
+  for (const { type, label } of types) {
+    await prisma.distributionTerms.upsert({
+      where: { tenantType_version: { tenantType: type, version: 1 } },
+      update: {},
+      create: {
+        tenantType: type,
+        version: 1,
+        title: `Conditions de distribution — ${label} (v1, à compléter)`,
+        content: placeholder,
+        isActive: true,
+        publishedAt: REFERENCE_DATE,
+        createdAt: REFERENCE_DATE,
+      },
+    });
+  }
+}
+
+/**
  * Auteurs et œuvres. Le catalogue reprend les quatre ouvrages qui étaient codés en dur
  * dans `DemoWorkRepository`, avec leurs vrais prix, et y ajoute deux œuvres :
  * une pour un second auteur, et une en brouillon qui doit rester invisible du public.
@@ -748,6 +798,7 @@ async function main(): Promise<void> {
   await seedPaymentProviders();
   await seedSettings();
   await seedCommissionRules();
+  await seedDistributionTerms();
   const tenantId = await seedTenant();
   await seedCatalog(tenantId);
 

@@ -456,6 +456,44 @@ describe('Commissions (e2e)', () => {
       );
     });
 
+    it('efface explicitement la portée tenant d’une règle avec `tenantId: null`', async () => {
+      const author = await adminPrisma.author.findUniqueOrThrow({
+        where: { id: authorId },
+        select: { tenantId: true },
+      });
+
+      const created = await adminAgent
+        .post('/admin/commission-rules')
+        .set('Origin', ORIGIN)
+        .send({
+          name: `Règle phase 10 ${RUN_ID} effaçable`,
+          tenantId: author.tenantId,
+          commissionType: 'percentage',
+          commissionValue: '8',
+          calculationBase: 'gross_amount',
+          effectiveFrom: '2026-01-01T00:00:00.000Z',
+        })
+        .expect(201);
+      const createdId = (created.body as { id: string; tenantId: string }).id;
+      expect((created.body as { tenantId: string | null }).tenantId).toBe(
+        author.tenantId,
+      );
+
+      // `undefined` (champ absent) ne suffirait pas : seul `null` explicite
+      // efface une portée déjà posée (`UpdateCommissionRuleDto`).
+      const cleared = await adminAgent
+        .patch(`/admin/commission-rules/${createdId}`)
+        .set('Origin', ORIGIN)
+        .send({ tenantId: null })
+        .expect(200);
+      expect((cleared.body as { tenantId: string | null }).tenantId).toBeNull();
+
+      await adminAgent
+        .delete(`/admin/commission-rules/${createdId}`)
+        .set('Origin', ORIGIN)
+        .expect(204);
+    });
+
     it('applique la règle propre au tenant à un auteur sans règle propre du même tenant', async () => {
       const primaryAuthor = await adminPrisma.author.findUniqueOrThrow({
         where: { id: authorId },

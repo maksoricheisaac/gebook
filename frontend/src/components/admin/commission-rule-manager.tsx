@@ -39,11 +39,17 @@ import { RetryRow, TableSkeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { formatDate } from "@/src/lib/format";
 
+type TenantType =
+  "independent_author" | "publishing_house" | "collective" | "cultural_organization";
+
 interface CommissionRule {
   id: string;
   name: string;
   authorId: string | null;
   author: { penName: string } | null;
+  tenantId: string | null;
+  tenant: { name: string } | null;
+  tenantType: TenantType | null;
   commissionType: "percentage" | "fixed";
   commissionValue: string;
   calculationBase: "gross_amount" | "after_provider_fee";
@@ -52,16 +58,49 @@ interface CommissionRule {
   status: "active" | "inactive";
 }
 
+interface AdminTenant {
+  id: string;
+  name: string;
+  slug: string;
+  type: TenantType;
+}
+
 interface Paginated<T> {
   data: T[];
   meta: { total: number };
 }
 
 const EMPTY_RULES: CommissionRule[] = [];
+const EMPTY_TENANTS: AdminTenant[] = [];
+
+/** Portées créables depuis cette interface. `author` existe en base (règles
+ * historiques, créées ailleurs) mais ne peut pas être choisie ici — aucun
+ * sélecteur d'auteur global n'existe côté Superadmin (hors périmètre de
+ * cette mission) ; une règle propre à un auteur reste affichée et modifiable
+ * sur ses autres champs, seule sa portée n'est pas éditable depuis ce form. */
+const CREATABLE_SCOPES = ["global", "tenant", "tenant_type"] as const;
+type Scope = (typeof CREATABLE_SCOPES)[number] | "author";
+
+const TENANT_TYPE_LABELS: Record<TenantType, string> = {
+  independent_author: "Auteur indépendant",
+  publishing_house: "Maison d'édition",
+  collective: "Collectif",
+  cultural_organization: "Organisation culturelle",
+};
 
 const ruleSchema = z
   .object({
     name: z.string().trim().min(1, "Le nom est obligatoire.").max(150),
+    scope: z.enum(CREATABLE_SCOPES),
+    tenantId: z.string().optional(),
+    tenantType: z
+      .enum([
+        "independent_author",
+        "publishing_house",
+        "collective",
+        "cultural_organization",
+      ])
+      .optional(),
     commissionType: z.enum(["percentage", "fixed"]),
     commissionValue: z
       .string()
@@ -80,12 +119,21 @@ const ruleSchema = z
       path: ["commissionValue"],
       message: "Un pourcentage ne peut pas dépasser 100 %.",
     },
-  );
+  )
+  .refine((values) => values.scope !== "tenant" || Boolean(values.tenantId), {
+    path: ["tenantId"],
+    message: "Choisissez un tenant.",
+  })
+  .refine((values) => values.scope !== "tenant_type" || Boolean(values.tenantType), {
+    path: ["tenantType"],
+    message: "Choisissez un type de tenant.",
+  });
 
 type RuleFormValues = z.infer<typeof ruleSchema>;
 
 const EMPTY: RuleFormValues = {
   name: "",
+  scope: "global",
   commissionType: "percentage",
   commissionValue: "10",
   calculationBase: "after_provider_fee",
@@ -97,6 +145,26 @@ const BASE_LABELS: Record<string, string> = {
   gross_amount: "Montant brut",
   after_provider_fee: "Net après frais",
 };
+
+function scopeOf(rule: CommissionRule): Scope {
+  if (rule.authorId) return "author";
+  if (rule.tenantId) return "tenant";
+  if (rule.tenantType) return "tenant_type";
+  return "global";
+}
+
+function scopeDetail(rule: CommissionRule): string {
+  switch (scopeOf(rule)) {
+    case "author":
+      return rule.author ? `Propre à ${rule.author.penName}` : "Propre à un auteur";
+    case "tenant":
+      return rule.tenant ? `Propre à ${rule.tenant.name}` : "Propre à un tenant";
+    case "tenant_type":
+      return rule.tenantType ? TENANT_TYPE_LABELS[rule.tenantType] : "Type de tenant";
+    default:
+      return "Règle générale";
+  }
+}
 
 /**
  * Administration des règles de commission.
@@ -119,26 +187,64 @@ export function CommissionRuleManager() {
     queryFn: () => adminFetch<Paginated<CommissionRule>>("/commission-rules?perPage=100"),
   });
 
+  // Répertoire des tenants pour le sélecteur de portée « Tenant » — au plus
+  // 100 lignes (`AdminTenantsController`), pas de recherche serveur nécessaire
+  // à cette échelle.
+  const { data: tenantsData } = useQuery({
+    queryKey: ["admin", "tenants"],
+    queryFn: () => adminFetch<AdminTenant[]>("/tenants"),
+  });
+  const tenants = tenantsData ?? EMPTY_TENANTS;
+
   const {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<RuleFormValues>({
     resolver: zodResolver(ruleSchema),
     defaultValues: EMPTY,
   });
+  const selectedScope = watch("scope");
+  const isEditingAuthorRule = editing !== null && editing.authorId !== null;
 
   const invalidate = (): Promise<void> =>
     queryClient.invalidateQueries({ queryKey: ["admin", "commission-rules"] });
+
+  /** Traduit la portée choisie dans le formulaire vers les champs attendus
+   * par l'API (`tenantId`/`tenantType` mutuellement exclusifs, jamais les
+   * deux — `AdminCommissionRulesService.assertScope`).
+   *
+   * En modification, le champ non choisi doit être envoyé à `null`
+   * explicitement (pas omis) pour pouvoir faire repasser une règle de
+   * « propre au tenant » à « générale » — `undefined` signifie « ne pas
+   * toucher » côté API (`UpdateCommissionRuleDto`), ce qui laisserait
+   * l'ancienne portée en place. En création, rien n'existe encore à effacer :
+   * les deux champs restent simplement absents. */
+  const scopeFields = (
+    values: RuleFormValues,
+    mode: "create" | "update",
+  ): { tenantId?: string | null; tenantType?: RuleFormValues["tenantType"] | null } => {
+    const clear = mode === "update" ? null : undefined;
+    return {
+      tenantId: values.scope === "tenant" ? values.tenantId : clear,
+      tenantType: values.scope === "tenant_type" ? values.tenantType : clear,
+    };
+  };
 
   const createMutation = useMutation({
     mutationFn: (values: RuleFormValues) =>
       adminFetch<CommissionRule>("/commission-rules", {
         method: "POST",
         body: {
-          ...values,
+          name: values.name,
+          ...scopeFields(values, "create"),
+          commissionType: values.commissionType,
+          commissionValue: values.commissionValue,
+          calculationBase: values.calculationBase,
           effectiveFrom: new Date(values.effectiveFrom).toISOString(),
+          status: values.status,
         },
       }),
     onSuccess: async (rule) => {
@@ -157,6 +263,12 @@ export function CommissionRuleManager() {
         method: "PATCH",
         body: {
           name: values.name,
+          // Une règle déjà propre à un auteur ne peut pas changer de portée
+          // depuis ce formulaire (aucun sélecteur d'auteur global côté
+          // Superadmin) : `tenantId`/`tenantType` restent intouchés plutôt
+          // que forcés à `null`, ce qui violerait sinon
+          // `chk_commission_rules_scope` sans raison (ils sont déjà nuls).
+          ...(editing?.authorId ? {} : scopeFields(values, "update")),
           commissionType: values.commissionType,
           commissionValue: values.commissionValue,
           calculationBase: values.calculationBase,
@@ -203,6 +315,13 @@ export function CommissionRuleManager() {
     setServerError(null);
     reset({
       name: rule.name,
+      // `author` n'est pas une portée sélectionnable ici (voir
+      // `CREATABLE_SCOPES`) : affichée comme « générale » dans le formulaire,
+      // mais `editing.authorId` (conservé) empêche le sélecteur de portée de
+      // s'afficher et empêche la mutation de toucher tenantId/tenantType.
+      scope: rule.tenantId ? "tenant" : rule.tenantType ? "tenant_type" : "global",
+      tenantId: rule.tenantId ?? undefined,
+      tenantType: rule.tenantType ?? undefined,
       commissionType: rule.commissionType,
       commissionValue: rule.commissionValue,
       calculationBase: rule.calculationBase,
@@ -220,7 +339,8 @@ export function CommissionRuleManager() {
   }, [rules, search]);
 
   const activeCount = rules.filter((rule) => rule.status === "active").length;
-  const generalCount = rules.filter((rule) => !rule.authorId).length;
+  const generalCount = rules.filter((rule) => scopeOf(rule) === "global").length;
+  const scopedCount = rules.length - generalCount;
 
   return (
     <div className="space-y-6">
@@ -234,11 +354,7 @@ export function CommissionRuleManager() {
         <AdminStatCard
           label="Générales"
           value={generalCount}
-          hint={
-            rules.length - generalCount > 0
-              ? `${rules.length - generalCount} propres à un auteur`
-              : undefined
-          }
+          hint={scopedCount > 0 ? `${scopedCount} à portée réduite` : undefined}
           icon={UserSquare2}
         />
       </AdminStatGrid>
@@ -299,9 +415,7 @@ export function CommissionRuleManager() {
                 <DataRow key={rule.id}>
                   <td>
                     <span className="text-secondary font-medium">{rule.name}</span>
-                    <span className="type-caption block">
-                      {rule.author ? `Propre à ${rule.author.penName}` : "Règle générale"}
-                    </span>
+                    <span className="type-caption block">{scopeDetail(rule)}</span>
                   </td>
                   <td className="tnum text-secondary">
                     {rule.commissionType === "percentage"
@@ -385,6 +499,76 @@ export function CommissionRuleManager() {
               >
                 <Input {...register("name")} placeholder="Commission générale 2026" />
               </Field>
+
+              {isEditingAuthorRule ? (
+                <div className="border-border bg-paper-100/70 type-caption rounded-md border p-3 sm:col-span-2">
+                  Portée : propre à {editing?.author?.penName ?? "un auteur"} — non
+                  modifiable depuis cette page (aucun sélecteur d’auteur global ici).
+                </div>
+              ) : (
+                <>
+                  <Field
+                    id="rule-scope"
+                    label="Portée"
+                    required
+                    error={errors.scope?.message}
+                    className="sm:col-span-2"
+                  >
+                    <select
+                      {...register("scope")}
+                      className="border-border bg-card focus-visible:ring-primary/40 h-11 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <option value="global">Générale (tous les tenants)</option>
+                      <option value="tenant">Un tenant précis</option>
+                      <option value="tenant_type">Un type de tenant</option>
+                    </select>
+                  </Field>
+
+                  {selectedScope === "tenant" && (
+                    <Field
+                      id="rule-tenant"
+                      label="Tenant"
+                      required
+                      error={errors.tenantId?.message}
+                      className="sm:col-span-2"
+                    >
+                      <select
+                        {...register("tenantId")}
+                        className="border-border bg-card focus-visible:ring-primary/40 h-11 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        <option value="">— Choisir —</option>
+                        {tenants.map((tenant) => (
+                          <option key={tenant.id} value={tenant.id}>
+                            {tenant.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+
+                  {selectedScope === "tenant_type" && (
+                    <Field
+                      id="rule-tenant-type"
+                      label="Type de tenant"
+                      required
+                      error={errors.tenantType?.message}
+                      className="sm:col-span-2"
+                    >
+                      <select
+                        {...register("tenantType")}
+                        className="border-border bg-card focus-visible:ring-primary/40 h-11 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        <option value="">— Choisir —</option>
+                        {Object.entries(TENANT_TYPE_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                </>
+              )}
 
               <Field
                 id="rule-type"

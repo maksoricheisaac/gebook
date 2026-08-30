@@ -10,6 +10,7 @@ import {
   Min,
   Max,
   IsUUID,
+  ValidateIf,
 } from 'class-validator';
 import {
   CalculationBase,
@@ -76,17 +77,26 @@ export class UpdateCommissionRuleDto {
   @Transform(({ value }): string => String(value ?? '').trim())
   name?: string;
 
+  /**
+   * `undefined` (champ absent) = ne pas toucher ; `null` = effacer
+   * explicitement cette portée (ex. faire repasser une règle « propre au
+   * tenant » à « générale »). Distinct de `CreateCommissionRuleDto`, où rien
+   * n'existe encore à effacer.
+   */
   @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== null)
   @IsUUID()
-  authorId?: string;
+  authorId?: string | null;
 
   @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== null)
   @IsUUID()
-  tenantId?: string;
+  tenantId?: string | null;
 
   @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== null)
   @IsEnum(TenantType)
-  tenantType?: TenantType;
+  tenantType?: TenantType | null;
 
   @IsOptional()
   @IsEnum(CommissionType)

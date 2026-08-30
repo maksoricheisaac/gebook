@@ -7,10 +7,11 @@ import {
   HttpStatus,
   Param,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -42,9 +43,10 @@ export class TenantsController {
   async create(
     @Body() dto: CreateTenantDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<TenantMembershipResponse> {
-    const membership = await this.tenants.create(dto, user);
+    const membership = await this.tenants.create(dto, user, request.ip);
 
     // Le nouvel espace devient actif immédiatement : sans ça, l'utilisateur
     // atterrirait sur /admin sans qu'aucun tenant ne soit sélectionné.

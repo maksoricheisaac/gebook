@@ -216,9 +216,9 @@ export class AdminCommissionRulesService {
    * documentée dans `selectRule()`).
    */
   private assertScope(
-    authorId?: string,
-    tenantId?: string,
-    tenantType?: string,
+    authorId?: string | null,
+    tenantId?: string | null,
+    tenantType?: string | null,
   ): void {
     const scopesSet = [authorId, tenantId, tenantType].filter(
       (value) => value !== undefined && value !== null,
