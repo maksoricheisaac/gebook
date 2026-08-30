@@ -201,10 +201,22 @@ brief.
 
 ### État
 
-**PARTIEL** — architecture et schéma posés et validés (tests verts), mais
-Phase 1 n'est pas encore complètement terminée : il reste à écrire le mécanisme
-de résolution du pilote par défaut à partir de `PAYIN_PROVIDER`/`PAYOUT_PROVIDER`
-(actuellement seul `PaymentsService.defaultProviderCode()` existe côté pay-in,
-sans lire ces nouvelles variables) avant de considérer Phase 1 entièrement
-close. Poursuite immédiate, sans attendre de confirmation (brief : autonomie
-totale entre phases).
+**VALIDÉ** pour le périmètre de cette phase (architecture + schéma, testés).
+
+Note de portée : le brief liste séparément une Phase 9 « Payout architecture »
+— la lecture retenue est que l'instruction d'ouverture (« commence par
+l'architecture PaymentProvider/PayoutProvider », étape 6 de la directive
+finale, avant « travaille phase par phase », étape 7) demande de poser
+l'interface/le registre payout dès maintenant ; Phase 9 construira par-dessus
+le service applicatif (`PayoutsService`, résolution du prestataire actif à
+partir d'un réglage configurable, workflow de demande/validation/webhook,
+routes). `PaymentsService.defaultProviderCode()` continue de lire le réglage
+`Setting.default_payment_provider` (existant, modifiable sans redéploiement) —
+Phase 2 en fera de même côté payout (`default_payout_provider`) plutôt que de
+figer le choix dans une variable d'environnement relue seulement au démarrage ;
+`PAYIN_PROVIDER`/`PAYOUT_PROVIDER` servent de valeur d'amorçage (seed), pas de
+source de vérité en fonctionnement — cohérent avec l'exigence Superadmin d'un
+changement de prestataire sans redéploiement.
+
+Poursuite immédiate vers Phase 2 (Configuration Superadmin), sans attendre de
+confirmation (brief : autonomie totale entre phases).
