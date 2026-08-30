@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ActivityLogService } from '../../common/activity-log.service';
 import { AuthModule } from '../auth/auth.module';
 import { CommissionsModule } from '../commissions/commissions.module';
+import { AdminPaymentProvidersController } from './admin-payment-providers.controller';
+import { AdminPaymentProvidersService } from './admin-payment-providers.service';
 import { AdminPaymentsController } from './admin-payments.controller';
 import { FakePaymentDriver } from './drivers/fake-payment.driver';
 import { FakePayoutDriver } from './drivers/fake-payout.driver';
@@ -25,12 +27,14 @@ import { WebhooksController } from './webhooks.controller';
   controllers: [
     PaymentsController,
     AdminPaymentsController,
+    AdminPaymentProvidersController,
     WebhooksController,
   ],
   providers: [
     PaymentsService,
     PaymentDriverRegistry,
     PayoutDriverRegistry,
+    AdminPaymentProvidersService,
     ActivityLogService,
     FakePaymentDriver,
     FakePayoutDriver,

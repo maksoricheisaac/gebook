@@ -90,6 +90,13 @@ export interface RefundResult {
   raw: unknown;
 }
 
+/** Résultat d'un test de connectivité réel — jamais fabriqué (Superadmin §9). */
+export interface ConnectionTestResult {
+  ok: boolean;
+  /** Message affichable tel quel : « Connexion réussie » ou « Échec — Cause : ... ». */
+  detail: string;
+}
+
 export interface PaymentDriver {
   /** Doit correspondre à `payment_providers.code`. */
   readonly code: string;
@@ -112,4 +119,12 @@ export interface PaymentDriver {
   ): WebhookParseResult;
 
   refund(transactionId: string, amountMinor: number): Promise<RefundResult>;
+
+  /**
+   * Test de connectivité réel pour le bouton Superadmin « Tester la
+   * connexion ». Optionnel : un pilote qui ne l'implémente pas signale
+   * explicitement (dans `AdminPaymentProvidersService`) qu'aucun test n'est
+   * disponible, plutôt que de laisser croire à un succès fabriqué.
+   */
+  testConnection?(): Promise<ConnectionTestResult>;
 }

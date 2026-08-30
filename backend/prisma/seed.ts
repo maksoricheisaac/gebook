@@ -160,7 +160,52 @@ async function seedPaymentProviders(): Promise<void> {
       supportsMobileMoney: true,
       supportsCard: true,
       supportsRefund: true,
+      supportsPayout: true,
       priority: 1,
+    },
+    // Catalogue des trois prestataires de la plateforme de paiement (mission
+    // dédiée, `docs/PAYMENT_PLATFORM_PROGRESS.md`). `inactive` tant qu'aucun
+    // pilote réel n'est écrit (Phases 4-6 pay-in, 10-11 payout) : la table
+    // décrit ce qui existera, le code exécute ce qui existe vraiment — même
+    // règle que pour `chariow`/`mtn_momo` ci-dessous. Les capacités cochées
+    // ne reprennent que ce que le brief affirme explicitement ; tout le reste
+    // reste à `false` jusqu'à vérification réelle contre un compte sandbox
+    // (jamais supposé depuis la documentation du prestataire).
+    {
+      code: 'pawapay',
+      name: 'PawaPay',
+      driver: 'PawaPayDriver',
+      environment: ProviderEnvironment.sandbox,
+      status: ProviderStatus.inactive,
+      supportsMobileMoney: true,
+      supportsCard: false,
+      supportsRefund: false,
+      supportsPayout: true,
+      priority: 4,
+    },
+    {
+      code: 'cinetpay',
+      name: 'CinetPay',
+      driver: 'CinetPayDriver',
+      environment: ProviderEnvironment.sandbox,
+      status: ProviderStatus.inactive,
+      supportsMobileMoney: false,
+      supportsCard: true,
+      supportsRefund: false,
+      supportsPayout: false,
+      priority: 5,
+    },
+    {
+      code: 'feexpay',
+      name: 'FeexPay',
+      driver: 'FeexPayDriver',
+      environment: ProviderEnvironment.sandbox,
+      status: ProviderStatus.inactive,
+      supportsMobileMoney: true,
+      supportsCard: false,
+      supportsRefund: false,
+      supportsPayout: true,
+      priority: 6,
     },
     {
       code: 'chariow',

@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { ConnectionTestResult } from '../payment-driver';
 import type {
   PayoutDriver,
   PayoutDriverCapabilities,
@@ -73,6 +74,22 @@ export class FakePayoutDriver implements PayoutDriver {
       paidAmountMinor: 0,
       raw: { provider: this.code, verified: false },
     });
+  }
+
+  testConnection(): Promise<ConnectionTestResult> {
+    try {
+      this.config.getOrThrow<string>('PAYMENT_WEBHOOK_SECRET');
+      return Promise.resolve({
+        ok: true,
+        detail:
+          'Connexion réussie (prestataire de simulation, aucun réseau réel sollicité).',
+      });
+    } catch {
+      return Promise.resolve({
+        ok: false,
+        detail: 'Échec — Cause : PAYMENT_WEBHOOK_SECRET manquant.',
+      });
+    }
   }
 
   parseWebhook(

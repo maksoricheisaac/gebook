@@ -1,3 +1,5 @@
+import type { ConnectionTestResult } from './payment-driver';
+
 /**
  * Contrat que tout prestataire de reversement (payout) doit remplir.
  *
@@ -103,4 +105,7 @@ export interface PayoutDriver {
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,
   ): PayoutWebhookParseResult;
+
+  /** Même contrat que `PaymentDriver.testConnection` — voir sa doc. */
+  testConnection?(): Promise<ConnectionTestResult>;
 }
