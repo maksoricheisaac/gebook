@@ -165,6 +165,12 @@ export class Environment {
   @IsString()
   CINETPAY_SITE_ID?: string;
 
+  /** Distincte de `CINETPAY_API_KEY` — sert uniquement à vérifier le X-TOKEN
+   * HMAC des notifications, jamais aux appels d'API sortants. */
+  @IsOptional()
+  @IsString()
+  CINETPAY_SECRET_KEY?: string;
+
   @IsOptional()
   @IsString()
   FEEXPAY_API_URL?: string;
@@ -172,6 +178,24 @@ export class Environment {
   @IsOptional()
   @IsString()
   FEEXPAY_API_KEY?: string;
+
+  /** Identifiant de boutique FeexPay (menu Développeurs), distinct de la clé
+   * d'API — exigé dans le corps de chaque appel payin/payout. */
+  @IsOptional()
+  @IsString()
+  FEEXPAY_SHOP_ID?: string;
+
+  /**
+   * URL publique de CETTE API (pas celle du frontend — voir `CORS_ORIGINS`
+   * pour ça), utilisée pour construire les `notify_url` que certains
+   * prestataires (CinetPay) exigent explicitement à l'initialisation d'un
+   * paiement. Optionnelle : sans elle, un prestataire qui en a besoin reste
+   * simplement indisponible plutôt que de recevoir une URL locale
+   * injoignable en silence.
+   */
+  @IsOptional()
+  @IsString()
+  API_PUBLIC_URL?: string;
 }
 
 /**
