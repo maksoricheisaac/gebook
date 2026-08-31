@@ -206,7 +206,10 @@ async function seedPaymentProviders(): Promise<void> {
       name: 'FeexPay',
       driver: 'FeexPayDriver',
       environment: ProviderEnvironment.sandbox,
-      status: ProviderStatus.inactive,
+      // Actif côté pay-in : FeexPayPaymentDriver existe désormais. Le
+      // payout FeexPay (supportsPayout ci-dessous) reste un axe distinct,
+      // pas encore couvert par un pilote payout réel (à venir).
+      status: ProviderStatus.active,
       supportsMobileMoney: true,
       supportsCard: false,
       supportsRefund: false,

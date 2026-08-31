@@ -699,7 +699,7 @@ en bout.
 
 ### Commit
 
-À suivre — voir le commit qui accompagne cette entrée.
+`feat(payments): Phase 4 - pilote pay-in CinetPay` (`5c89300`)
 
 ### Push
 
@@ -710,3 +710,138 @@ Effectué sur `feature/payment-platform`.
 **IMPLÉMENTÉ — NON VALIDÉ** (bloqué en environnement de développement pour
 la vérification réseau réelle ; logique interne validée par tests
 unitaires).
+
+---
+
+## Phase 5 — Pay-in FeexPay
+
+### Objectif
+
+Pilote pay-in FeexPay (Mobile Money : Bénin, Togo, Côte d'Ivoire, Congo
+Brazzaville, Sénégal, Burkina Faso, Mali), suite directe de la Phase 4 —
+l'utilisateur a fourni la documentation REST officielle payin/payout/statut/
+historique/solde/erreurs juste après la clôture de cette dernière.
+
+### Analyse préalable
+
+**Décision architecturale actée sans nouvelle confirmation** (déjà tranchée
+en Phase 3/4 avec la même justification) : plus tôt dans la mission,
+l'utilisateur avait collé la documentation du SDK React client de FeexPay
+(`react-sdk-feexpay`, composant `<FeexPay>`) — délibérément **non utilisée**,
+car un bouton de paiement côté client contredit l'architecture de GeBook
+(le backend, via webhook/vérification, doit rester seule source de vérité).
+La documentation REST reçue cette fois-ci est au contraire exactement le
+bon outil : serveur-à-serveur, avec un point de statut authentifié — elle
+s'intègre nativement au patron `PaymentDriver` déjà en place.
+
+Trois écarts par rapport à CinetPay, chacun documenté dans le code :
+
+1. **FeexPay déclenche lui-même le paiement** (push USSD « request to pay »)
+   au lieu d'exposer une page hébergée : `initialize()` a donc besoin d'un
+   numéro de téléphone et d'un canal (opérateur + pays), qu'aucun champ de
+   `PaymentInitRequest` ne portait. Deux champs optionnels ajoutés
+   (`customerPhone`, `channel`) — les pilotes qui n'en ont pas besoin (Fake,
+   CinetPay) les ignorent simplement. Répercuté jusqu'au DTO
+   (`InitializePaymentDto.customerPhone`/`providerChannel`, tous deux
+   validés et optionnels) et à `PaymentsService.initialize()`.
+2. **Aucun code de canal n'est codé en dur.** La documentation reçue ne
+   confirme explicitement qu'un seul canal (`mtn_cg`, MTN Congo
+   Brazzaville) parmi les sept pays annoncés — deviner les autres
+   (`mtn_bj`, `moov_ci`, `wave_sn`…) aurait violé la règle « ne jamais
+   fabriquer ce qui n'est pas vérifié ». Le canal transmis par l'appelant
+   est donc utilisé tel quel dans l'URL ; FeexPay répond lui-même
+   `{channel} channel not configured` (404, documenté) si le code est
+   invalide — c'est la seule source de vérité fiable ici, jamais une
+   table interne inventée.
+3. **Aucune signature de notification n'est documentée** pour FeexPay
+   (contrairement au X-TOKEN de CinetPay — vérifié en cherchant
+   spécifiquement, y compris dans le SDK PHP officiel sur GitHub, qui ne
+   documente lui non plus aucune vérification de signature). `parseWebhook()`
+   ignore donc entièrement le statut porté par le corps brut de la
+   notification et ne fait jamais confiance qu'à un rappel authentifié vers
+   l'API de statut (`GET /transactions/public/single/status/:reference`,
+   protégée par la clé d'API) — sans cette défense, n'importe qui aurait pu
+   POSTer un faux succès sur cette URL. `signatureValid: true` signifie ici
+   « confirmé par ce rappel authentifié », faute de toute signature
+   cryptographique fournie par le prestataire lui-même — redéfinition
+   documentée explicitement dans le code, pas silencieuse.
+
+Aucune API de remboursement documentée pour le pay-in FeexPay :
+`capabilities.supportsRefund = false`, `refund()` rejette explicitement.
+
+### Implémentation
+
+- `payment-driver.ts` : `PaymentInitRequest` gagne deux champs optionnels,
+  `customerPhone`/`channel`.
+- `dto/initialize-payment.dto.ts` : `customerPhone` (validé, format
+  international chiffres uniquement) et `providerChannel` (validé,
+  `[a-z0-9_]+`), tous deux optionnels.
+- `payments.service.ts` : `initialize()` transmet ces deux champs au pilote.
+- `drivers/feexpay-payment.driver.ts` (nouveau) : `initialize()` (exige
+  téléphone + canal, sinon refuse explicitement), `verify()`, `parseWebhook()`
+  (défensif comme décrit ci-dessus), `refund()` (rejet explicite),
+  `testConnection()` (sonde `GET /balance/public/getByShop/:shopId` —
+  confirme à la fois la clé d'API et l'identifiant de boutique, sans effet
+  de bord).
+- `payments.module.ts` : `FeexPayPaymentDriver` enregistré aux côtés de
+  Fake et CinetPay.
+- `prisma/seed.ts` : ligne `feexpay` passée de `inactive` à `active` côté
+  pay-in uniquement — `supportsPayout` (déjà `true` depuis la Phase 1)
+  reste un axe distinct, non couvert par un pilote payout réel pour
+  l'instant (à venir, la documentation payout FeexPay a aussi été reçue).
+- `environment.ts`/`.env.example`/`.env` : ajout de `FEEXPAY_SHOP_ID`
+  (identifiant de boutique, distinct de `FEEXPAY_API_KEY`, exigé dans le
+  corps de chaque appel payin/payout).
+
+### Tests
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 15/15 suites, 119/119 tests (+1 suite, +13 tests)
+backend   pnpm test:e2e (complète)  → 16/16 suites, 221/221 tests
+```
+
+Tests unitaires du nouveau pilote (`feexpay-payment.driver.spec.ts`, `fetch`
+simulé) : refus sans téléphone/canal, montant envoyé en unités majeures vers
+le bon canal, réponse sans référence rejetée, statuts SUCCESSFUL/FAILED
+traduits correctement, notification illisible refusée, notification sans
+référence identifiable refusée, **notification dont le corps prétend un
+statut différent de la vérification authentifiée — le corps est ignoré, seul
+le rappel fait foi**, notification vérifiée PENDING refusée (pas d'issue
+fabriquée), extraction de la référence depuis `transref` quand `reference`
+est absent, `refund()` rejette explicitement, `testConnection()` distingue
+succès et échec sans fuiter de détail interne.
+
+**Vérification sandbox réelle** : impossible pour l'instant — ni
+`FEEXPAY_API_KEY` ni `FEEXPAY_SHOP_ID` n'ont encore été fournis par
+l'utilisateur. Point positif néanmoins vérifié : contrairement à
+`api-checkout.cinetpay.com`, le domaine `api-v2.feexpay.me` **résout bien**
+en DNS depuis cet environnement — une fois les identifiants fournis, un test
+sandbox réel devrait donc être possible directement depuis cette session
+(pas de restriction réseau connue ici, contrairement à CinetPay).
+
+### Résultats
+
+Code du pilote (toutes méthodes) : IMPLÉMENTÉ — NON VALIDÉ. Logique interne
+(mapping de statut, extraction défensive de référence, conversion d'unités,
+gestion d'erreurs) : VALIDÉE par les tests unitaires. Connectivité réelle
+contre le sandbox FeexPay : NON TESTÉ — identifiants (`FEEXPAY_API_KEY`,
+`FEEXPAY_SHOP_ID`) non encore fournis, pas de restriction réseau connue
+sinon. **Couverture des canaux** : un seul confirmé (`mtn_cg`) sur les sept
+pays annoncés par FeexPay — les autres ne sont pas fabriqués, simplement
+transmis tels quels si l'appelant les fournit.
+
+### Commit
+
+À suivre — voir le commit qui accompagne cette entrée.
+
+### Push
+
+Effectué sur `feature/payment-platform`.
+
+### État
+
+**IMPLÉMENTÉ — NON VALIDÉ** (identifiants sandbox non fournis ; logique
+interne validée par tests unitaires ; couverture des canaux volontairement
+limitée à ce qui est confirmé).

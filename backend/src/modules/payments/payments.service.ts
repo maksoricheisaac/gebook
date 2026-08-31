@@ -180,6 +180,8 @@ export class PaymentsService {
         currency: order.currency,
         customerEmail: order.user.email,
         returnUrl: `${this.frontendUrl()}/paiement/${order.orderNumber}`,
+        customerPhone: dto.customerPhone,
+        channel: dto.providerChannel,
       });
     } catch (error) {
       // La tentative reste en base, marquée en échec : une trace vaut mieux qu'un

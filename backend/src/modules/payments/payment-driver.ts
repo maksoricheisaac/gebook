@@ -34,6 +34,15 @@ export interface PaymentInitRequest {
   customerEmail: string;
   /** Page vers laquelle le prestataire renvoie le lecteur une fois l'opération finie. */
   returnUrl: string;
+  /**
+   * Facultatifs : certains prestataires (FeexPay) déclenchent le paiement
+   * eux-mêmes (« request to pay » push USSD) au lieu d'exposer une page de
+   * paiement hébergée — sans numéro de téléphone ni canal (opérateur/pays),
+   * ils ne peuvent rien initier. Un pilote qui n'en a pas besoin (Fake,
+   * CinetPay) les ignore simplement.
+   */
+  customerPhone?: string;
+  channel?: string;
 }
 
 export interface PaymentInitResult {

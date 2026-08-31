@@ -179,6 +179,12 @@ export class Environment {
   @IsString()
   FEEXPAY_API_KEY?: string;
 
+  /** Identifiant de boutique FeexPay (menu Développeurs), distinct de la clé
+   * d'API — exigé dans le corps de chaque appel payin/payout. */
+  @IsOptional()
+  @IsString()
+  FEEXPAY_SHOP_ID?: string;
+
   /**
    * URL publique de CETTE API (pas celle du frontend — voir `CORS_ORIGINS`
    * pour ça), utilisée pour construire les `notify_url` que certains
