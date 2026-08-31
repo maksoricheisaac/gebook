@@ -5,6 +5,7 @@ import { CommissionsModule } from '../commissions/commissions.module';
 import { AdminPaymentProvidersController } from './admin-payment-providers.controller';
 import { AdminPaymentProvidersService } from './admin-payment-providers.service';
 import { AdminPaymentsController } from './admin-payments.controller';
+import { CinetPayPaymentDriver } from './drivers/cinetpay-payment.driver';
 import { FakePaymentDriver } from './drivers/fake-payment.driver';
 import { FakePayoutDriver } from './drivers/fake-payout.driver';
 import { PAYMENT_DRIVER } from './payment-driver';
@@ -38,10 +39,14 @@ import { WebhooksController } from './webhooks.controller';
     ActivityLogService,
     FakePaymentDriver,
     FakePayoutDriver,
+    CinetPayPaymentDriver,
     {
       provide: PAYMENT_DRIVER,
-      useFactory: (fake: FakePaymentDriver) => [fake],
-      inject: [FakePaymentDriver],
+      useFactory: (
+        fake: FakePaymentDriver,
+        cinetpay: CinetPayPaymentDriver,
+      ) => [fake, cinetpay],
+      inject: [FakePaymentDriver, CinetPayPaymentDriver],
     },
     {
       provide: PAYOUT_DRIVER,

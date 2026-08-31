@@ -578,10 +578,135 @@ Effectué sur `feature/payment-platform`.
 
 Commissions (moteur + API + UI Superadmin) : VALIDÉ.
 Conditions de distribution (versionnage + acceptation) : VALIDÉ.
-Phase 3 entièrement close. Poursuite immédiate vers la Phase 4 (Pay-in
-PawaPay), sans attendre de confirmation (brief : autonomie totale entre
-phases) — étant entendu qu'aucune clé sandbox PawaPay n'existe encore dans
-cet environnement, donc le travail possible sans elles (architecture du
-pilote, mapping des méthodes de paiement) sera fait en premier, et tout ce
-qui exige un vrai appel réseau sera honnêtement étiqueté NON TESTÉ tant que
-l'utilisateur ne fournit pas les identifiants.
+Phase 3 entièrement close.
+
+**Déviation actée par rapport à l'ordre initialement prévu** : l'utilisateur a
+explicitement demandé de traiter CinetPay avant PawaPay (« Utilisons d'abord
+cinetpay »), et a lui-même renseigné `CINETPAY_API_KEY`/`CINETPAY_SITE_ID`
+dans `.env`. La Phase 4 ci-dessous couvre donc CinetPay ; PawaPay et FeexPay
+suivront (Phases 5-6), FeexPay avec un rappel explicite que son SDK React
+côté client ne convient pas à l'architecture de GeBook (voir plus bas).
+
+---
+
+## Phase 4 — Pay-in CinetPay
+
+### Objectif
+
+Pilote pay-in CinetPay réel (`PaymentDriver`), pour l'international et les
+cartes, en respectant strictement les mêmes garanties que le prestataire
+factice : jamais le corps brut d'une notification n'est traité comme source
+de vérité, jamais un remboursement n'est prétendu possible s'il ne l'est pas
+réellement.
+
+### Analyse préalable (documentation officielle CinetPay)
+
+Deux particularités structurent tout le pilote :
+
+1. **Le corps de la notification ne porte jamais le vrai statut du
+   paiement** — volontairement, pour qu'une notification forgée ne suffise
+   jamais. Un rappel serveur-à-serveur (`POST /v2/payment/check`) est
+   obligatoire pour connaître l'issue réelle. Cela a forcé un changement
+   d'interface : `PaymentDriver.parseWebhook()` est désormais `async`
+   (`Promise<WebhookParseResult>`) — les deux seuls sites d'appel touchés
+   (`PaymentsService.handleWebhook()`, `FakePaymentDriver.parseWebhook()`)
+   ont été mis à jour et re-testés.
+2. **La signature `X-TOKEN`** se vérifie en concaténant les *valeurs* du
+   corps `application/x-www-form-urlencoded` dans leur ordre d'arrivée
+   (`HMAC-SHA256` avec `CINETPAY_SECRET_KEY`, distincte de
+   `CINETPAY_API_KEY`), comparée en temps constant.
+
+Aucune API de remboursement n'est documentée pour le produit CinetPay
+Checkout (recherché explicitement) : `capabilities.supportsRefund = false`,
+et `refund()` rejette explicitement plutôt que de prétendre réussir.
+
+### Implémentation
+
+- `backend/src/modules/payments/provider-errors.ts` (nouveau) :
+  `PaymentProviderError`/`PayoutProviderError`/`ProviderTimeout`/
+  `ProviderUnavailable`/`InvalidProviderResponse` — vocabulaire interne
+  commun aux pilotes réels ; la garde déjà en place dans `PaymentsService`
+  (jamais `error.message` renvoyé tel quel au frontend) restait déjà
+  suffisante et n'a pas eu besoin d'être modifiée.
+- `backend/src/modules/payments/drivers/cinetpay-payment.driver.ts`
+  (nouveau) : `initialize()`, `verify()`, `parseWebhook()` (async, HMAC +
+  rappel `check`), `refund()` (rejet explicite), `testConnection()`.
+  Montants convertis via `money.ts` (`fromMinorUnits`/`toMinorUnits` — l'API
+  CinetPay attend des unités majeures, GeBook ne manipule que des unités
+  mineures en interne).
+- `payments.module.ts` : `CinetPayPaymentDriver` enregistré dans les
+  `providers` et dans la fabrique `PAYMENT_DRIVER`, aux côtés du pilote
+  factice.
+- `prisma/seed.ts` : ligne `payment_providers` du code `cinetpay` passée de
+  `inactive` à `active` — même règle que les autres lignes de cette table
+  (« un prestataire n'est actif que si son pilote existe réellement »).
+- `environment.ts`/`.env.example`/`.env` : ajout de `CINETPAY_SECRET_KEY`
+  (distincte de `CINETPAY_API_KEY`) et `API_PUBLIC_URL` (URL publique de
+  cette API, nécessaire pour construire le `notify_url` que CinetPay exige à
+  l'initialisation — concept nouveau, absent du brief Phase 1). Toutes deux
+  optionnelles : leur absence rend seulement CinetPay indisponible (503),
+  jamais le démarrage bloqué.
+
+### Tests
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 14/14 suites, 106/106 tests (+1 suite, +12 tests)
+backend   pnpm test:e2e (complète)  → 16/16 suites, 221/221 tests
+```
+
+Tests unitaires du nouveau pilote (`cinetpay-payment.driver.spec.ts`,
+`fetch` simulé) : montant envoyé en unités majeures, URL de paiement
+retournée, réponse incomplète rejetée, statuts `ACCEPTED`/`REFUSED`
+traduits correctement, notification sans `x-token` refusée, signature
+falsifiée refusée, notification signée puis vérifiée `ACCEPTED` acceptée,
+notification signée mais vérification `PENDING` refusée (pas d'issue
+fabriquée), notification sans identifiant de transaction refusée,
+`refund()` rejette explicitement, `testConnection()` distingue succès et
+échec sans fuiter de détail interne.
+
+**Vérification sandbox réelle contre l'API CinetPay** : tentée
+explicitement (`testConnection()` contre `POST /v2/payment/check`, avec les
+vraies `CINETPAY_API_KEY`/`CINETPAY_SITE_ID` fournies par l'utilisateur dans
+`.env`). **Bloquée par l'environnement d'exécution de cette session** : la
+résolution DNS de `api-checkout.cinetpay.com` échoue systématiquement
+(`getaddrinfo ENOTFOUND`), alors que la résolution DNS générale fonctionne
+(`github.com` résout normalement) — confirmé par un test isolé en dehors du
+pilote. Cause probable : restriction réseau propre à ce bac à sable, pas un
+problème côté CinetPay ni un défaut du code. Un contournement (WebSearch au
+lieu de WebFetch) avait déjà permis de lire leur documentation plus tôt dans
+la session malgré la même restriction sur `docs.cinetpay.com` — mais aucun
+contournement de ce type n'existe pour un appel API sortant réel.
+
+**`CINETPAY_SECRET_KEY` non encore fournie** par l'utilisateur au moment de
+cette phase : la vérification HMAC des notifications reste donc, elle
+aussi, non testable contre un vrai webhook CinetPay tant qu'elle ne l'est
+pas — seule la logique interne (testée avec un secret de test) est
+vérifiée.
+
+### Résultats
+
+Code du pilote (toutes méthodes) : IMPLÉMENTÉ — NON VALIDÉ. Logique
+interne (mapping de statut, HMAC, conversion d'unités, gestion d'erreurs) :
+VALIDÉE par les tests unitaires. Connectivité réelle contre le sandbox
+CinetPay : NON TESTÉ — bloqué par une restriction réseau de cet
+environnement (DNS), pas par le code. **Action requise côté utilisateur**
+pour valider réellement ce pilote : exécuter GeBook (ou au moins ce pilote)
+depuis un environnement qui peut atteindre `api-checkout.cinetpay.com`, puis
+fournir `CINETPAY_SECRET_KEY` pour permettre un test de notification de bout
+en bout.
+
+### Commit
+
+À suivre — voir le commit qui accompagne cette entrée.
+
+### Push
+
+Effectué sur `feature/payment-platform`.
+
+### État
+
+**IMPLÉMENTÉ — NON VALIDÉ** (bloqué en environnement de développement pour
+la vérification réseau réelle ; logique interne validée par tests
+unitaires).

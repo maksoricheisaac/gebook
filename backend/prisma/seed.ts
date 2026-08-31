@@ -188,7 +188,13 @@ async function seedPaymentProviders(): Promise<void> {
       name: 'CinetPay',
       driver: 'CinetPayDriver',
       environment: ProviderEnvironment.sandbox,
-      status: ProviderStatus.inactive,
+      // Actif : un vrai pilote existe désormais (CinetPayPaymentDriver,
+      // Phase 4) — même règle que les autres lignes de cette table, « un
+      // prestataire n'est actif que si son pilote existe réellement ».
+      // Reste indisponible tant que CINETPAY_API_KEY/SITE_ID/SECRET_KEY ne
+      // sont pas renseignées dans l'environnement (`PaymentDriverRegistry`
+      // renvoie alors 503, jamais une erreur de configuration silencieuse).
+      status: ProviderStatus.active,
       supportsMobileMoney: false,
       supportsCard: true,
       supportsRefund: false,
