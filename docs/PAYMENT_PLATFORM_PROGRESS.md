@@ -948,7 +948,7 @@ Phases 10-11 pour ce chantier).
 
 ### Commit
 
-À suivre — voir le commit qui accompagne cette entrée.
+`feat(payments): Phase 6 - pilote payout FeexPay` (`9c6f663`)
 
 ### Push
 
@@ -959,3 +959,74 @@ Effectué sur `feature/payment-platform`.
 **IMPLÉMENTÉ — NON VALIDÉ** (identifiants sandbox non fournis ; logique
 interne validée par tests unitaires ; couche métier payout volontairement
 hors périmètre de cette phase).
+
+---
+
+## Note d'infrastructure — Docker/Dokploy laissé en retard sur les Phases 4-6
+
+Demande explicite de l'utilisateur : « Faudrait bien différencier les
+environnements, regardes les dockerfiles, dockercompose, env et différencie :
+prod; dev ». Audit de `backend/Dockerfile`, `frontend/Dockerfile`,
+`docker-compose.yml`, `docker-compose.local.yml`, `.env.docker.example`,
+`backend/.env.example`, `frontend/.env.example`/`.env.local`.
+
+**Constat** : le socle dev/prod (préfixe `__Host-` du cookie selon
+`NODE_ENV`, refus du démarrage en production avec les secrets de
+développement, `.env` jamais versionné, `docker-compose.local.yml`
+explicitement documenté comme non destiné au développement réel) était déjà
+solide et n'a pas eu besoin de changer. **Le vrai trou** : les variables de
+la plateforme de paiement ajoutées aux Phases 4-6
+(`PAYMENT_ENV`/`PAYIN_PROVIDER`/`PAYOUT_PROVIDER`, les identifiants
+PawaPay/CinetPay/FeexPay, `API_PUBLIC_URL`) n'avaient jamais été répercutées
+dans `docker-compose.yml` ni `.env.docker.example` — un déploiement Dokploy
+n'aurait donc jamais pu activer un prestataire réel, quelles que soient les
+valeurs saisies dans son onglet Environment, puisque le conteneur `backend`
+ne les recevait tout simplement pas.
+
+**Corrigé** :
+- `docker-compose.yml` : les 12 variables ajoutées au service `backend`,
+  toutes optionnelles comme dans `environment.ts` (un prestataire sans
+  identifiants reste indisponible, jamais un échec de démarrage).
+- `API_PUBLIC_URL` calculée par défaut depuis `BACKEND_DOMAIN` (déjà
+  obligatoire dans ce fichier), via l'interpolation imbriquée
+  `${API_PUBLIC_URL:-https://${BACKEND_DOMAIN}}` — même patron déjà utilisé
+  par `DATABASE_URL` dans ce fichier, validé en relisant le rendu réel
+  (`docker compose config`) plutôt que supposé. Sans ce défaut, quiconque
+  configurerait CinetPay en production sans penser à `API_PUBLIC_URL`
+  aurait obtenu un webhook silencieusement indisponible (503) au lieu d'une
+  configuration correcte par défaut.
+- `.env.docker.example` : nouvelle section « Plateforme de paiement »,
+  miroir de `backend/.env.example`, documentant chaque variable pour
+  l'opérateur Dokploy.
+
+**Observation, non corrigée (comportement volontaire, pas un bug)** :
+`PAYMENT_ENV` est validé (`sandbox`/`production`) mais n'est lu par aucun
+pilote — ni CinetPay ni FeexPay n'exposent d'URL sandbox distincte de leur
+URL de production ; leur bascule sandbox/live se fait entièrement côté
+prestataire, via quelles identifiants (clé de test vs clé réelle) sont
+utilisés, pas via une URL différente. `PAYMENT_ENV` reste donc un signal de
+politique/documentation (« rester prudent tant que rien n'est prêt »)
+plutôt qu'un interrupteur technique — signalé ici pour que ça ne soit pas
+pris pour un oubli si quelqu'un cherche où cette variable est consommée.
+
+### Vérification
+
+```text
+docker compose -f docker-compose.yml config                      → rendu correct (variables interpolées vérifiées une à une)
+docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet → OK, sans erreur
+```
+
+Vérifié explicitement : `API_PUBLIC_URL` non fournie se résout bien en
+`https://<BACKEND_DOMAIN>` ; une valeur fournie explicitement prend le pas
+sur ce défaut (`docker compose config` avec et sans `API_PUBLIC_URL` en
+entrée, sortie comparée).
+
+### Commit
+
+À suivre — voir le commit qui accompagne cette entrée.
+
+### État
+
+**VALIDÉ** (rendu réel du fichier Compose vérifié, pas seulement la syntaxe
+YAML) — aucun changement de code applicatif, seulement l'infrastructure de
+déploiement.

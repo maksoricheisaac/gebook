@@ -151,6 +151,31 @@ services:
       APP_DEBUG: "false"
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET est obligatoire (32 caracteres minimum)}
       SETUP_TOKEN: ${SETUP_TOKEN:?SETUP_TOKEN est obligatoire (32 caracteres minimum)}
+      # --- Plateforme de paiement --------------------------------------------
+      # sandbox | production, indépendant de NODE_ENV : rester en sandbox tant
+      # que les identifiants réels d'un prestataire ne sont pas fournis
+      # ci-dessous. Détail de chaque variable : backend/.env.example.
+      PAYMENT_ENV: ${PAYMENT_ENV:-sandbox}
+      PAYIN_PROVIDER: ${PAYIN_PROVIDER:-fake}
+      PAYOUT_PROVIDER: ${PAYOUT_PROVIDER:-fake}
+      # Toutes optionnelles : un prestataire sans identifiants reste
+      # simplement indisponible (503), le démarrage n'est jamais bloqué.
+      PAWAPAY_API_URL: ${PAWAPAY_API_URL:-}
+      PAWAPAY_API_TOKEN: ${PAWAPAY_API_TOKEN:-}
+      CINETPAY_API_URL: ${CINETPAY_API_URL:-}
+      CINETPAY_API_KEY: ${CINETPAY_API_KEY:-}
+      CINETPAY_SITE_ID: ${CINETPAY_SITE_ID:-}
+      CINETPAY_SECRET_KEY: ${CINETPAY_SECRET_KEY:-}
+      FEEXPAY_API_URL: ${FEEXPAY_API_URL:-}
+      FEEXPAY_API_KEY: ${FEEXPAY_API_KEY:-}
+      FEEXPAY_SHOP_ID: ${FEEXPAY_SHOP_ID:-}
+      # URL publique de CETTE API (BACKEND_DOMAIN, jamais INTERNAL_API_URL) :
+      # les notifications de paiement (CinetPay, FeexPay) doivent l'atteindre
+      # depuis Internet, pas depuis le réseau interne — contrairement à
+      # NEXT_PUBLIC_API_URL côté frontend, qui vise volontairement le réseau
+      # interne. Calculée par défaut depuis BACKEND_DOMAIN, déjà obligatoire
+      # ci-dessus ; à surcharger seulement si l'API est exposée ailleurs.
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://${BACKEND_DOMAIN}}
     volumes:
       # `LocalStorageDriver` écrit sous `process.cwd()/storage`. Sans ce volume,
       # toute couverture et tout fichier téléversé disparaîtrait au redéploiement.
