@@ -36,6 +36,12 @@ export interface PayoutInitRequest {
   /** Numéro Mobile Money ou IBAN/numéro de compte, selon `method`. */
   beneficiaryAccount: string;
   method: string;
+  /**
+   * Facultatif : code de canal propre au prestataire (ex. `mtn_cg` pour
+   * FeexPay), quand son API distingue les opérateurs/pays par point
+   * d'entrée. Un pilote qui n'en a pas besoin (Fake) l'ignore simplement.
+   */
+  channel?: string;
 }
 
 export interface PayoutInitResult {
@@ -99,12 +105,19 @@ export interface PayoutDriver {
    * pour les mêmes raisons que côté pay-in : une signature HMAC se recalcule
    * sur les octets exacts reçus, pas sur une reconstruction JSON.
    *
+   * Asynchrone, même raison que `PaymentDriver.parseWebhook()` (Phase 4) :
+   * certains prestataires (FeexPay) exigent explicitement un rappel
+   * serveur-à-serveur pour confirmer le statut définitif d'un reversement
+   * avant de le considérer acquis (« Status verification is mandatory for
+   * payouts »). Un pilote qui n'en a pas besoin (Fake) retourne simplement
+   * une valeur déjà résolue.
+   *
    * Ne lève jamais : une notification illisible doit pouvoir être enregistrée.
    */
   parseWebhook(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,
-  ): PayoutWebhookParseResult;
+  ): Promise<PayoutWebhookParseResult>;
 
   /** Même contrat que `PaymentDriver.testConnection` — voir sa doc. */
   testConnection?(): Promise<ConnectionTestResult>;

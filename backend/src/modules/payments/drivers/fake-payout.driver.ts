@@ -92,10 +92,11 @@ export class FakePayoutDriver implements PayoutDriver {
     }
   }
 
-  parseWebhook(
+  // eslint-disable-next-line @typescript-eslint/require-await -- signature imposée par `PayoutDriver` (certains pilotes réels doivent réellement attendre un appel réseau ici).
+  async parseWebhook(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,
-  ): PayoutWebhookParseResult {
+  ): Promise<PayoutWebhookParseResult> {
     const payload = this.parseJson(rawBody);
 
     const eventId = this.readString(payload?.eventId);
