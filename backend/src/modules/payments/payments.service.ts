@@ -282,7 +282,7 @@ export class PaymentsService {
     }
 
     const driver = this.drivers.resolve(provider.code);
-    const parsed = driver.parseWebhook(rawBody, headers);
+    const parsed = await driver.parseWebhook(rawBody, headers);
 
     // 4. Enregistrer avant de traiter, y compris une notification non signée.
     const event = await this.recordEvent(provider.id, parsed);

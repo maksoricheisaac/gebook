@@ -93,10 +93,11 @@ export class FakePaymentDriver implements PaymentDriver {
     });
   }
 
-  parseWebhook(
+  // eslint-disable-next-line @typescript-eslint/require-await -- signature imposée par `PaymentDriver` (certains pilotes réels doivent réellement attendre un appel réseau ici).
+  async parseWebhook(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,
-  ): WebhookParseResult {
+  ): Promise<WebhookParseResult> {
     const payload = this.parseJson(rawBody);
 
     const eventId = this.readString(payload?.eventId);

@@ -111,12 +111,21 @@ export interface PaymentDriver {
    * signature HMAC ne pourrait être recalculée : `JSON.parse` puis `JSON.stringify`
    * ne redonne pas octet pour octet le message signé par le prestataire.
    *
+   * Asynchrone : certains prestataires (CinetPay) ne mettent jamais le
+   * véritable statut dans le corps de la notification, précisément pour
+   * empêcher une notification forgée de suffire — le pilote doit alors
+   * rappeler l'API de vérification du prestataire *depuis cette méthode*
+   * avant de savoir quel `outcome` renvoyer (brief : « ne jamais faire
+   * confiance au seul corps brut du webhook si une API de vérification
+   * serveur-à-serveur existe »). Un pilote qui n'en a pas besoin (Fake,
+   * PawaPay) retourne simplement une valeur déjà résolue.
+   *
    * Ne lève jamais : une notification illisible doit pouvoir être enregistrée.
    */
   parseWebhook(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,
-  ): WebhookParseResult;
+  ): Promise<WebhookParseResult>;
 
   refund(transactionId: string, amountMinor: number): Promise<RefundResult>;
 
