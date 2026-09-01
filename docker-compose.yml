@@ -214,12 +214,25 @@ services:
       # rendre configurables ailleurs que dans ce fichier.
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
+      # --- Stockage des fichiers ---------------------------------------------
+      # local (par défaut, le volume `backend-storage` ci-dessous) | r2. Guide
+      # complet côté Cloudflare : docs/STORAGE_R2_SETUP.md. Toutes les valeurs
+      # R2 sont obligatoires si STORAGE_DRIVER=r2 — le démarrage du conteneur
+      # refuse alors sans elles (validateEnvironment()), jamais un stockage à
+      # moitié configuré qui échoue au premier téléversement.
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
     volumes:
-      # `LocalStorageDriver` écrit sous `process.cwd()/storage`. Sans ce volume,
-      # toute couverture et tout fichier téléversé disparaîtrait au redéploiement.
-      # `storage/private` contient les ouvrages eux-mêmes : il n'est servi par
-      # aucune route statique, seul `LibraryController` y donne accès après
-      # vérification du droit de lecture.
+      # `LocalStorageDriver` écrit sous `process.cwd()/storage` — pertinent
+      # uniquement si STORAGE_DRIVER=local (par défaut) ; sans objet une fois
+      # R2 actif, mais inoffensif à laisser monté dans tous les cas. Sans ce
+      # volume, toute couverture et tout fichier téléversé disparaîtrait au
+      # redéploiement. `storage/private` contient les ouvrages eux-mêmes : il
+      # n'est servi par aucune route statique, seul `LibraryController` y
+      # donne accès après vérification du droit de lecture.
       - backend-storage:/app/storage
     networks:
       - internal

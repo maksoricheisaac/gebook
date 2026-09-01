@@ -215,14 +215,21 @@ describe('Back-office du catalogue (e2e)', () => {
       const photoPath = (photo.body as { photoPath: string }).photoPath;
       expect(photoPath).toMatch(/^authors\/.+\.jpg$/);
 
-      // `@nestjs/serve-static` ne s'attache pas de façon fiable à l'application
-      // construite par `Test.createTestingModule` (constaté même sur un fichier de
-      // seed préexistant, hors de toute écriture faite par ce test) : la desserte
-      // réelle du fichier a été vérifiée manuellement contre le serveur compilé
-      // (`node dist/main.js`), où `GET /public/covers/*.svg` répond bien 200. Ici,
-      // on vérifie la partie que ce processus de test peut garantir : le fichier
-      // existe réellement là où l'API affirme l'avoir écrit.
+      // Le fichier existe réellement là où l'API affirme l'avoir écrit...
       await access(join(process.cwd(), 'storage', 'public', photoPath));
+
+      // ...et `PublicFilesController` le ressert réellement, quel que soit le
+      // pilote de stockage actif (local ici, R2 en production éventuellement) —
+      // `PublicFilesController` étant un contrôleur Nest ordinaire (contrairement
+      // à l'ancien `ServeStaticModule`, une middleware Express qui ne s'attachait
+      // pas de façon fiable sous `Test.createTestingModule`), cette assertion
+      // HTTP est désormais fiable ici.
+      const served = await request(app.getHttpServer()).get(
+        `/public/${photoPath}`,
+      );
+      expect(served.status).toBe(200);
+      expect(served.headers['content-type']).toBe('image/jpeg');
+      expect(Buffer.compare(served.body as Buffer, JPEG_BYTES)).toBe(0);
     });
 
     it('refuse un fichier dont le contenu ne correspond pas à une image', async () => {

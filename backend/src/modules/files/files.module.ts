@@ -1,25 +1,45 @@
-import { join } from 'node:path';
 import { Module } from '@nestjs/common';
-import { ServeStaticModule } from '@nestjs/serve-static';
+import { ConfigService } from '@nestjs/config';
+import { StorageDriverType } from '../../config/environment';
 import { LocalStorageDriver } from './local-storage.driver';
-import { STORAGE_DRIVER } from './storage-driver';
+import { PublicFilesController } from './public-files.controller';
+import { R2StorageDriver } from './r2-storage.driver';
+import { STORAGE_DRIVER, type StorageDriver } from './storage-driver';
 import { UploadValidatorService } from './upload-validator.service';
 import { VirusScanService } from './virus-scan.service';
 
+/**
+ * Le pilote actif se choisit par variable d'environnement
+ * (`STORAGE_DRIVER=local|r2`), même principe que `PAYMENT_DRIVER`/
+ * `PAYOUT_DRIVER` : un seul pilote actif à la fois, jamais un registre de
+ * plusieurs, puisque le stockage n'est pas un choix par requête mais un
+ * réglage de toute l'installation. `validateEnvironment()` refuse déjà de
+ * démarrer si `STORAGE_DRIVER=r2` sans les identifiants — cette fabrique
+ * peut donc supposer qu'ils sont présents quand ce cas se présente ici.
+ */
+function createStorageDriver(
+  local: LocalStorageDriver,
+  r2: R2StorageDriver,
+  config: ConfigService,
+): StorageDriver {
+  return config.get<StorageDriverType>('STORAGE_DRIVER') ===
+    StorageDriverType.r2
+    ? r2
+    : local;
+}
+
 @Module({
-  imports: [
-    // Couvertures et photos d'auteur : servies telles quelles. Les fichiers
-    // privés (`storage/private`) ne sont volontairement raccordés à aucune
-    // route statique — c'est ce qui garantit la règle métier n° 19.
-    ServeStaticModule.forRoot({
-      rootPath: join(process.cwd(), 'storage', 'public'),
-      serveRoot: '/public',
-    }),
-  ],
+  controllers: [PublicFilesController],
   providers: [
     UploadValidatorService,
     VirusScanService,
-    { provide: STORAGE_DRIVER, useClass: LocalStorageDriver },
+    LocalStorageDriver,
+    R2StorageDriver,
+    {
+      provide: STORAGE_DRIVER,
+      useFactory: createStorageDriver,
+      inject: [LocalStorageDriver, R2StorageDriver, ConfigService],
+    },
   ],
   exports: [UploadValidatorService, VirusScanService, STORAGE_DRIVER],
 })
