@@ -196,6 +196,27 @@ export class Environment {
   @IsOptional()
   @IsString()
   API_PUBLIC_URL?: string;
+
+  // ---------------------------------------------------------------------
+  // Scan antivirus (ClamAV) — tout fichier téléversé par un utilisateur
+  // (couverture, photo d'auteur, ouvrage numérique) passe par `clamd` avant
+  // d'être stocké. Optionnelles comme le reste de cette section : sans elles,
+  // ce n'est pas le démarrage qui échoue, ce sont les téléversements qui
+  // deviennent indisponibles (503) — jamais un scan silencieusement ignoré.
+  // ---------------------------------------------------------------------
+
+  @IsOptional()
+  @IsString()
+  CLAMAV_HOST?: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined ? undefined : Number(value),
+  )
+  @IsOptional()
+  @IsInt({ message: 'CLAMAV_PORT doit être un nombre entier.' })
+  @Min(1, { message: 'CLAMAV_PORT doit être compris entre 1 et 65535.' })
+  @Max(65535, { message: 'CLAMAV_PORT doit être compris entre 1 et 65535.' })
+  CLAMAV_PORT?: number;
 }
 
 /**

@@ -4,6 +4,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { LocalStorageDriver } from './local-storage.driver';
 import { STORAGE_DRIVER } from './storage-driver';
 import { UploadValidatorService } from './upload-validator.service';
+import { VirusScanService } from './virus-scan.service';
 
 @Module({
   imports: [
@@ -17,8 +18,9 @@ import { UploadValidatorService } from './upload-validator.service';
   ],
   providers: [
     UploadValidatorService,
+    VirusScanService,
     { provide: STORAGE_DRIVER, useClass: LocalStorageDriver },
   ],
-  exports: [UploadValidatorService, STORAGE_DRIVER],
+  exports: [UploadValidatorService, VirusScanService, STORAGE_DRIVER],
 })
 export class FilesModule {}

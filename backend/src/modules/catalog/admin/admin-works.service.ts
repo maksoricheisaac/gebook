@@ -506,7 +506,7 @@ export class AdminWorksService {
   ): Promise<Work> {
     await this.findOne(id, admin, tenant);
 
-    const mime = this.uploadValidator.validateImage(file);
+    const mime = await this.uploadValidator.validateImage(file);
     const stored = await this.storage.storePublic(
       file.buffer,
       'covers',

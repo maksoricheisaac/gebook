@@ -54,6 +54,37 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------
+  # ClamAV — scan antivirus de tout fichier téléversé par un utilisateur
+  # (couverture, photo d'auteur, ouvrage numérique) avant son stockage, voir
+  # `VirusScanService`. Jamais joint à `dokploy-network` : aucune raison que
+  # ce service soit atteignable ailleurs que par `backend`, sur le réseau
+  # interne. Premier démarrage lent (téléchargement de la base de signatures
+  # dans le volume vide, plusieurs minutes) : `depends_on: condition:
+  # service_healthy` sur `backend` attend ce moment sans limite de temps
+  # propre, seul `start_period` évite un faux « unhealthy » prématuré.
+  # ---------------------------------------------------------------------------
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    # Plafond volontaire (audit : « pas de faillite du SaaS à cause d'un
+    # fichier téléversé ») — la base de signatures et le moteur tiennent
+    # confortablement sous 2 Go ; un scan pathologique ne doit jamais pouvoir
+    # affamer le reste de la pile.
+    mem_limit: 2g
+    volumes:
+      # Persiste la base de signatures entre redéploiements — sans ce volume,
+      # chaque déploiement retélécharge plusieurs centaines de Mo au démarrage.
+      - clamav-data:/var/lib/clamav
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
   # Migrations Prisma — service éphémère, joué avant chaque démarrage de l'API
   # ---------------------------------------------------------------------------
   migrate:
@@ -127,6 +158,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
     environment:
       # Doit valoir « production » ici ET sur le frontend : les deux services
       # calculent le nom du cookie de session depuis leur propre NODE_ENV
@@ -176,6 +209,11 @@ services:
       # interne. Calculée par défaut depuis BACKEND_DOMAIN, déjà obligatoire
       # ci-dessus ; à surcharger seulement si l'API est exposée ailleurs.
       API_PUBLIC_URL: ${API_PUBLIC_URL:-https://${BACKEND_DOMAIN}}
+      # Constantes, pas des variables Dokploy : `clamav` est le nom du service
+      # ci-dessus, dans ce même réseau `internal` — aucune raison de les
+      # rendre configurables ailleurs que dans ce fichier.
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
     volumes:
       # `LocalStorageDriver` écrit sous `process.cwd()/storage`. Sans ce volume,
       # toute couverture et tout fichier téléversé disparaîtrait au redéploiement.
@@ -257,3 +295,4 @@ networks:
 volumes:
   database-data:
   backend-storage:
+  clamav-data:

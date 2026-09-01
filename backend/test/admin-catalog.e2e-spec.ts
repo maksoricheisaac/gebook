@@ -8,8 +8,10 @@ import type { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
+import { VirusScanService } from './../src/modules/files/virus-scan.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import { adminDb } from './support/admin-db';
+import { fakeVirusScanner } from './support/fake-virus-scanner';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@phase6.e2e.test';
@@ -54,7 +56,10 @@ describe('Back-office du catalogue (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(VirusScanService)
+      .useValue(fakeVirusScanner())
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());
