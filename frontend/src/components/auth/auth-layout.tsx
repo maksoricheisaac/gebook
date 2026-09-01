@@ -41,16 +41,16 @@ export function AuthLayout({
         </div>
       </div>
 
-      <aside className="bg-ink-900 paper-grain relative hidden flex-col justify-between overflow-hidden p-12 lg:flex">
+      <aside className="bg-muted paper-grain border-border relative hidden flex-col justify-between overflow-hidden border-l p-12 lg:flex">
         <div aria-hidden className="bg-accent absolute inset-x-0 top-0 h-0.5" />
 
-        <LogoLink variant="plaque" />
+        <LogoLink variant="light" />
 
         <div>
-          <p className="type-label text-white/60">
+          <p className="type-label text-muted-foreground">
             {aside === "publisher" ? "Votre espace GeBook" : "Votre compte GeBook"}
           </p>
-          <h2 className="type-h2 mt-3 max-w-sm text-white">
+          <h2 className="type-h2 text-secondary mt-3 max-w-sm">
             {aside === "publisher"
               ? "Publiez, vendez, rayonnez — à votre nom."
               : aside === "welcome"
@@ -87,11 +87,11 @@ export function AuthLayout({
           </ul>
         </div>
 
-        <p className="text-xs text-white/60">
+        <p className="text-muted-foreground text-xs">
           En créant un compte, vous acceptez les{" "}
           <Link
             href="/a-propos"
-            className="underline underline-offset-4 hover:text-white/70"
+            className="hover:text-secondary underline underline-offset-4"
           >
             conditions d’utilisation
           </Link>{" "}
@@ -110,8 +110,8 @@ function Benefit({
   children: React.ReactNode;
 }) {
   return (
-    <li className="flex items-start gap-3 text-sm leading-relaxed text-white/75">
-      <Icon aria-hidden className="text-accent mt-0.5 size-4 shrink-0" />
+    <li className="text-foreground/85 flex items-start gap-3 text-sm leading-relaxed">
+      <Icon aria-hidden className="text-accent-strong mt-0.5 size-4 shrink-0" />
       {children}
     </li>
   );

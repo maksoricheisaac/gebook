@@ -1,24 +1,20 @@
-"use client";
-
-import { useEffect, useState } from "react";
-
-import { AdminSidebar } from "@/src/components/admin/admin-sidebar";
+import { AdminAppSidebar } from "@/src/components/admin/admin-app-sidebar";
 import { AdminTopbar } from "@/src/components/admin/admin-topbar";
+import { SidebarInset, SidebarProvider } from "@/src/components/ui/sidebar";
 import { Toaster } from "@/src/components/ui/sonner";
+import { TooltipProvider } from "@/src/components/ui/tooltip";
 import type { CurrentUser } from "@/src/lib/auth-shared";
 
-const COLLAPSE_STORAGE_KEY = "gebook_admin_sidebar_collapsed";
-
 /**
- * Coquille cliente du back-office : barre latérale (repliable), topbar,
- * contenu.
+ * Coquille du back-office : barre latérale (repliable), topbar, contenu —
+ * bâtie sur `SidebarProvider`/`SidebarInset` (shadcn/ui `sidebar-04`), qui
+ * prend en charge ce que cette coquille gérait auparavant à la main : l'état
+ * de repli (persisté par cookie, posé par `SidebarProvider` lui-même — plus
+ * fiable que le `localStorage` précédent) et le panneau mobile (un `Sheet`,
+ * automatique sous `md`, qui remplace `AdminMobileNav`).
  *
- * L'état de repli vit ici plutôt que dans `AdminSidebar` parce que la largeur
- * de colonne de la grille doit changer avec lui — un composant qui ne
- * connaîtrait que sa propre largeur ne pourrait pas redimensionner la grille
- * qui le contient. Persisté en `localStorage` (pas en cookie) : c'est une
- * préférence d'affichage locale à l'appareil, pas une donnée qui doit
- * survivre au rendu serveur.
+ * `TooltipProvider` : requis par `SidebarMenuButton`'s `tooltip` prop (rail
+ * replié), que le bloc `sidebar-04` ne fournit pas lui-même.
  */
 export function AdminShell({
   user,
@@ -29,47 +25,21 @@ export function AdminShell({
   isPlatformAdmin: boolean;
   children: React.ReactNode;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    // Lecture ponctuelle d'un store externe (localStorage) au montage : le
-    // rendu serveur ne peut pas connaître cette préférence, donc le premier
-    // rendu client reste replié à `false` puis se corrige ici, une seule fois.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCollapsed(window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === "1");
-  }, []);
-
-  const toggleCollapsed = (): void => {
-    setCollapsed((current) => {
-      const next = !current;
-      window.localStorage.setItem(COLLAPSE_STORAGE_KEY, next ? "1" : "0");
-      return next;
-    });
-  };
-
   return (
-    <div
-      className="flex min-h-dvh flex-col lg:grid lg:items-start lg:transition-[grid-template-columns] lg:duration-[var(--duration-base)] lg:ease-[var(--ease-out)]"
-      style={{
-        gridTemplateColumns: collapsed ? "5rem minmax(0,1fr)" : "16rem minmax(0,1fr)",
-      }}
-    >
-      <AdminSidebar isPlatformAdmin={isPlatformAdmin} collapsed={collapsed} />
+    <TooltipProvider delayDuration={0}>
+      <SidebarProvider>
+        <AdminAppSidebar isPlatformAdmin={isPlatformAdmin} />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AdminTopbar
-          user={user}
-          isPlatformAdmin={isPlatformAdmin}
-          collapsed={collapsed}
-          onToggleCollapse={toggleCollapsed}
-        />
+        <SidebarInset>
+          <AdminTopbar user={user} />
 
-        <main id="contenu" className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:py-10">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
-        </main>
-      </div>
+          <main id="contenu" className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:py-10">
+            <div className="mx-auto w-full max-w-6xl">{children}</div>
+          </main>
+        </SidebarInset>
 
-      <Toaster position="top-right" richColors closeButton />
-    </div>
+        <Toaster position="top-right" richColors closeButton />
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }

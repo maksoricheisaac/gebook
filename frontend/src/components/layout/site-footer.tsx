@@ -23,13 +23,13 @@ import { MAIN_NAVIGATION } from "./navigation";
  */
 export function SiteFooter() {
   return (
-    <footer className="bg-ink-900 relative overflow-hidden text-white/80">
+    <footer className="bg-muted border-border relative overflow-hidden border-t text-foreground/80">
       {/* Filet doré : la signature éditoriale, reprise du sur-titre des sections. */}
       <div aria-hidden className="bg-accent h-0.5 w-full" />
 
       <div className="mx-auto grid w-full max-w-7xl gap-12 px-5 py-16 sm:px-8 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1.2fr]">
         <div className="space-y-5">
-          <LogoLink variant="plaque" />
+          <LogoLink variant="light" />
           <p className="max-w-xs text-sm leading-relaxed text-pretty">
             La plateforme numérique des éditeurs et auteurs d’Afrique centrale. Publier,
             vendre et faire circuler leurs voix, dans tous les formats de lecture.
@@ -53,31 +53,31 @@ export function SiteFooter() {
 
         <FooterColumn title="Nous joindre">
           <a
-            className="flex items-center gap-2.5 text-sm transition-colors hover:text-white"
+            className="hover:text-secondary flex items-center gap-2.5 text-sm transition-colors"
             href="tel:+242061234567"
           >
-            <Phone aria-hidden className="text-accent size-4 shrink-0" />
+            <Phone aria-hidden className="text-accent-strong size-4 shrink-0" />
             +242 06 123 45 67
           </a>
           <a
-            className="flex items-center gap-2.5 text-sm transition-colors hover:text-white"
+            className="hover:text-secondary flex items-center gap-2.5 text-sm transition-colors"
             href="mailto:contact@gebook.com"
           >
-            <Mail aria-hidden className="text-accent size-4 shrink-0" />
+            <Mail aria-hidden className="text-accent-strong size-4 shrink-0" />
             contact@gebook.com
           </a>
           <p className="flex items-center gap-2.5 text-sm">
-            <MapPin aria-hidden className="text-accent size-4 shrink-0" />
+            <MapPin aria-hidden className="text-accent-strong size-4 shrink-0" />
             Brazzaville, Congo
           </p>
 
           <div className="pt-3">
-            <p className="type-label mb-2 text-white/60">Paiements prévus</p>
+            <p className="type-label text-muted-foreground mb-2">Paiements prévus</p>
             <div className="flex flex-wrap gap-1.5">
               {["MTN MoMo", "Airtel Money", "Visa", "Mastercard"].map((method) => (
                 <span
                   key={method}
-                  className="rounded-sm border border-white/15 px-2 py-1 text-[0.6875rem] font-medium text-white/70"
+                  className="border-border-strong text-muted-foreground rounded-sm border px-2 py-1 text-[0.6875rem] font-medium"
                 >
                   {method}
                 </span>
@@ -87,8 +87,8 @@ export function SiteFooter() {
         </FooterColumn>
       </div>
 
-      <div className="border-t border-white/10">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-5 py-6 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+      <div className="border-border border-t">
+        <div className="text-muted-foreground mx-auto flex w-full max-w-7xl flex-col gap-3 px-5 py-6 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-8">
           <p>© 2026 GeBook. Tous droits réservés.</p>
           <p className="flex items-center gap-2">
             <ShieldCheck aria-hidden className="size-3.5" />
@@ -103,7 +103,7 @@ export function SiteFooter() {
 function FooterColumn({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-4">
-      <h2 className="type-label font-sans text-white">{title}</h2>
+      <h2 className="type-label text-secondary font-sans">{title}</h2>
       <div className="flex flex-col gap-2.5">{children}</div>
     </div>
   );
@@ -111,7 +111,7 @@ function FooterColumn({ title, children }: { title: string; children: React.Reac
 
 function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link href={href} className="w-fit text-sm transition-colors hover:text-white">
+    <Link href={href} className="hover:text-secondary w-fit text-sm transition-colors">
       {children}
     </Link>
   );

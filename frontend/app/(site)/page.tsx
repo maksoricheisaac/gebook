@@ -230,15 +230,15 @@ export default async function HomePage() {
       </Container>
 
       <Container size="wide" className="pb-24">
-        <div className="bg-ink-900 paper-grain relative overflow-hidden rounded-xl px-6 py-16 text-center sm:px-14 sm:py-20">
+        <div className="bg-muted border-border paper-grain relative overflow-hidden rounded-xl border px-6 py-16 text-center sm:px-14 sm:py-20">
           <div aria-hidden className="bg-accent absolute inset-x-0 top-0 h-0.5" />
-          <p className="type-label rule-accent [&::before]:mx-auto text-white/60">
+          <p className="type-label rule-accent text-muted-foreground [&::before]:mx-auto">
             Créer un compte
           </p>
-          <h2 className="type-h1 mx-auto max-w-2xl text-white">
+          <h2 className="type-h1 text-secondary mx-auto max-w-2xl">
             Vos achats, vos formats et vos commandes, réunis au même endroit.
           </h2>
-          <p className="mx-auto mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-white/70 text-pretty">
+          <p className="mx-auto mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-pretty">
             Le compte GeBook est gratuit. Il garde la trace de vos commandes et vous
             donnera accès à votre bibliothèque numérique dès son ouverture.
           </p>
@@ -246,12 +246,7 @@ export default async function HomePage() {
             <Button asChild size="lg">
               <Link href="/inscription">Créer mon compte</Link>
             </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="border-white/25 bg-transparent text-white hover:border-white/40 hover:bg-white/10 hover:text-white"
-            >
+            <Button asChild size="lg" variant="outline">
               <Link href="/livres">Parcourir d’abord</Link>
             </Button>
           </div>

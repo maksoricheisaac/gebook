@@ -2,16 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import {
-  ChevronDown,
-  Home,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  UserRound,
-} from "lucide-react";
+import { ChevronDown, Home, LogOut, UserRound } from "lucide-react";
 
-import { AdminMobileNav } from "@/src/components/admin/admin-mobile-nav";
+import { SidebarTrigger } from "@/src/components/ui/sidebar";
 import { logoutAction } from "@/src/lib/auth-actions";
 import type { CurrentUser } from "@/src/lib/auth-shared";
 import { cn } from "@/src/lib/utils";
@@ -20,22 +13,12 @@ import { cn } from "@/src/lib/utils";
  * Barre supérieure du back-office.
  *
  * Porte deux choses qui n'ont pas leur place dans la navigation latérale :
- * le bouton qui réduit/agrandit la barre (une action de mise en page, pas de
- * navigation) et l'identité du compte connecté, seule sortie vers le site
- * public et la déconnexion sur toutes les tailles d'écran — la barre latérale
- * n'a donc plus besoin de dupliquer ces deux sorties pour le mobile.
+ * le bouton qui réduit/agrandit la barre — `SidebarTrigger` (shadcn/ui),
+ * qui bascule aussi bien le rail d'icônes sur grand écran que le panneau
+ * `Sheet` sur mobile, sans code spécifique ici — et l'identité du compte
+ * connecté, seule sortie vers le site public et la déconnexion.
  */
-export function AdminTopbar({
-  user,
-  isPlatformAdmin,
-  collapsed,
-  onToggleCollapse,
-}: {
-  user: CurrentUser;
-  isPlatformAdmin: boolean;
-  collapsed: boolean;
-  onToggleCollapse: () => void;
-}) {
+export function AdminTopbar({ user }: { user: CurrentUser }) {
   const [isOpen, setIsOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
 
@@ -63,26 +46,7 @@ export function AdminTopbar({
 
   return (
     <header className="border-border bg-card sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b px-5 sm:px-8">
-      <AdminMobileNav isPlatformAdmin={isPlatformAdmin} />
-
-      <button
-        type="button"
-        onClick={onToggleCollapse}
-        aria-label={
-          collapsed ? "Agrandir la barre latérale" : "Réduire la barre latérale"
-        }
-        className={cn(
-          "text-muted-foreground hover:bg-muted hover:text-secondary hidden cursor-pointer place-items-center rounded-md",
-          "size-9 transition-colors duration-[--duration-fast] lg:grid",
-          "focus-visible:ring-ring/40 outline-none focus-visible:ring-[3px]",
-        )}
-      >
-        {collapsed ? (
-          <PanelLeftOpen aria-hidden className="size-4" />
-        ) : (
-          <PanelLeftClose aria-hidden className="size-4" />
-        )}
-      </button>
+      <SidebarTrigger className="-ml-1" />
 
       <div className="flex-1" />
 

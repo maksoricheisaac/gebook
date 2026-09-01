@@ -145,16 +145,23 @@
   --duration-base: 220ms;
   --duration-slow: 420ms;
 
-  /* Barre latérale d'administration : encre profonde, pour distinguer le
-     back-office du site public sans changer d'identité. */
-  --sidebar: var(--ink-900);
-  --sidebar-foreground: #e8eef5;
-  --sidebar-primary: var(--leaf-500);
+  /*
+   * Barre latérale d'administration — claire, comme le reste de la plateforme
+   * (décision produit, 2026-09 : « toute la plateforme, une couleur plus
+   * claire, proche du blanc »). Distincte du fond principal (`--paper-50`)
+   * par un ton légèrement plus soutenu (`--paper-100`) et un filet
+   * (`--sidebar-border`), pas par un aplat sombre — même logique que le pied
+   * de page et le panneau des pages d'authentification, recolorés en même
+   * temps pour rester cohérents entre eux.
+   */
+  --sidebar: var(--paper-100);
+  --sidebar-foreground: var(--ink-800);
+  --sidebar-primary: var(--leaf-700);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgb(255 255 255 / 8%);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgb(255 255 255 / 12%);
-  --sidebar-ring: var(--leaf-500);
+  --sidebar-accent: var(--paper-200);
+  --sidebar-accent-foreground: var(--ink-900);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--leaf-600);
 }
 
 @theme inline {
