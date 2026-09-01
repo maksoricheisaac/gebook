@@ -3,7 +3,6 @@ import {
   ArrowRight,
   BookOpen,
   Feather,
-  Headphones,
   Search,
   Truck,
   type LucideIcon,
@@ -140,11 +139,7 @@ export default async function HomePage() {
           title="Le même livre, la lecture qui vous convient"
           description="Une œuvre peut exister en plusieurs formats, chacun avec son prix et son mode de remise. Vous choisissez au moment de l’achat."
         />
-        <Reveal
-          as="ul"
-          stagger={0.06}
-          className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <Reveal as="ul" stagger={0.06} className="grid gap-x-8 gap-y-10 sm:grid-cols-2">
           {FORMATS.map((format) => (
             <FormatNote key={format.title} {...format} />
           ))}
@@ -235,15 +230,15 @@ export default async function HomePage() {
       </Container>
 
       <Container size="wide" className="pb-24">
-        <div className="bg-ink-900 paper-grain relative overflow-hidden rounded-xl px-6 py-16 text-center sm:px-14 sm:py-20">
+        <div className="bg-muted border-border paper-grain relative overflow-hidden rounded-xl border px-6 py-16 text-center sm:px-14 sm:py-20">
           <div aria-hidden className="bg-accent absolute inset-x-0 top-0 h-0.5" />
-          <p className="type-label rule-accent [&::before]:mx-auto text-white/60">
+          <p className="type-label rule-accent text-muted-foreground [&::before]:mx-auto">
             Créer un compte
           </p>
-          <h2 className="type-h1 mx-auto max-w-2xl text-white">
+          <h2 className="type-h1 text-secondary mx-auto max-w-2xl">
             Vos achats, vos formats et vos commandes, réunis au même endroit.
           </h2>
-          <p className="mx-auto mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-white/70 text-pretty">
+          <p className="mx-auto mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-pretty">
             Le compte GeBook est gratuit. Il garde la trace de vos commandes et vous
             donnera accès à votre bibliothèque numérique dès son ouverture.
           </p>
@@ -251,12 +246,7 @@ export default async function HomePage() {
             <Button asChild size="lg">
               <Link href="/inscription">Créer mon compte</Link>
             </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="border-white/25 bg-transparent text-white hover:border-white/40 hover:bg-white/10 hover:text-white"
-            >
+            <Button asChild size="lg" variant="outline">
               <Link href="/livres">Parcourir d’abord</Link>
             </Button>
           </div>
@@ -309,7 +299,7 @@ function Hero({
           <p className="type-subtitle mt-6 max-w-xl">
             GeBook réunit les éditeurs, collectifs et auteurs indépendants d’Afrique sur
             une seule librairie numérique. Romans, essais et manuels congolais et
-            africains — en PDF, en audio ou en papier.
+            africains — en PDF ou en papier.
           </p>
 
           <div className="mt-9 flex flex-wrap gap-3">
@@ -421,12 +411,6 @@ const FORMATS: { icon: LucideIcon; title: string; description: string }[] = [
       "La mise en page d’origine, fidèle au livre imprimé. À lire sur ordinateur ou à imprimer.",
   },
   {
-    icon: Headphones,
-    title: "Audio",
-    description:
-      "L’ouvrage lu à voix haute, pour les trajets et les moments où l’on ne peut pas lire.",
-  },
-  {
     icon: Truck,
     title: "Papier",
     description:
@@ -463,7 +447,7 @@ const STEPS: { title: string; description: string }[] = [
   {
     title: "Choisissez votre format",
     description:
-      "Numérique, audio ou papier : le prix et le mode de remise sont affichés avant la commande, sans surprise à la fin.",
+      "Numérique ou papier : le prix et le mode de remise sont affichés avant la commande, sans surprise à la fin.",
   },
   {
     title: "Commandez et suivez",

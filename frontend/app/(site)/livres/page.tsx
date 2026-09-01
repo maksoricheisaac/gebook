@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Catalogue",
   description:
-    "Tout le catalogue GeBook : romans, essais et manuels d’auteurs africains, en PDF, audio et papier.",
+    "Tout le catalogue GeBook : romans, essais et manuels d’auteurs africains, en PDF et papier.",
   alternates: { canonical: "/livres" },
 };
 

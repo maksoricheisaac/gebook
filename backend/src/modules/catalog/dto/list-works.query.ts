@@ -48,7 +48,7 @@ export class ListWorksQuery {
 
   @IsOptional()
   @IsIn(ACCEPTED_FORMAT_TYPES, {
-    message: 'Le format demandé doit être « pdf », « paper » ou « audio ».',
+    message: 'Le format demandé doit être « pdf » ou « paper ».',
   })
   format?: FormatType;
 

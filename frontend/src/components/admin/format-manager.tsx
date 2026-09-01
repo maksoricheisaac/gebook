@@ -16,24 +16,23 @@ import { deliveryTypeLabel, formatPrice, formatTypeLabel } from "@/src/lib/forma
 
 interface WorkFormat {
   id: string;
-  formatType: "pdf" | "audio" | "paper";
+  formatType: "pdf" | "paper";
   label: string | null;
   price: string;
   deliveryType: "digital_download" | "physical_delivery" | "pickup";
   isAvailable: boolean;
 }
 
-// EPUB volontairement absent — « PDF d'abord » (décision produit, 2026-09),
-// même restriction que côté API (`accepted-format-types.ts`).
+// Ni EPUB ni l'audio ne figurent ici volontairement — « PDF d'abord »
+// (décision produit, 2026-09), même restriction que côté API
+// (`accepted-format-types.ts`).
 const FORMAT_TYPES = [
   { value: "pdf", label: "PDF", deliveryType: "digital_download" },
-  { value: "audio", label: "Audio", deliveryType: "digital_download" },
   { value: "paper", label: "Papier", deliveryType: "physical_delivery" },
 ] as const;
 
 const ACCEPT_BY_FORMAT: Record<string, string> = {
   pdf: "application/pdf",
-  audio: "audio/mpeg,audio/mp4",
 };
 
 /**

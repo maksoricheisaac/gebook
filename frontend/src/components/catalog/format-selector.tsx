@@ -6,7 +6,6 @@ import {
   BookOpen,
   Check,
   FileText,
-  Headphones,
   Lock,
   ShoppingCart,
   Truck,
@@ -27,7 +26,6 @@ const initialPurchaseState: PurchaseFormState = {};
 
 const FORMAT_ICONS: Record<string, LucideIcon> = {
   pdf: FileText,
-  audio: Headphones,
   paper: BookOpen,
 };
 

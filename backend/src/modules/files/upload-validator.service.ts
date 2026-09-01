@@ -23,14 +23,13 @@ const DEFAULT_MAX_WORK_FILE_MB = 100;
 
 /**
  * Formats sans livraison numérique n'ont aucun fichier à leur associer ;
- * `epub` en est volontairement absent — « PDF d'abord » (décision produit,
- * 2026-09, voir `accepted-format-types.ts`) — même si la valeur reste dans
- * le schéma Prisma pour d'éventuelles lignes déjà en base.
+ * `epub`/`audio` en sont volontairement absents — « PDF d'abord » (décision
+ * produit, 2026-09, voir `accepted-format-types.ts`) — même si les valeurs
+ * restent dans le schéma Prisma pour d'éventuelles lignes déjà en base.
  */
 const WORK_FILE_MIME_BY_FORMAT: Partial<Record<FormatType, SniffedMimeType[]>> =
   {
     [FormatType.pdf]: ['application/pdf'],
-    [FormatType.audio]: ['audio/mpeg', 'audio/mp4'],
   };
 
 export const EXTENSION_BY_MIME: Record<SniffedMimeType, string> = {

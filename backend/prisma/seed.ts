@@ -540,13 +540,6 @@ async function seedCatalogWithContext(
           deliveryType: DeliveryType.physical_delivery,
           stockQuantity: 25,
         },
-        {
-          formatType: FormatType.audio,
-          label: 'Livre audio',
-          price: '8000.00',
-          deliveryType: DeliveryType.digital_download,
-          unlimitedStock: true,
-        },
       ],
     },
     {
@@ -598,13 +591,6 @@ async function seedCatalogWithContext(
           formatType: FormatType.pdf,
           label: 'Livre numérique',
           price: '4000.00',
-          deliveryType: DeliveryType.digital_download,
-          unlimitedStock: true,
-        },
-        {
-          formatType: FormatType.audio,
-          label: 'Livre audio',
-          price: '7500.00',
           deliveryType: DeliveryType.digital_download,
           unlimitedStock: true,
         },
