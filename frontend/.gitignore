@@ -42,3 +42,9 @@ next-env.d.ts
 
 # Le modèle de configuration doit rester versionné.
 !.env.example
+
+# Valeurs par défaut de développement (non sensibles, communes à toute
+# machine locale) : Next.js les charge nativement pour `next dev`, avant
+# `.env.local` (toujours prioritaire, pour une éventuelle surcharge
+# personnelle) — voir frontend/.env.development.
+!.env.development
