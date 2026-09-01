@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -20,6 +21,7 @@ import {
   WorkStatus,
   WorkVisibility,
 } from '../../../../generated/prisma/enums';
+import { ACCEPTED_FORMAT_TYPES } from '../../accepted-format-types';
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SLUG_MESSAGE =
@@ -208,7 +210,10 @@ export class UpdateWorkDto {
 }
 
 export class CreateWorkFormatDto {
-  @IsEnum(FormatType)
+  @IsIn(ACCEPTED_FORMAT_TYPES, {
+    message:
+      'Seuls les formats PDF, audio et papier sont disponibles pour le moment.',
+  })
   formatType!: FormatType;
 
   @IsOptional()

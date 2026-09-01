@@ -54,6 +54,37 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------
+  # ClamAV — scan antivirus de tout fichier téléversé par un utilisateur
+  # (couverture, photo d'auteur, ouvrage numérique) avant son stockage, voir
+  # `VirusScanService`. Jamais joint à `dokploy-network` : aucune raison que
+  # ce service soit atteignable ailleurs que par `backend`, sur le réseau
+  # interne. Premier démarrage lent (téléchargement de la base de signatures
+  # dans le volume vide, plusieurs minutes) : `depends_on: condition:
+  # service_healthy` sur `backend` attend ce moment sans limite de temps
+  # propre, seul `start_period` évite un faux « unhealthy » prématuré.
+  # ---------------------------------------------------------------------------
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    # Plafond volontaire (audit : « pas de faillite du SaaS à cause d'un
+    # fichier téléversé ») — la base de signatures et le moteur tiennent
+    # confortablement sous 2 Go ; un scan pathologique ne doit jamais pouvoir
+    # affamer le reste de la pile.
+    mem_limit: 2g
+    volumes:
+      # Persiste la base de signatures entre redéploiements — sans ce volume,
+      # chaque déploiement retélécharge plusieurs centaines de Mo au démarrage.
+      - clamav-data:/var/lib/clamav
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
   # Migrations Prisma — service éphémère, joué avant chaque démarrage de l'API
   # ---------------------------------------------------------------------------
   migrate:
@@ -127,6 +158,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
     environment:
       # Doit valoir « production » ici ET sur le frontend : les deux services
       # calculent le nom du cookie de session depuis leur propre NODE_ENV
@@ -151,12 +184,55 @@ services:
       APP_DEBUG: "false"
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET est obligatoire (32 caracteres minimum)}
       SETUP_TOKEN: ${SETUP_TOKEN:?SETUP_TOKEN est obligatoire (32 caracteres minimum)}
+      # --- Plateforme de paiement --------------------------------------------
+      # sandbox | production, indépendant de NODE_ENV : rester en sandbox tant
+      # que les identifiants réels d'un prestataire ne sont pas fournis
+      # ci-dessous. Détail de chaque variable : backend/.env.example.
+      PAYMENT_ENV: ${PAYMENT_ENV:-sandbox}
+      PAYIN_PROVIDER: ${PAYIN_PROVIDER:-fake}
+      PAYOUT_PROVIDER: ${PAYOUT_PROVIDER:-fake}
+      # Toutes optionnelles : un prestataire sans identifiants reste
+      # simplement indisponible (503), le démarrage n'est jamais bloqué.
+      PAWAPAY_API_URL: ${PAWAPAY_API_URL:-}
+      PAWAPAY_API_TOKEN: ${PAWAPAY_API_TOKEN:-}
+      CINETPAY_API_URL: ${CINETPAY_API_URL:-}
+      CINETPAY_API_KEY: ${CINETPAY_API_KEY:-}
+      CINETPAY_SITE_ID: ${CINETPAY_SITE_ID:-}
+      CINETPAY_SECRET_KEY: ${CINETPAY_SECRET_KEY:-}
+      FEEXPAY_API_URL: ${FEEXPAY_API_URL:-}
+      FEEXPAY_API_KEY: ${FEEXPAY_API_KEY:-}
+      FEEXPAY_SHOP_ID: ${FEEXPAY_SHOP_ID:-}
+      # URL publique de CETTE API (BACKEND_DOMAIN, jamais INTERNAL_API_URL) :
+      # les notifications de paiement (CinetPay, FeexPay) doivent l'atteindre
+      # depuis Internet, pas depuis le réseau interne — contrairement à
+      # NEXT_PUBLIC_API_URL côté frontend, qui vise volontairement le réseau
+      # interne. Calculée par défaut depuis BACKEND_DOMAIN, déjà obligatoire
+      # ci-dessus ; à surcharger seulement si l'API est exposée ailleurs.
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://${BACKEND_DOMAIN}}
+      # Constantes, pas des variables Dokploy : `clamav` est le nom du service
+      # ci-dessus, dans ce même réseau `internal` — aucune raison de les
+      # rendre configurables ailleurs que dans ce fichier.
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      # --- Stockage des fichiers ---------------------------------------------
+      # local (par défaut, le volume `backend-storage` ci-dessous) | r2. Guide
+      # complet côté Cloudflare : docs/STORAGE_R2_SETUP.md. Toutes les valeurs
+      # R2 sont obligatoires si STORAGE_DRIVER=r2 — le démarrage du conteneur
+      # refuse alors sans elles (validateEnvironment()), jamais un stockage à
+      # moitié configuré qui échoue au premier téléversement.
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
     volumes:
-      # `LocalStorageDriver` écrit sous `process.cwd()/storage`. Sans ce volume,
-      # toute couverture et tout fichier téléversé disparaîtrait au redéploiement.
-      # `storage/private` contient les ouvrages eux-mêmes : il n'est servi par
-      # aucune route statique, seul `LibraryController` y donne accès après
-      # vérification du droit de lecture.
+      # `LocalStorageDriver` écrit sous `process.cwd()/storage` — pertinent
+      # uniquement si STORAGE_DRIVER=local (par défaut) ; sans objet une fois
+      # R2 actif, mais inoffensif à laisser monté dans tous les cas. Sans ce
+      # volume, toute couverture et tout fichier téléversé disparaîtrait au
+      # redéploiement. `storage/private` contient les ouvrages eux-mêmes : il
+      # n'est servi par aucune route statique, seul `LibraryController` y
+      # donne accès après vérification du droit de lecture.
       - backend-storage:/app/storage
     networks:
       - internal
@@ -232,3 +308,4 @@ networks:
 volumes:
   database-data:
   backend-storage:
+  clamav-data:

@@ -34,10 +34,10 @@ function reasonOf(parsed: PayoutWebhookParseResult): string {
 describe('FakePayoutDriver', () => {
   const fake = driver();
 
-  it('accepte une notification correctement signée', () => {
+  it('accepte une notification correctement signée', async () => {
     const rawBody = body();
 
-    const parsed = fake.parseWebhook(rawBody, fake.signWebhook(rawBody));
+    const parsed = await fake.parseWebhook(rawBody, fake.signWebhook(rawBody));
 
     expect(parsed).toMatchObject({
       signatureValid: true,
@@ -48,71 +48,74 @@ describe('FakePayoutDriver', () => {
     });
   });
 
-  it('refuse une notification sans signature', () => {
+  it('refuse une notification sans signature', async () => {
     const rawBody = body();
 
     expect(
-      fake.parseWebhook(rawBody, {
+      await fake.parseWebhook(rawBody, {
         [PAYOUT_TIMESTAMP_HEADER]: String(Math.floor(Date.now() / 1000)),
       }),
     ).toMatchObject({ signatureValid: false });
   });
 
-  it('refuse une signature falsifiée', () => {
+  it('refuse une signature falsifiée', async () => {
     const rawBody = body();
     const headers = fake.signWebhook(rawBody);
 
     expect(
-      fake.parseWebhook(rawBody, {
+      await fake.parseWebhook(rawBody, {
         ...headers,
         [PAYOUT_SIGNATURE_HEADER]: 'f'.repeat(64),
       }),
     ).toMatchObject({ signatureValid: false });
   });
 
-  it('refuse un corps modifié après signature', () => {
+  it('refuse un corps modifié après signature', async () => {
     const signed = body();
     const headers = fake.signWebhook(signed);
     const tampered = body({ amountMinor: 1 });
 
-    expect(fake.parseWebhook(tampered, headers)).toMatchObject({
+    expect(await fake.parseWebhook(tampered, headers)).toMatchObject({
       signatureValid: false,
     });
   });
 
-  it('refuse un rejeu hors de la fenêtre de tolérance', () => {
+  it('refuse un rejeu hors de la fenêtre de tolérance', async () => {
     const rawBody = body();
     const old = Math.floor(Date.now() / 1000) - 600;
 
-    const parsed = fake.parseWebhook(rawBody, fake.signWebhook(rawBody, old));
+    const parsed = await fake.parseWebhook(
+      rawBody,
+      fake.signWebhook(rawBody, old),
+    );
 
     expect(parsed.signatureValid).toBe(false);
     expect(reasonOf(parsed)).toContain('rejeu');
   });
 
-  it('refuse un corps illisible sans lever d’exception', () => {
+  it('refuse un corps illisible sans lever d’exception', async () => {
     const rawBody = Buffer.from('ceci n’est pas du JSON', 'utf8');
 
-    expect(fake.parseWebhook(rawBody, fake.signWebhook(rawBody))).toMatchObject(
-      { signatureValid: false },
-    );
+    expect(
+      await fake.parseWebhook(rawBody, fake.signWebhook(rawBody)),
+    ).toMatchObject({ signatureValid: false });
   });
 
-  it('refuse une notification signée mais incomplète', () => {
+  it('refuse une notification signée mais incomplète', async () => {
     const rawBody = body({ transactionId: undefined });
 
-    const parsed = fake.parseWebhook(rawBody, fake.signWebhook(rawBody));
+    const parsed = await fake.parseWebhook(rawBody, fake.signWebhook(rawBody));
 
     expect(parsed.signatureValid).toBe(false);
     expect(reasonOf(parsed)).toContain('incomplète');
   });
 
-  it('sait simuler un échec et un état encore en attente', () => {
+  it('sait simuler un échec et un état encore en attente', async () => {
     for (const status of ['failed', 'pending']) {
       const rawBody = body({ status });
 
       expect(
-        fake.parseWebhook(rawBody, fake.signWebhook(rawBody)),
+        await fake.parseWebhook(rawBody, fake.signWebhook(rawBody)),
       ).toMatchObject({
         signatureValid: true,
         outcome: status,

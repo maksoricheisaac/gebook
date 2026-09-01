@@ -9,7 +9,6 @@ import {
   Headphones,
   Lock,
   ShoppingCart,
-  Tablet,
   Truck,
   type LucideIcon,
 } from "lucide-react";
@@ -28,7 +27,6 @@ const initialPurchaseState: PurchaseFormState = {};
 
 const FORMAT_ICONS: Record<string, LucideIcon> = {
   pdf: FileText,
-  epub: Tablet,
   audio: Headphones,
   paper: BookOpen,
 };

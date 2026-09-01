@@ -31,6 +31,18 @@ export enum PaymentEnvironment {
 }
 
 /**
+ * Pilote de stockage des fichiers (couvertures, photos, ouvrages) — `local`
+ * par défaut (disque, via le volume Docker `backend-storage`), `r2` une fois
+ * les identifiants Cloudflare R2 ci-dessous renseignés. Voir `storage-driver.ts` :
+ * même principe que `PaymentDriver`, le reste de l'application ne sait jamais
+ * lequel est actif.
+ */
+export enum StorageDriverType {
+  local = 'local',
+  r2 = 'r2',
+}
+
+/**
  * Secret de développement, volontairement reconnaissable : il ne protège rien et
  * ne doit jamais servir ailleurs qu'en local ou en intégration continue.
  */
@@ -196,6 +208,65 @@ export class Environment {
   @IsOptional()
   @IsString()
   API_PUBLIC_URL?: string;
+
+  // ---------------------------------------------------------------------
+  // Scan antivirus (ClamAV) — tout fichier téléversé par un utilisateur
+  // (couverture, photo d'auteur, ouvrage numérique) passe par `clamd` avant
+  // d'être stocké. Optionnelles comme le reste de cette section : sans elles,
+  // ce n'est pas le démarrage qui échoue, ce sont les téléversements qui
+  // deviennent indisponibles (503) — jamais un scan silencieusement ignoré.
+  // ---------------------------------------------------------------------
+
+  @IsOptional()
+  @IsString()
+  CLAMAV_HOST?: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined ? undefined : Number(value),
+  )
+  @IsOptional()
+  @IsInt({ message: 'CLAMAV_PORT doit être un nombre entier.' })
+  @Min(1, { message: 'CLAMAV_PORT doit être compris entre 1 et 65535.' })
+  @Max(65535, { message: 'CLAMAV_PORT doit être compris entre 1 et 65535.' })
+  CLAMAV_PORT?: number;
+
+  // ---------------------------------------------------------------------
+  // Stockage des fichiers — voir StorageDriverType ci-dessus. Les identifiants
+  // R2 restent optionnels au niveau de la validation : c'est `STORAGE_DRIVER`
+  // qui décide s'ils sont réellement nécessaires (voir `files.module.ts`,
+  // qui refuse de démarrer si `STORAGE_DRIVER=r2` sans eux — un mauvais
+  // réglage de stockage doit être détecté au démarrage, pas au premier
+  // téléversement).
+  // ---------------------------------------------------------------------
+
+  @IsEnum(StorageDriverType, {
+    message: 'STORAGE_DRIVER doit valoir « local » ou « r2 ».',
+  })
+  STORAGE_DRIVER: StorageDriverType = StorageDriverType.local;
+
+  @IsOptional()
+  @IsString()
+  R2_ACCOUNT_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  R2_ACCESS_KEY_ID?: string;
+
+  /** Jamais journalisée, jamais renvoyée par une route Superadmin. */
+  @IsOptional()
+  @IsString()
+  R2_SECRET_ACCESS_KEY?: string;
+
+  /**
+   * Un seul bucket, avec des préfixes internes `public/`/`private/` — voir
+   * `r2-storage.driver.ts`. Un seul bucket à créer côté Cloudflare, jamais
+   * besoin d'y activer un accès public : `PublicFilesController` reste
+   * l'unique porte de sortie des fichiers publics, exactement comme sur
+   * disque local.
+   */
+  @IsOptional()
+  @IsString()
+  R2_BUCKET?: string;
 }
 
 /**
@@ -246,6 +317,24 @@ export function validateEnvironment(raw: Record<string, unknown>): Environment {
       'Configuration refusée : SETUP_TOKEN a gardé sa valeur de développement. ' +
         'Quiconque connaît le dépôt pourrait alors créer le compte superadmin de la plateforme.',
     );
+  }
+
+  if (environment.STORAGE_DRIVER === StorageDriverType.r2) {
+    const missing = (
+      [
+        'R2_ACCOUNT_ID',
+        'R2_ACCESS_KEY_ID',
+        'R2_SECRET_ACCESS_KEY',
+        'R2_BUCKET',
+      ] as const
+    ).filter((key) => !environment[key]);
+
+    if (missing.length > 0) {
+      throw new Error(
+        `Configuration refusée : STORAGE_DRIVER=r2 exige ${missing.join(', ')}. ` +
+          'Un mauvais réglage de stockage doit être détecté au démarrage, pas au premier téléversement.',
+      );
+    }
   }
 
   return environment;

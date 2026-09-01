@@ -9,6 +9,7 @@ import { CinetPayPaymentDriver } from './drivers/cinetpay-payment.driver';
 import { FakePaymentDriver } from './drivers/fake-payment.driver';
 import { FakePayoutDriver } from './drivers/fake-payout.driver';
 import { FeexPayPaymentDriver } from './drivers/feexpay-payment.driver';
+import { FeexPayPayoutDriver } from './drivers/feexpay-payout.driver';
 import { PAYMENT_DRIVER } from './payment-driver';
 import { PaymentDriverRegistry } from './payment-driver.registry';
 import { PAYOUT_DRIVER } from './payout-driver';
@@ -42,6 +43,7 @@ import { WebhooksController } from './webhooks.controller';
     FakePayoutDriver,
     CinetPayPaymentDriver,
     FeexPayPaymentDriver,
+    FeexPayPayoutDriver,
     {
       provide: PAYMENT_DRIVER,
       useFactory: (
@@ -53,8 +55,11 @@ import { WebhooksController } from './webhooks.controller';
     },
     {
       provide: PAYOUT_DRIVER,
-      useFactory: (fake: FakePayoutDriver) => [fake],
-      inject: [FakePayoutDriver],
+      useFactory: (fake: FakePayoutDriver, feexpay: FeexPayPayoutDriver) => [
+        fake,
+        feexpay,
+      ],
+      inject: [FakePayoutDriver, FeexPayPayoutDriver],
     },
   ],
   exports: [PayoutDriverRegistry],

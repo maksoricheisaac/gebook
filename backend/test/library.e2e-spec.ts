@@ -8,8 +8,10 @@ import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
 import { FakePaymentDriver } from './../src/modules/payments/drivers/fake-payment.driver';
+import { VirusScanService } from './../src/modules/files/virus-scan.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import { adminPrismaProxy } from './support/admin-db';
+import { fakeVirusScanner } from './support/fake-virus-scanner';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@phase9.e2e.test';
@@ -114,7 +116,10 @@ describe('Bibliothèque (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(VirusScanService)
+      .useValue(fakeVirusScanner())
+      .compile();
 
     app = moduleFixture.createNestApplication({ rawBody: true });
     app.use(cookieParser());

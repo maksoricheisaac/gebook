@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -10,6 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { ContentLocale, FormatType } from '../../../generated/prisma/enums';
+import { ACCEPTED_FORMAT_TYPES } from '../accepted-format-types';
 
 /**
  * Paramètres de recherche du catalogue public.
@@ -45,9 +47,8 @@ export class ListWorksQuery {
   tenant?: string;
 
   @IsOptional()
-  @IsEnum(FormatType, {
-    message:
-      'Le format demandé doit être « pdf », « paper », « epub » ou « audio ».',
+  @IsIn(ACCEPTED_FORMAT_TYPES, {
+    message: 'Le format demandé doit être « pdf », « paper » ou « audio ».',
   })
   format?: FormatType;
 

@@ -834,7 +834,7 @@ transmis tels quels si l'appelant les fournit.
 
 ### Commit
 
-À suivre — voir le commit qui accompagne cette entrée.
+`feat(payments): Phase 5 - pilote pay-in FeexPay` (`0cca518`)
 
 ### Push
 
@@ -845,3 +845,209 @@ Effectué sur `feature/payment-platform`.
 **IMPLÉMENTÉ — NON VALIDÉ** (identifiants sandbox non fournis ; logique
 interne validée par tests unitaires ; couverture des canaux volontairement
 limitée à ce qui est confirmé).
+
+---
+
+## Phase 6 — Payout FeexPay
+
+### Objectif
+
+Pilote payout FeexPay (reversement Mobile Money), à partir de la
+documentation officielle payout/statut fournie par l'utilisateur dans la
+même série que la Phase 5. Confirmé par l'utilisateur (« Entame déjà »)
+juste après la clôture de cette dernière.
+
+### Analyse préalable
+
+**Constat avant d'écrire quoi que ce soit** : aucune `PayoutsService` ni
+route de webhook payout n'existe encore dans le code (recherché
+explicitement — seuls l'interface `PayoutDriver`, le registre
+`PayoutDriverRegistry` et `FakePayoutDriver` existaient, posés en Phase 1).
+Construire la couche métier complète (déclenchement d'un reversement,
+approbation, route de webhook) est un chantier distinct et plus large que
+« le pilote payout » demandé — hors périmètre de cette phase, qui se limite
+donc au pilote lui-même, exactement comme pour CinetPay/FeexPay pay-in.
+
+**Deux écarts supplémentaires par rapport au pilote pay-in, actés dans le
+code** :
+
+1. **`PayoutDriver.parseWebhook()` devient asynchrone**, exactement pour la
+   raison qui avait rendu `PaymentDriver.parseWebhook()` asynchrone en
+   Phase 4 — mais ici la documentation FeexPay le dit **explicitement** :
+   « Status verification is mandatory for payouts. After initiating a
+   payout (PENDING status), you must call this endpoint to confirm the
+   final status ». Seul appelant existant (`FakePayoutDriver.parseWebhook()`,
+   aucune `PayoutsService` en production) mis à jour en conséquence, avec
+   son fichier de tests.
+2. **`PayoutInitRequest` gagne un champ optionnel `channel`**, même
+   justification que côté pay-in (l'endpoint payout FeexPay est lui aussi
+   scindé par opérateur/pays, `/api/payouts/public/{channel}`) — transmis
+   tel quel, jamais de table de canaux fabriquée.
+
+**Différence de traitement de `PENDING`, documentée dans le code et les
+tests** : contrairement au pay-in (`PaymentOutcome` n'a que
+successful/failed/cancelled), `PayoutOutcome` porte explicitement `pending`
+— un reversement encore en cours est donc accepté par `parseWebhook()` avec
+`outcome: 'pending'`, pas rejeté comme une notification non résolue. Cela
+reflète honnêtement le vocabulaire de l'interface plutôt que de forcer une
+issue binaire sur une opération qui reste fréquemment asynchrone.
+
+### Implémentation
+
+- `payout-driver.ts` : `parseWebhook()` → `Promise<PayoutWebhookParseResult>` ;
+  `PayoutInitRequest` gagne `channel?: string`.
+- `drivers/fake-payout.driver.ts` + son fichier de tests : mis à jour en
+  `async`/`await`, comportement inchangé.
+- `drivers/feexpay-payout.driver.ts` (nouveau) : `initiate()` (exige un
+  canal, sinon refuse explicitement), `verify()` (renvoie honnêtement
+  `pending` plutôt que de fabriquer une issue), `parseWebhook()` (même
+  défense que le pilote pay-in : le corps n'est jamais authentifié, seul le
+  rappel vers `GET /payouts/status/public/:reference` fait foi),
+  `testConnection()` (même sonde solde que le pilote pay-in, réutilisable
+  puisque partagée entre payin/payout chez FeexPay).
+- `payments.module.ts` : `FeexPayPayoutDriver` enregistré dans
+  `PAYOUT_DRIVER`, aux côtés de `FakePayoutDriver`.
+- Aucun changement de seed nécessaire : `feexpay.supportsPayout` était déjà
+  `true` depuis la Phase 1, et `AdminPaymentProvidersService` lit déjà
+  dynamiquement `PayoutDriverRegistry.has(code)` — la Superadmin verra donc
+  automatiquement ce pilote comme installé, sans changement de ce fichier.
+
+### Tests
+
+```text
+backend   pnpm exec tsc --noEmit    → OK
+backend   pnpm lint                 → OK
+backend   pnpm test (unitaires)     → 16/16 suites, 130/130 tests (+1 suite, +11 tests)
+backend   pnpm test:e2e (complète)  → 16/16 suites, 221/221 tests (inchangé : aucune route payout n'existe encore)
+```
+
+Tests unitaires du nouveau pilote (`feexpay-payout.driver.spec.ts`, `fetch`
+simulé) : refus sans canal, montant envoyé en unités majeures vers le bon
+canal, `motif` correctement construit, réponse sans référence rejetée,
+statuts SUCCESSFUL traduit en succès, **PENDING traduit honnêtement en
+`pending` plutôt que fabriqué**, notification illisible refusée,
+notification dont le corps prétend un statut différent de la vérification
+authentifiée — le corps est ignoré, notification acceptée avec `pending`
+quand la vérification confirme un état encore en cours, notification
+refusée seulement si le statut vérifié est totalement inconnu,
+`testConnection()` distingue succès et échec sans fuiter de détail interne.
+
+**Vérification sandbox réelle** : toujours impossible — mêmes identifiants
+manquants que la Phase 5 (`FEEXPAY_API_KEY`, `FEEXPAY_SHOP_ID`), le pilote
+payout réutilisant la même authentification que le pilote pay-in.
+
+### Résultats
+
+Code du pilote (toutes méthodes) : IMPLÉMENTÉ — NON VALIDÉ. Logique interne :
+VALIDÉE par les tests unitaires. Connectivité réelle : NON TESTÉ (mêmes
+identifiants manquants qu'en Phase 5). **Couche métier payout** (service de
+déclenchement, route de webhook, flux d'approbation) : NON FAIT — hors
+périmètre explicite de cette phase, qui livrait le pilote seul ; à
+construire dans une phase dédiée (le brief prévoyait initialement les
+Phases 10-11 pour ce chantier).
+
+### Commit
+
+`feat(payments): Phase 6 - pilote payout FeexPay` (`9c6f663`)
+
+### Push
+
+Effectué sur `feature/payment-platform`.
+
+### État
+
+**IMPLÉMENTÉ — NON VALIDÉ** (identifiants sandbox non fournis ; logique
+interne validée par tests unitaires ; couche métier payout volontairement
+hors périmètre de cette phase).
+
+---
+
+## Note d'infrastructure — Docker/Dokploy laissé en retard sur les Phases 4-6
+
+Demande explicite de l'utilisateur : « Faudrait bien différencier les
+environnements, regardes les dockerfiles, dockercompose, env et différencie :
+prod; dev ». Audit de `backend/Dockerfile`, `frontend/Dockerfile`,
+`docker-compose.yml`, `docker-compose.local.yml`, `.env.docker.example`,
+`backend/.env.example`, `frontend/.env.example`/`.env.local`.
+
+**Constat** : le socle dev/prod (préfixe `__Host-` du cookie selon
+`NODE_ENV`, refus du démarrage en production avec les secrets de
+développement, `.env` jamais versionné, `docker-compose.local.yml`
+explicitement documenté comme non destiné au développement réel) était déjà
+solide et n'a pas eu besoin de changer. **Le vrai trou** : les variables de
+la plateforme de paiement ajoutées aux Phases 4-6
+(`PAYMENT_ENV`/`PAYIN_PROVIDER`/`PAYOUT_PROVIDER`, les identifiants
+PawaPay/CinetPay/FeexPay, `API_PUBLIC_URL`) n'avaient jamais été répercutées
+dans `docker-compose.yml` ni `.env.docker.example` — un déploiement Dokploy
+n'aurait donc jamais pu activer un prestataire réel, quelles que soient les
+valeurs saisies dans son onglet Environment, puisque le conteneur `backend`
+ne les recevait tout simplement pas.
+
+**Corrigé** :
+- `docker-compose.yml` : les 12 variables ajoutées au service `backend`,
+  toutes optionnelles comme dans `environment.ts` (un prestataire sans
+  identifiants reste indisponible, jamais un échec de démarrage).
+- `API_PUBLIC_URL` calculée par défaut depuis `BACKEND_DOMAIN` (déjà
+  obligatoire dans ce fichier), via l'interpolation imbriquée
+  `${API_PUBLIC_URL:-https://${BACKEND_DOMAIN}}` — même patron déjà utilisé
+  par `DATABASE_URL` dans ce fichier, validé en relisant le rendu réel
+  (`docker compose config`) plutôt que supposé. Sans ce défaut, quiconque
+  configurerait CinetPay en production sans penser à `API_PUBLIC_URL`
+  aurait obtenu un webhook silencieusement indisponible (503) au lieu d'une
+  configuration correcte par défaut.
+- `.env.docker.example` : nouvelle section « Plateforme de paiement »,
+  miroir de `backend/.env.example`, documentant chaque variable pour
+  l'opérateur Dokploy.
+
+**Observation, non corrigée (comportement volontaire, pas un bug)** :
+`PAYMENT_ENV` est validé (`sandbox`/`production`) mais n'est lu par aucun
+pilote — ni CinetPay ni FeexPay n'exposent d'URL sandbox distincte de leur
+URL de production ; leur bascule sandbox/live se fait entièrement côté
+prestataire, via quelles identifiants (clé de test vs clé réelle) sont
+utilisés, pas via une URL différente. `PAYMENT_ENV` reste donc un signal de
+politique/documentation (« rester prudent tant que rien n'est prêt »)
+plutôt qu'un interrupteur technique — signalé ici pour que ça ne soit pas
+pris pour un oubli si quelqu'un cherche où cette variable est consommée.
+
+### Vérification
+
+```text
+docker compose -f docker-compose.yml config                      → rendu correct (variables interpolées vérifiées une à une)
+docker compose -f docker-compose.yml -f docker-compose.local.yml config --quiet → OK, sans erreur
+```
+
+Vérifié explicitement : `API_PUBLIC_URL` non fournie se résout bien en
+`https://<BACKEND_DOMAIN>` ; une valeur fournie explicitement prend le pas
+sur ce défaut (`docker compose config` avec et sans `API_PUBLIC_URL` en
+entrée, sortie comparée).
+
+### Commit
+
+`fix(infra): wire payment-platform env vars into the Docker/Dokploy path` (`e8c76ee`)
+
+### État
+
+**VALIDÉ** (rendu réel du fichier Compose vérifié, pas seulement la syntaxe
+YAML) — aucun changement de code applicatif, seulement l'infrastructure de
+déploiement.
+
+---
+
+## Mission mise en pause — 2026-09-01
+
+**Décision de l'utilisateur** (verbatim) : *« Mettons 2s les paiements de
+côté. [...] Pensons d'abord stockage et processus de validation, [...]
+qu'en est-il pour le stockage des livres et la validation ainsi que la
+publication »*.
+
+Phases 1-6 closes (architecture providers, Superadmin paiements, commissions
++ conditions de distribution, pay-in CinetPay, pay-in FeexPay, payout
+FeexPay) + le correctif d'infrastructure Docker/env ci-dessus. Toutes
+poussées sur `feature/payment-platform`, non encore fusionnées dans `main`
+(dernier merge : `6391316`, fin de Phase 3).
+
+**Reprise prévue** à partir de la Phase 7 (pilote pay-in PawaPay), une fois
+le chantier stockage/validation/publication des livres traité. Ce dernier
+fait l'objet d'un audit séparé, hors du périmètre de ce journal (dédié à la
+plateforme de paiement) — ses conclusions vivront ailleurs si elles donnent
+lieu à un travail de développement.

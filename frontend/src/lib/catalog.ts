@@ -125,10 +125,14 @@ export function fetchCategories(): Promise<Category[]> {
   return apiFetch<Category[]>("/categories", { revalidate: CATALOG_REVALIDATE });
 }
 
-/** Les quatre formats d'achat, dans l'ordre d'affichage des filtres. */
+/**
+ * Les formats d'achat, dans l'ordre d'affichage des filtres. EPUB n'y figure
+ * plus volontairement — « PDF d'abord » (décision produit, 2026-09) — voir
+ * `accepted-format-types.ts` côté backend, source de vérité de cette même
+ * restriction sur l'API.
+ */
 export const FORMAT_OPTIONS = [
   { value: "pdf", label: "PDF" },
-  { value: "epub", label: "EPUB" },
   { value: "audio", label: "Audio" },
   { value: "paper", label: "Papier" },
 ] as const;

@@ -35,6 +35,10 @@ export class LocalStorageDriver implements StorageDriver {
     return readFile(join(PRIVATE_ROOT, storagePath));
   }
 
+  async readPublic(storagePath: string): Promise<Buffer> {
+    return readFile(join(PUBLIC_ROOT, storagePath));
+  }
+
   private async store(
     root: string,
     directory: string,

@@ -52,7 +52,6 @@ export const metadata: Metadata = {
     "librairie numérique",
     "auto-édition",
     "livre audio",
-    "EPUB",
   ],
   openGraph: {
     type: "website",

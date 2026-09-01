@@ -574,13 +574,6 @@ async function seedCatalogWithContext(
           deliveryType: DeliveryType.digital_download,
           unlimitedStock: true,
         },
-        {
-          formatType: FormatType.epub,
-          label: 'Lecture adaptative',
-          price: '4500.00',
-          deliveryType: DeliveryType.digital_download,
-          unlimitedStock: true,
-        },
       ],
     },
     {
@@ -676,13 +669,6 @@ async function seedCatalogWithContext(
           unlimitedStock: true,
         },
         {
-          formatType: FormatType.epub,
-          label: 'Lecture adaptative',
-          price: '5500.00',
-          deliveryType: DeliveryType.digital_download,
-          unlimitedStock: true,
-        },
-        {
           formatType: FormatType.paper,
           label: 'Livre imprimé',
           price: '14000.00',
@@ -712,13 +698,6 @@ async function seedCatalogWithContext(
           formatType: FormatType.pdf,
           label: 'Livre numérique',
           price: '4500.00',
-          deliveryType: DeliveryType.digital_download,
-          unlimitedStock: true,
-        },
-        {
-          formatType: FormatType.epub,
-          label: 'Lecture adaptative',
-          price: '4000.00',
           deliveryType: DeliveryType.digital_download,
           unlimitedStock: true,
         },

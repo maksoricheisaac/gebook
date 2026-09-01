@@ -120,7 +120,7 @@ export class TenantSettingsService {
     assertCanManageSettings(tenant);
     const tenantId = requireTenantId(tenant);
 
-    const mime = this.uploadValidator.validateImage(file);
+    const mime = await this.uploadValidator.validateImage(file);
     const stored = await this.storage.storePublic(
       file.buffer,
       directory,

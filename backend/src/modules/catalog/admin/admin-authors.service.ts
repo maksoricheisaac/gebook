@@ -357,7 +357,7 @@ export class AdminAuthorsService {
   ): Promise<AuthorWithTranslations> {
     await this.findOne(id, admin, tenant);
 
-    const mime = this.uploadValidator.validateImage(file);
+    const mime = await this.uploadValidator.validateImage(file);
     const stored = await this.storage.storePublic(
       file.buffer,
       'authors',
