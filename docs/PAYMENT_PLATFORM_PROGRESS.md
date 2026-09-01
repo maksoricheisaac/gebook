@@ -1023,10 +1023,31 @@ entrée, sortie comparée).
 
 ### Commit
 
-À suivre — voir le commit qui accompagne cette entrée.
+`fix(infra): wire payment-platform env vars into the Docker/Dokploy path` (`e8c76ee`)
 
 ### État
 
 **VALIDÉ** (rendu réel du fichier Compose vérifié, pas seulement la syntaxe
 YAML) — aucun changement de code applicatif, seulement l'infrastructure de
 déploiement.
+
+---
+
+## Mission mise en pause — 2026-09-01
+
+**Décision de l'utilisateur** (verbatim) : *« Mettons 2s les paiements de
+côté. [...] Pensons d'abord stockage et processus de validation, [...]
+qu'en est-il pour le stockage des livres et la validation ainsi que la
+publication »*.
+
+Phases 1-6 closes (architecture providers, Superadmin paiements, commissions
++ conditions de distribution, pay-in CinetPay, pay-in FeexPay, payout
+FeexPay) + le correctif d'infrastructure Docker/env ci-dessus. Toutes
+poussées sur `feature/payment-platform`, non encore fusionnées dans `main`
+(dernier merge : `6391316`, fin de Phase 3).
+
+**Reprise prévue** à partir de la Phase 7 (pilote pay-in PawaPay), une fois
+le chantier stockage/validation/publication des livres traité. Ce dernier
+fait l'objet d'un audit séparé, hors du périmètre de ce journal (dédié à la
+plateforme de paiement) — ses conclusions vivront ailleurs si elles donnent
+lieu à un travail de développement.
