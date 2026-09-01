@@ -65,7 +65,6 @@ export function formatNumber(value: number): string {
  */
 export const FORMAT_LABELS: Record<string, string> = {
   pdf: "Livre numérique",
-  epub: "Lecture adaptative",
   audio: "Livre audio",
   paper: "Livre imprimé",
 };

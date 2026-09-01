@@ -21,11 +21,15 @@ const IMAGE_MIME_TYPES: SniffedMimeType[] = [
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_WORK_FILE_MB = 100;
 
-/** Formats sans livraison numérique : aucun fichier n'a de sens à leur associer. */
+/**
+ * Formats sans livraison numérique n'ont aucun fichier à leur associer ;
+ * `epub` en est volontairement absent — « PDF d'abord » (décision produit,
+ * 2026-09, voir `accepted-format-types.ts`) — même si la valeur reste dans
+ * le schéma Prisma pour d'éventuelles lignes déjà en base.
+ */
 const WORK_FILE_MIME_BY_FORMAT: Partial<Record<FormatType, SniffedMimeType[]>> =
   {
     [FormatType.pdf]: ['application/pdf'],
-    [FormatType.epub]: ['application/epub+zip'],
     [FormatType.audio]: ['audio/mpeg', 'audio/mp4'],
   };
 

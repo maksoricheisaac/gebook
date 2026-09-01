@@ -4,7 +4,6 @@ import {
   BookOpen,
   Feather,
   Headphones,
-  Library,
   Search,
   Truck,
   type LucideIcon,
@@ -144,7 +143,7 @@ export default async function HomePage() {
         <Reveal
           as="ul"
           stagger={0.06}
-          className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4"
+          className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3"
         >
           {FORMATS.map((format) => (
             <FormatNote key={format.title} {...format} />
@@ -191,7 +190,9 @@ export default async function HomePage() {
           <div className="grid gap-8 sm:grid-cols-[auto_1fr] sm:items-center">
             <Feather aria-hidden className="text-primary size-9 shrink-0" />
             <div>
-              <p className="type-label rule-accent text-muted-foreground">Vous publiez ?</p>
+              <p className="type-label rule-accent text-muted-foreground">
+                Vous publiez ?
+              </p>
               <h2 className="type-h2 text-secondary mt-1">
                 Ouvrez votre espace auteur ou maison d’édition
               </h2>
@@ -308,7 +309,7 @@ function Hero({
           <p className="type-subtitle mt-6 max-w-xl">
             GeBook réunit les éditeurs, collectifs et auteurs indépendants d’Afrique sur
             une seule librairie numérique. Romans, essais et manuels congolais et
-            africains — en PDF, en EPUB, en audio ou en papier.
+            africains — en PDF, en audio ou en papier.
           </p>
 
           <div className="mt-9 flex flex-wrap gap-3">
@@ -418,12 +419,6 @@ const FORMATS: { icon: LucideIcon; title: string; description: string }[] = [
     title: "PDF",
     description:
       "La mise en page d’origine, fidèle au livre imprimé. À lire sur ordinateur ou à imprimer.",
-  },
-  {
-    icon: Library,
-    title: "EPUB",
-    description:
-      "Le texte s’adapte à votre écran et à la taille de police que vous choisissez.",
   },
   {
     icon: Headphones,
