@@ -77,7 +77,7 @@ export function AuthLayout({
                   Le suivi de chaque commande, avec son numéro et son statut.
                 </Benefit>
                 <Benefit icon={BookOpen}>
-                  Le choix du format au moment de l’achat : numérique, audio ou papier.
+                  Le choix du format au moment de l’achat : numérique ou papier.
                 </Benefit>
                 <Benefit icon={Library}>
                   Votre bibliothèque numérique, dès l’ouverture des téléchargements.

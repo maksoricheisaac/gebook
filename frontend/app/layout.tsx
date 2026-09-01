@@ -44,14 +44,13 @@ export const metadata: Metadata = {
     template: "%s · GeBook",
   },
   description:
-    "Découvrez, lisez et achetez des œuvres africaines en numérique, en audio et en papier. GeBook réunit éditeurs, collectifs et auteurs indépendants sur une seule plateforme d'édition et de vente.",
+    "Découvrez, lisez et achetez des œuvres africaines en numérique et en papier. GeBook réunit éditeurs, collectifs et auteurs indépendants sur une seule plateforme d'édition et de vente.",
   applicationName: "GeBook",
   keywords: [
     "livres africains",
     "édition congolaise",
     "librairie numérique",
     "auto-édition",
-    "livre audio",
   ],
   openGraph: {
     type: "website",
@@ -59,13 +58,13 @@ export const metadata: Metadata = {
     locale: "fr_FR",
     title: "GeBook — La plateforme numérique des éditeurs et auteurs africains",
     description:
-      "Découvrez, lisez et achetez des œuvres africaines en numérique, en audio et en papier.",
+      "Découvrez, lisez et achetez des œuvres africaines en numérique et en papier.",
   },
   twitter: {
     card: "summary_large_image",
     title: "GeBook — La plateforme numérique des éditeurs et auteurs africains",
     description:
-      "Découvrez, lisez et achetez des œuvres africaines en numérique, en audio et en papier.",
+      "Découvrez, lisez et achetez des œuvres africaines en numérique et en papier.",
   },
 };
 

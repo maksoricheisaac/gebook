@@ -3,7 +3,6 @@ import {
   ArrowRight,
   BookOpen,
   Feather,
-  Headphones,
   Search,
   Truck,
   type LucideIcon,
@@ -140,11 +139,7 @@ export default async function HomePage() {
           title="Le même livre, la lecture qui vous convient"
           description="Une œuvre peut exister en plusieurs formats, chacun avec son prix et son mode de remise. Vous choisissez au moment de l’achat."
         />
-        <Reveal
-          as="ul"
-          stagger={0.06}
-          className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <Reveal as="ul" stagger={0.06} className="grid gap-x-8 gap-y-10 sm:grid-cols-2">
           {FORMATS.map((format) => (
             <FormatNote key={format.title} {...format} />
           ))}
@@ -309,7 +304,7 @@ function Hero({
           <p className="type-subtitle mt-6 max-w-xl">
             GeBook réunit les éditeurs, collectifs et auteurs indépendants d’Afrique sur
             une seule librairie numérique. Romans, essais et manuels congolais et
-            africains — en PDF, en audio ou en papier.
+            africains — en PDF ou en papier.
           </p>
 
           <div className="mt-9 flex flex-wrap gap-3">
@@ -421,12 +416,6 @@ const FORMATS: { icon: LucideIcon; title: string; description: string }[] = [
       "La mise en page d’origine, fidèle au livre imprimé. À lire sur ordinateur ou à imprimer.",
   },
   {
-    icon: Headphones,
-    title: "Audio",
-    description:
-      "L’ouvrage lu à voix haute, pour les trajets et les moments où l’on ne peut pas lire.",
-  },
-  {
     icon: Truck,
     title: "Papier",
     description:
@@ -463,7 +452,7 @@ const STEPS: { title: string; description: string }[] = [
   {
     title: "Choisissez votre format",
     description:
-      "Numérique, audio ou papier : le prix et le mode de remise sont affichés avant la commande, sans surprise à la fin.",
+      "Numérique ou papier : le prix et le mode de remise sont affichés avant la commande, sans surprise à la fin.",
   },
   {
     title: "Commandez et suivez",

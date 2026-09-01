@@ -211,8 +211,7 @@ export class UpdateWorkDto {
 
 export class CreateWorkFormatDto {
   @IsIn(ACCEPTED_FORMAT_TYPES, {
-    message:
-      'Seuls les formats PDF, audio et papier sont disponibles pour le moment.',
+    message: 'Seuls les formats PDF et papier sont disponibles pour le moment.',
   })
   formatType!: FormatType;
 

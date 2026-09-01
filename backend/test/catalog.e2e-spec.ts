@@ -124,16 +124,20 @@ describe('Catalogue public (e2e)', () => {
     });
 
     it('filtre par format', async () => {
-      const { data } = await listWorks('?format=audio');
+      const { data } = await listWorks('?format=paper');
 
       expect(data.length).toBeGreaterThan(0);
       expect(
         data.every((work) =>
           work.formats.some(
-            (format) => format.formatType === 'audio' && format.isAvailable,
+            (format) => format.formatType === 'paper' && format.isAvailable,
           ),
         ),
       ).toBe(true);
+    });
+
+    it('refuse un format non accepté (epub/audio retirés — « PDF d’abord »)', async () => {
+      await request(app.getHttpServer()).get('/works?format=audio').expect(400);
     });
 
     it('filtre les œuvres mises en avant', async () => {
