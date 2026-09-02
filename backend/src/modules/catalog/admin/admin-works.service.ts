@@ -382,7 +382,7 @@ export class AdminWorksService {
     dto: UpdateWorkDto,
     admin: AuthenticatedUser,
     tenant: TenantContext,
-  ): Promise<Work> {
+  ): Promise<WorkWithFormats> {
     const { publicationDate, translations, ...rest } = dto;
 
     const work = await this.prisma
@@ -423,6 +423,11 @@ export class AdminWorksService {
               tableOfContents: translations.fr.tableOfContents,
             }),
           },
+          // Sans cet `include`, la réponse ne portait que les colonnes scalaires
+          // — le front (`reset(toFormValues(updated))`) plante en lisant
+          // `updated.translations.find(...)` sur `undefined` juste après un
+          // enregistrement réussi.
+          include: workInclude,
         });
 
         // Une locale à la fois : un PATCH qui ne contient que `translations.en`
@@ -504,7 +509,25 @@ export class AdminWorksService {
     admin: AuthenticatedUser,
     tenant: TenantContext,
   ): Promise<Work> {
-    await this.findOne(id, admin, tenant);
+    // Même contrôle d'écriture que `update()`/`createFormat()` — `findOne()`
+    // ne vérifie que l'appartenance au tenant, pas le rôle. Fait avant l'envoi
+    // au stockage : un rôle refusé ne doit pas laisser un fichier orphelin
+    // sur R2/disque avant que l'écriture en base échoue.
+    await this.prisma.withRlsContext(
+      buildRlsContext(admin, tenant.tenantId),
+      async (tx) => {
+        const existing = await this.getWorkWithAuthorOrThrow(
+          tx,
+          id,
+          tenant.tenantId,
+        );
+        assertCanWriteWork(
+          tenant,
+          { tenantId: existing.tenantId, authorUserId: existing.author.userId },
+          admin.id,
+        );
+      },
+    );
 
     const mime = await this.uploadValidator.validateImage(file);
     const stored = await this.storage.storePublic(

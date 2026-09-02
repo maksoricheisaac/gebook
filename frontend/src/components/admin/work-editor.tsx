@@ -49,6 +49,7 @@ interface Work {
   status: WorkStatus;
   visibility: "private" | "tenant_only" | "public";
   featured: boolean;
+  pageCount: number | null;
   translations: WorkTranslation[];
 }
 
@@ -85,6 +86,11 @@ const workSchema = z
     ]),
     visibility: z.enum(["private", "tenant_only", "public"]),
     featured: z.boolean(),
+    pageCount: z
+      .number()
+      .int()
+      .min(1, "Doit être un nombre de pages positif.")
+      .optional(),
     translations: z.object({
       fr: workTranslationFieldsSchema,
       en: workTranslationFieldsSchema,
@@ -222,6 +228,7 @@ export function WorkEditor({ workId }: { workId: string }) {
           status: values.status,
           visibility: values.visibility,
           featured: values.featured,
+          pageCount: values.pageCount,
           translations: buildTranslationsPayload(values),
         },
       }),
@@ -387,6 +394,34 @@ export function WorkEditor({ workId }: { workId: string }) {
                 </Select>
               </Field>
             </div>
+
+            <Controller
+              control={control}
+              name="pageCount"
+              render={({ field }) => (
+                <Field
+                  id="work-page-count"
+                  label="Nombre de pages"
+                  optional
+                  error={errors.pageCount?.message}
+                  className="md:w-40"
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    name={field.name}
+                    ref={field.ref}
+                    value={field.value ?? ""}
+                    onBlur={field.onBlur}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      field.onChange(raw === "" ? undefined : Number(raw));
+                    }}
+                  />
+                </Field>
+              )}
+            />
 
             <div className="grid gap-5 md:grid-cols-2">
               <Field
@@ -566,6 +601,7 @@ function toFormValues(work: Work): WorkFormValues {
     status: work.status,
     visibility: work.visibility,
     featured: work.featured,
+    pageCount: work.pageCount ?? undefined,
     translations: {
       fr: {
         title: fr?.title ?? work.title,
