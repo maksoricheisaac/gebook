@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { BookText, CheckCircle2, Plus, Search, Trash2, UserSquare2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,6 +31,7 @@ import {
 } from "@/src/components/ui/dialog";
 import { Field, FormError } from "@/src/components/ui/field";
 import { Input, Select, Textarea } from "@/src/components/ui/input";
+import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
 import { RetryRow, TableSkeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { slugify } from "@/src/lib/slugify";
@@ -455,14 +456,24 @@ export function AuthorManager() {
                       />
                     </Field>
 
-                    <Field
-                      id="author-bio-fr"
-                      label="Biographie complète"
-                      hint="Affichée sur la fiche de l’auteur."
-                      optional
-                    >
-                      <Textarea rows={5} {...register("translations.fr.biography")} />
-                    </Field>
+                    <Controller
+                      control={control}
+                      name="translations.fr.biography"
+                      render={({ field }) => (
+                        <Field
+                          id="author-bio-fr"
+                          label="Biographie complète"
+                          hint="Affichée sur la fiche de l’auteur."
+                          optional
+                        >
+                          <RichTextEditor
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="Le parcours de l’auteur…"
+                          />
+                        </Field>
+                      )}
+                    />
                   </>
                 }
                 en={
@@ -480,14 +491,24 @@ export function AuthorManager() {
                       />
                     </Field>
 
-                    <Field
-                      id="author-bio-en"
-                      label="Full biography"
-                      hint="Shown on the author's page."
-                      optional
-                    >
-                      <Textarea rows={5} {...register("translations.en.biography")} />
-                    </Field>
+                    <Controller
+                      control={control}
+                      name="translations.en.biography"
+                      render={({ field }) => (
+                        <Field
+                          id="author-bio-en"
+                          label="Full biography"
+                          hint="Shown on the author's page."
+                          optional
+                        >
+                          <RichTextEditor
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="The author's background…"
+                          />
+                        </Field>
+                      )}
+                    />
                   </>
                 }
               />

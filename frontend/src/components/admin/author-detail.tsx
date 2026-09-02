@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRef } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ArrowLeft, BookText, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
 import { Field, FormError } from "@/src/components/ui/field";
 import { Input, Select, Textarea } from "@/src/components/ui/input";
+import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
 import { Skeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { resolveAssetUrl } from "@/src/lib/assets";
@@ -390,14 +391,24 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
                     <Textarea rows={2} {...register("translations.fr.shortBiography")} />
                   </Field>
 
-                  <Field
-                    id="author-bio-fr"
-                    label="Biographie complète"
-                    hint="Affichée sur la fiche de l’auteur."
-                    optional
-                  >
-                    <Textarea rows={5} {...register("translations.fr.biography")} />
-                  </Field>
+                  <Controller
+                    control={control}
+                    name="translations.fr.biography"
+                    render={({ field }) => (
+                      <Field
+                        id="author-bio-fr"
+                        label="Biographie complète"
+                        hint="Affichée sur la fiche de l’auteur."
+                        optional
+                      >
+                        <RichTextEditor
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Le parcours de l’auteur…"
+                        />
+                      </Field>
+                    )}
+                  />
                 </>
               }
               en={
@@ -412,14 +423,24 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
                     <Textarea rows={2} {...register("translations.en.shortBiography")} />
                   </Field>
 
-                  <Field
-                    id="author-bio-en"
-                    label="Full biography"
-                    hint="Shown on the author's page."
-                    optional
-                  >
-                    <Textarea rows={5} {...register("translations.en.biography")} />
-                  </Field>
+                  <Controller
+                    control={control}
+                    name="translations.en.biography"
+                    render={({ field }) => (
+                      <Field
+                        id="author-bio-en"
+                        label="Full biography"
+                        hint="Shown on the author's page."
+                        optional
+                      >
+                        <RichTextEditor
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="The author's background…"
+                        />
+                      </Field>
+                    )}
+                  />
                 </>
               }
             />

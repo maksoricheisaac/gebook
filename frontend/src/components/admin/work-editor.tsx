@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ArrowLeft, ExternalLink, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Field, FormError } from "@/src/components/ui/field";
 import { Input, Select, Textarea } from "@/src/components/ui/input";
+import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
 import { Skeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { resolveAssetUrl } from "@/src/lib/assets";
@@ -470,14 +471,23 @@ export function WorkEditor({ workId }: { workId: string }) {
                     />
                   </Field>
 
-                  <Field
-                    id="work-description-fr"
-                    label="Présentation complète"
-                    hint="Les retours à la ligne sont conservés à l’affichage."
-                    optional
-                  >
-                    <Textarea rows={8} {...register("translations.fr.description")} />
-                  </Field>
+                  <Controller
+                    control={control}
+                    name="translations.fr.description"
+                    render={({ field }) => (
+                      <Field
+                        id="work-description-fr"
+                        label="Présentation complète"
+                        optional
+                      >
+                        <RichTextEditor
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Le livre, en quelques paragraphes…"
+                        />
+                      </Field>
+                    )}
+                  />
                 </>
               }
               en={
@@ -508,14 +518,19 @@ export function WorkEditor({ workId }: { workId: string }) {
                     />
                   </Field>
 
-                  <Field
-                    id="work-description-en"
-                    label="Full description"
-                    hint="Line breaks are preserved on display."
-                    optional
-                  >
-                    <Textarea rows={8} {...register("translations.en.description")} />
-                  </Field>
+                  <Controller
+                    control={control}
+                    name="translations.en.description"
+                    render={({ field }) => (
+                      <Field id="work-description-en" label="Full description" optional>
+                        <RichTextEditor
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="The book, in a few paragraphs…"
+                        />
+                      </Field>
+                    )}
+                  />
                 </>
               }
             />

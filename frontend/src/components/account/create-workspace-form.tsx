@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 
 import { Button } from "@/src/components/ui/button";
 import { Field, FormError } from "@/src/components/ui/field";
-import { Input, Select, Textarea } from "@/src/components/ui/input";
+import { Input, Select } from "@/src/components/ui/input";
+import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
 import { createTenantAction, type CreateTenantFormState } from "@/src/lib/tenant-actions";
 import { slugify } from "@/src/lib/slugify";
 import { TENANT_TYPE_OPTIONS } from "@/src/lib/tenant-type";
@@ -33,6 +34,7 @@ export function CreateWorkspaceForm({
   const [name, setName] = useState("");
   const [manualSlug, setManualSlug] = useState<string | null>(null);
   const [type, setType] = useState("independent_author");
+  const [description, setDescription] = useState("");
   const slug = manualSlug ?? slugify(name);
   const terms = termsByType[type] ?? null;
 
@@ -93,8 +95,13 @@ export function CreateWorkspaceForm({
         optional
         error={state.fieldErrors?.description?.[0]}
       >
-        <Textarea name="description" rows={3} />
+        <RichTextEditor
+          value={description}
+          onChange={setDescription}
+          placeholder="Présentez votre maison d'édition ou votre univers d'auteur…"
+        />
       </Field>
+      <input type="hidden" name="description" value={description} />
 
       <div className="border-border bg-paper-100/70 rounded-lg border p-4">
         <p className="text-secondary mb-2 text-sm font-semibold">

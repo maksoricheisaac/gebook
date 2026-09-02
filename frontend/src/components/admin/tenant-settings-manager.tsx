@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { Copy, ExternalLink, Globe, ImagePlus, Link2, Pencil } from "lucide-react";
 import { toast } from "sonner";
@@ -23,7 +23,9 @@ import {
   DialogTitle,
 } from "@/src/components/ui/dialog";
 import { Field, FormError } from "@/src/components/ui/field";
-import { Input, Textarea } from "@/src/components/ui/input";
+import { Input } from "@/src/components/ui/input";
+import { RichText } from "@/src/components/ui/rich-text";
+import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { resolveAssetUrl } from "@/src/lib/assets";
 import { emptyToUndefined } from "@/src/lib/translation-form";
@@ -46,7 +48,7 @@ const urlOrEmpty = (message: string) =>
 
 const tenantSettingsSchema = z.object({
   name: z.string().trim().min(2, "Le nom doit contenir au moins 2 caractères.").max(150),
-  description: z.string().trim().max(2000).optional(),
+  description: z.string().trim().max(20000).optional(),
   website: urlOrEmpty("Adresse du site invalide."),
   socialLinks: z.object({
     facebook: urlOrEmpty("Lien Facebook invalide."),
@@ -106,6 +108,7 @@ export function TenantSettingsManager() {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<TenantSettingsFormValues>({
     resolver: zodResolver(tenantSettingsSchema),
@@ -389,7 +392,9 @@ export function TenantSettingsManager() {
           <div className="sm:col-span-2">
             <dt className="type-label text-muted-foreground">Description</dt>
             <dd className="text-secondary mt-1 text-sm text-pretty">
-              {profile.description || (
+              {profile.description ? (
+                <RichText html={profile.description} className="text-sm" />
+              ) : (
                 <span className="text-muted-foreground">Non renseignée</span>
               )}
             </dd>
@@ -437,9 +442,19 @@ export function TenantSettingsManager() {
                 <Input {...register("name")} />
               </Field>
 
-              <Field id="tenant-description" label="Description" optional>
-                <Textarea rows={3} {...register("description")} />
-              </Field>
+              <Controller
+                control={control}
+                name="description"
+                render={({ field }) => (
+                  <Field id="tenant-description" label="Description" optional>
+                    <RichTextEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Présentez votre espace…"
+                    />
+                  </Field>
+                )}
+              />
 
               <Field
                 id="tenant-website"
