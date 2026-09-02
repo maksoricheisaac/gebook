@@ -200,9 +200,17 @@ export function FormatManager({ workId }: { workId: string }) {
                       type="button"
                       variant="outline"
                       size="sm"
+                      // `variables` (pas juste `isPending`) : le fichier scanné
+                      // (ClamAV, contenu actif) peut prendre plusieurs secondes —
+                      // seul le format réellement en cours d'envoi doit tourner,
+                      // pas les autres lignes le temps qu'il termine.
+                      isLoading={
+                        uploadFile.isPending &&
+                        uploadFile.variables?.formatId === format.id
+                      }
                       onClick={() => fileInputRefs.current[format.id]?.click()}
                     >
-                      <Upload aria-hidden />
+                      {!uploadFile.isPending && <Upload aria-hidden />}
                       Fichier
                       <span className="sr-only">
                         {" "}
