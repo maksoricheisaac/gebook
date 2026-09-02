@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsOptional,
   IsString,
@@ -7,6 +7,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { sanitizeRichText } from '../../../common/rich-text';
 
 export class SocialLinksDto {
   @IsOptional()
@@ -36,7 +37,8 @@ export class UpdateTenantProfileDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(20000)
+  @Transform(({ value }): string | undefined => sanitizeRichText(value))
   description?: string;
 
   @IsOptional()

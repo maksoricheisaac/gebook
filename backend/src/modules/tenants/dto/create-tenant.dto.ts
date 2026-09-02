@@ -10,6 +10,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import type { TenantType } from '../../../generated/prisma/enums';
+import { sanitizeRichText } from '../../../common/rich-text';
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SLUG_MESSAGE =
@@ -40,7 +41,8 @@ export class CreateTenantDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(20000)
+  @Transform(({ value }): string | undefined => sanitizeRichText(value))
   description?: string;
 
   /**

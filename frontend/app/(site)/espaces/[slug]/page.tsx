@@ -6,7 +6,9 @@ import { Globe, Link2 } from "lucide-react";
 import { AuthorCard } from "@/src/components/catalog/author-card";
 import { BookGrid } from "@/src/components/catalog/book-grid";
 import { Breadcrumb, Container, SectionHeader } from "@/src/components/layout/page-shell";
+import { RichText } from "@/src/components/ui/rich-text";
 import { ApiError } from "@/src/lib/api";
+import { stripRichText } from "@/src/lib/rich-text";
 import { resolveAssetUrl } from "@/src/lib/assets";
 import { fetchAuthors, fetchWorks } from "@/src/lib/catalog";
 import {
@@ -37,7 +39,8 @@ export async function generateMetadata(
   try {
     const tenant = await fetchTenantPublicProfile(slug);
     const description =
-      tenant.description ?? `Les œuvres publiées par ${tenant.name} sur GeBook.`;
+      stripRichText(tenant.description) ||
+      `Les œuvres publiées par ${tenant.name} sur GeBook.`;
 
     return {
       title: tenant.name,
@@ -88,11 +91,7 @@ export default async function TenantStorefrontPage(props: PageProps<"/espaces/[s
           </p>
           <h1 className="type-h1 text-secondary">{tenant.name}</h1>
 
-          {tenant.description && (
-            <div className="prose-editorial text-foreground/85 mt-6">
-              {tenant.description}
-            </div>
-          )}
+          <RichText html={tenant.description} className="text-foreground/85 mt-6" />
 
           {(tenant.website || socialEntries.length > 0) && (
             <div className="mt-5 flex flex-wrap gap-2">

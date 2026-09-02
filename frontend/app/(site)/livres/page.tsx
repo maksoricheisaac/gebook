@@ -7,6 +7,7 @@ import { Pagination } from "@/src/components/catalog/pagination";
 import { Container, PageHeader } from "@/src/components/layout/page-shell";
 import { Button } from "@/src/components/ui/button";
 import { fetchCategories, fetchWorks, isFormatType } from "@/src/lib/catalog";
+import { stripRichText } from "@/src/lib/rich-text";
 
 /** Voir la note dans `app/(site)/page.tsx` : la CI construit sans API active. */
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export default async function CatalogPage(props: PageProps<"/livres">) {
         eyebrow="Catalogue"
         title={activeCategory ? activeCategory.name : "Tous les ouvrages de la maison"}
         description={
-          activeCategory?.description ??
+          stripRichText(activeCategory?.description) ||
           "Romans, essais et manuels publiés par nos éditeurs et auteurs. Chaque œuvre indique les formats réellement disponibles et leur prix."
         }
       />

@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import {
   BookText,
@@ -37,7 +37,8 @@ import {
   DialogTitle,
 } from "@/src/components/ui/dialog";
 import { Field, FormError } from "@/src/components/ui/field";
-import { Input, Textarea } from "@/src/components/ui/input";
+import { Input } from "@/src/components/ui/input";
+import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
 import { RetryRow, TableSkeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { slugify } from "@/src/lib/slugify";
@@ -467,14 +468,24 @@ export function CategoryManager() {
                       <Input {...register("translations.fr.name")} />
                     </Field>
 
-                    <Field
-                      id="category-description-fr"
-                      label="Description"
-                      hint="Affichée en tête du catalogue filtré sur ce domaine."
-                      optional
-                    >
-                      <Textarea rows={2} {...register("translations.fr.description")} />
-                    </Field>
+                    <Controller
+                      control={control}
+                      name="translations.fr.description"
+                      render={({ field }) => (
+                        <Field
+                          id="category-description-fr"
+                          label="Description"
+                          hint="Affichée en tête du catalogue filtré sur ce domaine."
+                          optional
+                        >
+                          <RichTextEditor
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="Ce que rassemble ce domaine…"
+                          />
+                        </Field>
+                      )}
+                    />
                   </>
                 }
                 en={
@@ -488,14 +499,24 @@ export function CategoryManager() {
                       <Input {...register("translations.en.name")} />
                     </Field>
 
-                    <Field
-                      id="category-description-en"
-                      label="Description"
-                      hint="Shown at the top of the catalogue filtered on this category."
-                      optional
-                    >
-                      <Textarea rows={2} {...register("translations.en.description")} />
-                    </Field>
+                    <Controller
+                      control={control}
+                      name="translations.en.description"
+                      render={({ field }) => (
+                        <Field
+                          id="category-description-en"
+                          label="Description"
+                          hint="Shown at the top of the catalogue filtered on this category."
+                          optional
+                        >
+                          <RichTextEditor
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="What this category covers…"
+                          />
+                        </Field>
+                      )}
+                    />
                   </>
                 }
               />

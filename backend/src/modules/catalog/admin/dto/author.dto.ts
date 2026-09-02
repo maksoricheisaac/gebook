@@ -12,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AuthorStatus } from '../../../../generated/prisma/enums';
+import { sanitizeRichText } from '../../../../common/rich-text';
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SLUG_MESSAGE =
@@ -21,6 +22,7 @@ const SLUG_MESSAGE =
 export class AuthorTranslationFieldsDto {
   @IsOptional()
   @IsString()
+  @Transform(({ value }): string | undefined => sanitizeRichText(value))
   biography?: string;
 
   @IsOptional()

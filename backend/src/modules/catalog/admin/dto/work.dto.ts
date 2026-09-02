@@ -22,6 +22,7 @@ import {
   WorkVisibility,
 } from '../../../../generated/prisma/enums';
 import { ACCEPTED_FORMAT_TYPES } from '../../accepted-format-types';
+import { sanitizeRichText } from '../../../../common/rich-text';
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SLUG_MESSAGE =
@@ -55,6 +56,7 @@ export class WorkTranslationFieldsDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }): string | undefined => sanitizeRichText(value))
   description?: string;
 
   @IsOptional()

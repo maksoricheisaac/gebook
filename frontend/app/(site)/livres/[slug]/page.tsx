@@ -8,6 +8,7 @@ import { BookGrid } from "@/src/components/catalog/book-grid";
 import { FormatSelector } from "@/src/components/catalog/format-selector";
 import { Breadcrumb, Container, SectionHeader } from "@/src/components/layout/page-shell";
 import { Badge } from "@/src/components/ui/badge";
+import { RichText } from "@/src/components/ui/rich-text";
 import { ApiError } from "@/src/lib/api";
 import { getCurrentUser } from "@/src/lib/auth";
 import {
@@ -173,9 +174,7 @@ export default async function WorkPage(props: PageProps<"/livres/[slug]">) {
             {work.description && (
               <section className="mt-12">
                 <h2 className="type-h2 text-secondary">À propos du livre</h2>
-                <div className="prose-editorial text-foreground/85 mt-5 whitespace-pre-line">
-                  {work.description}
-                </div>
+                <RichText html={work.description} className="text-foreground/85 mt-5" />
               </section>
             )}
 

@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 
 import { BookGrid } from "@/src/components/catalog/book-grid";
 import { Breadcrumb, Container, SectionHeader } from "@/src/components/layout/page-shell";
+import { RichText } from "@/src/components/ui/rich-text";
 import { ApiError } from "@/src/lib/api";
 import { resolveAssetUrl } from "@/src/lib/assets";
 import {
@@ -88,11 +89,7 @@ export default async function AuthorPage(props: PageProps<"/auteurs/[slug]">) {
             {author.workCount > 1 ? "ouvrages publiés" : "ouvrage publié"} sur GeBook
           </p>
 
-          {author.biography && (
-            <div className="prose-editorial text-foreground/85 mt-6">
-              {author.biography}
-            </div>
-          )}
+          <RichText html={author.biography} className="text-foreground/85 mt-6" />
         </div>
       </section>
 

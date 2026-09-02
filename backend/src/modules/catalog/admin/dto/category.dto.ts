@@ -10,6 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { CategoryStatus } from '../../../../generated/prisma/enums';
+import { sanitizeRichText } from '../../../../common/rich-text';
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SLUG_MESSAGE =
@@ -24,6 +25,7 @@ export class CategoryTranslationFieldsDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }): string | undefined => sanitizeRichText(value))
   description?: string;
 }
 
