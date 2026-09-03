@@ -23,9 +23,7 @@ interface WorkFormat {
   isAvailable: boolean;
 }
 
-// Ni EPUB ni l'audio ne figurent ici volontairement — « PDF d'abord »
-// (décision produit, 2026-09), même restriction que côté API
-// (`accepted-format-types.ts`).
+// Liste des formats possibles
 const FORMAT_TYPES = [
   { value: "pdf", label: "PDF", deliveryType: "digital_download" },
   { value: "paper", label: "Papier", deliveryType: "physical_delivery" },
@@ -200,9 +198,17 @@ export function FormatManager({ workId }: { workId: string }) {
                       type="button"
                       variant="outline"
                       size="sm"
+                      // `variables` (pas juste `isPending`) : le fichier scanné
+                      // (ClamAV, contenu actif) peut prendre plusieurs secondes —
+                      // seul le format réellement en cours d'envoi doit tourner,
+                      // pas les autres lignes le temps qu'il termine.
+                      isLoading={
+                        uploadFile.isPending &&
+                        uploadFile.variables?.formatId === format.id
+                      }
                       onClick={() => fileInputRefs.current[format.id]?.click()}
                     >
-                      <Upload aria-hidden />
+                      {!uploadFile.isPending && <Upload aria-hidden />}
                       Fichier
                       <span className="sr-only">
                         {" "}
