@@ -136,7 +136,7 @@ describe('Catalogue public (e2e)', () => {
       ).toBe(true);
     });
 
-    it('refuse un format non accepté (epub/audio retirés — « PDF d’abord »)', async () => {
+    it('refuse un format non accepté', async () => {
       await request(app.getHttpServer()).get('/works?format=audio').expect(400);
     });
 

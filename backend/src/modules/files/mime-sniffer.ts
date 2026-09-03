@@ -9,13 +9,7 @@
  */
 
 export type SniffedMimeType =
-  | 'image/jpeg'
-  | 'image/png'
-  | 'image/webp'
-  | 'application/pdf'
-  | 'application/epub+zip'
-  | 'audio/mpeg'
-  | 'audio/mp4';
+  'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
 
 export function sniffMimeType(buffer: Buffer): SniffedMimeType | null {
   if (startsWith(buffer, [0xff, 0xd8, 0xff])) {
@@ -36,24 +30,6 @@ export function sniffMimeType(buffer: Buffer): SniffedMimeType | null {
 
   if (buffer.toString('ascii', 0, 4) === '%PDF') {
     return 'application/pdf';
-  }
-
-  // L'EPUB est une archive ZIP : la signature ne suffit pas à le distinguer d'un
-  // ZIP quelconque, mais elle exclut déjà tout fichier qui n'en est pas un —
-  // c'est la garantie qui compte ici.
-  if (startsWith(buffer, [0x50, 0x4b, 0x03, 0x04])) {
-    return 'application/epub+zip';
-  }
-
-  if (
-    buffer.toString('ascii', 0, 3) === 'ID3' ||
-    (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)
-  ) {
-    return 'audio/mpeg';
-  }
-
-  if (buffer.length >= 8 && buffer.toString('ascii', 4, 8) === 'ftyp') {
-    return 'audio/mp4';
   }
 
   return null;

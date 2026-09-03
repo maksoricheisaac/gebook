@@ -23,9 +23,7 @@ interface WorkFormat {
   isAvailable: boolean;
 }
 
-// Ni EPUB ni l'audio ne figurent ici volontairement — « PDF d'abord »
-// (décision produit, 2026-09), même restriction que côté API
-// (`accepted-format-types.ts`).
+// Liste des formats possibles
 const FORMAT_TYPES = [
   { value: "pdf", label: "PDF", deliveryType: "digital_download" },
   { value: "paper", label: "Papier", deliveryType: "physical_delivery" },

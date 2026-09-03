@@ -28,26 +28,6 @@ describe('sniffMimeType', () => {
     expect(sniffMimeType(Buffer.from('%PDF-1.4\n...'))).toBe('application/pdf');
   });
 
-  it('détecte une archive ZIP (EPUB) à sa signature', () => {
-    expect(sniffMimeType(Buffer.from([0x50, 0x4b, 0x03, 0x04]))).toBe(
-      'application/epub+zip',
-    );
-  });
-
-  it('détecte un MP3 par son en-tête ID3', () => {
-    expect(sniffMimeType(Buffer.from('ID3\x03\x00\x00\x00'))).toBe(
-      'audio/mpeg',
-    );
-  });
-
-  it('détecte un MP4/M4A à sa boîte ftyp', () => {
-    const buffer = Buffer.concat([
-      Buffer.from([0, 0, 0, 0x20]),
-      Buffer.from('ftypM4A '),
-    ]);
-    expect(sniffMimeType(buffer)).toBe('audio/mp4');
-  });
-
   it('ne reconnaît pas un fichier texte quelconque', () => {
     expect(
       sniffMimeType(Buffer.from('ceci n’est pas un fichier connu')),

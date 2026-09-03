@@ -126,10 +126,7 @@ export function fetchCategories(): Promise<Category[]> {
 }
 
 /**
- * Les formats d'achat, dans l'ordre d'affichage des filtres. Ni EPUB ni
- * l'audio n'y figurent plus volontairement — « PDF d'abord » (décision
- * produit, 2026-09) — voir `accepted-format-types.ts` côté backend, source
- * de vérité de cette même restriction sur l'API.
+ * Les formats d'achat.
  */
 export const FORMAT_OPTIONS = [
   { value: "pdf", label: "PDF" },

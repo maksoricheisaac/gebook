@@ -119,8 +119,6 @@ enum TenantMemberStatus {
 enum FormatType {
   pdf
   paper
-  epub
-  audio
 
   @@map("format_type")
 }

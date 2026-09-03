@@ -22,10 +22,7 @@ const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_WORK_FILE_MB = 100;
 
 /**
- * Formats sans livraison numérique n'ont aucun fichier à leur associer ;
- * `epub`/`audio` en sont volontairement absents — « PDF d'abord » (décision
- * produit, 2026-09, voir `accepted-format-types.ts`) — même si les valeurs
- * restent dans le schéma Prisma pour d'éventuelles lignes déjà en base.
+ * Formats sans livraison numérique n'ont aucun fichier à leur associer.
  */
 const WORK_FILE_MIME_BY_FORMAT: Partial<Record<FormatType, SniffedMimeType[]>> =
   {
@@ -37,9 +34,6 @@ export const EXTENSION_BY_MIME: Record<SniffedMimeType, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'application/pdf': 'pdf',
-  'application/epub+zip': 'epub',
-  'audio/mpeg': 'mp3',
-  'audio/mp4': 'm4a',
 };
 
 /**
