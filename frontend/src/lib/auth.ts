@@ -1,12 +1,12 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiFetch, ApiError } from "./api";
-import { destinationFor, type CurrentUser } from "./auth-shared";
+import { destinationFor, resolveAccountLinks, type CurrentUser } from "./auth-shared";
 import { SESSION_COOKIE_NAME } from "./session-cookie";
 import { resolveActiveTenant } from "./tenant";
 import type { TenantMembership } from "./tenant-shared";
 
-export { destinationFor };
+export { destinationFor, resolveAccountLinks };
 export type { CurrentUser };
 
 /**
@@ -66,14 +66,8 @@ export async function requireRole(
  * seul ne peut donc pas le distinguer d'un lecteur ordinaire.
  */
 export async function resolveDestination(roles: string[]): Promise<string> {
-  if (roles.includes("admin")) {
-    return "/admin";
-  }
   const { memberships } = await resolveActiveTenant();
-  if (memberships.some((membership) => membership.status === "active")) {
-    return "/admin";
-  }
-  return destinationFor(roles);
+  return resolveAccountLinks(roles, memberships).destination;
 }
 
 export interface AdminAccess {

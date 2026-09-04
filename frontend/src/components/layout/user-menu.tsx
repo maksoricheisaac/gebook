@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LayoutDashboard, LogOut, Receipt, User } from "lucide-react";
+import {
+  BookText,
+  ChevronDown,
+  LayoutDashboard,
+  LogOut,
+  Receipt,
+  User,
+} from "lucide-react";
 
 import { logoutAction } from "@/src/lib/auth-actions";
 import type { CurrentUser } from "@/src/lib/auth-shared";
@@ -23,9 +30,12 @@ import { cn } from "@/src/lib/utils";
 export function UserMenu({
   user,
   destination,
+  worksHref,
 }: {
   user: CurrentUser;
   destination: string;
+  /** Raccourci direct vers la gestion des œuvres — `null` hors tenant. */
+  worksHref: string | null;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -106,6 +116,11 @@ export function UserMenu({
             <MenuLink href={destination} icon={User}>
               Mon espace
             </MenuLink>
+            {worksHref && (
+              <MenuLink href={worksHref} icon={BookText}>
+                Gérer mes livres
+              </MenuLink>
+            )}
             <MenuLink href="/mes-commandes" icon={Receipt}>
               Mes commandes
             </MenuLink>

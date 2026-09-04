@@ -1,7 +1,8 @@
 import Link from "next/link";
 
 import { Button } from "@/src/components/ui/button";
-import { destinationFor, getCurrentUser } from "@/src/lib/auth";
+import { getCurrentUser, resolveAccountLinks } from "@/src/lib/auth";
+import { resolveActiveTenant } from "@/src/lib/tenant";
 import { CartLink } from "./cart-link";
 import { LogoLink } from "./logo";
 import { MainNav } from "./main-nav";
@@ -24,6 +25,13 @@ import { UserMenu } from "./user-menu";
  */
 export async function SiteHeader() {
   const user = await getCurrentUser();
+  // Un seul appel à `resolveActiveTenant()` pour tout l'en-tête : `UserMenu`
+  // (grand écran) et `MobileMenu` en ont chacun besoin, mais la dupliquer
+  // aurait fini par diverger silencieusement entre les deux, comme
+  // `destinationFor()` seul l'avait fait pour un membre de tenant avant ce
+  // correctif (voir `resolveAccountLinks`, `auth-shared.ts`).
+  const { memberships } = user ? await resolveActiveTenant() : { memberships: [] };
+  const accountLinks = user ? resolveAccountLinks(user.roles, memberships) : null;
 
   return (
     <header className="border-border bg-background/85 sticky top-0 z-50 border-b backdrop-blur-md">
@@ -39,8 +47,12 @@ export async function SiteHeader() {
 
           <CartLink />
 
-          {user ? (
-            <UserMenu user={user} destination={destinationFor(user.roles)} />
+          {user && accountLinks ? (
+            <UserMenu
+              user={user}
+              destination={accountLinks.destination}
+              worksHref={accountLinks.worksHref}
+            />
           ) : (
             <div className="hidden items-center gap-2 lg:flex">
               <Button asChild variant="ghost">
@@ -52,7 +64,11 @@ export async function SiteHeader() {
             </div>
           )}
 
-          <MobileMenu user={user} />
+          <MobileMenu
+            user={user}
+            destination={accountLinks?.destination}
+            worksHref={accountLinks?.worksHref ?? null}
+          />
         </div>
       </div>
     </header>

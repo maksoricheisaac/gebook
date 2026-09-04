@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { LogOut, Menu, X } from "lucide-react";
+import { BookText, LogOut, Menu, X } from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
 import { logoutAction } from "@/src/lib/auth-actions";
-import { destinationFor, type CurrentUser } from "@/src/lib/auth-shared";
+import type { CurrentUser } from "@/src/lib/auth-shared";
 import { isActivePath, MAIN_NAVIGATION, READER_NAVIGATION } from "./navigation";
 import { SearchField } from "./search-field";
 import { cn } from "@/src/lib/utils";
@@ -24,7 +24,16 @@ import { cn } from "@/src/lib/utils";
  * Composant client parce qu'il porte un état d'ouverture. C'est la seule raison :
  * la lecture de l'utilisateur reste faite côté serveur et lui arrive en prop.
  */
-export function MobileMenu({ user }: { user: CurrentUser | null }) {
+export function MobileMenu({
+  user,
+  destination,
+  worksHref,
+}: {
+  user: CurrentUser | null;
+  /** Résolu côté serveur par `SiteHeader` (`resolveAccountLinks`) — voir `user-menu.tsx` pour le même raccourci sur grand écran. */
+  destination?: string;
+  worksHref?: string | null;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const [previousPathname, setPreviousPathname] = useState(pathname);
@@ -147,8 +156,16 @@ export function MobileMenu({ user }: { user: CurrentUser | null }) {
                         </Button>
                       )}
                       <Button asChild variant="outline" size="lg">
-                        <Link href={destinationFor(user.roles)}>Mon espace</Link>
+                        <Link href={destination ?? "/mon-espace"}>Mon espace</Link>
                       </Button>
+                      {worksHref && (
+                        <Button asChild variant="outline" size="lg">
+                          <Link href={worksHref}>
+                            <BookText aria-hidden />
+                            Gérer mes livres
+                          </Link>
+                        </Button>
+                      )}
                       {READER_NAVIGATION.filter(
                         (item) => item.href !== "/mon-espace",
                       ).map((item) => (
