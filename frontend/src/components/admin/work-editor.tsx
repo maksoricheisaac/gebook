@@ -201,7 +201,7 @@ export function WorkEditor({ workId }: { workId: string }) {
     handleSubmit,
     reset,
     control,
-    formState: { errors, isSubmitting, isDirty },
+    formState: { errors, isSubmitting, isDirty, dirtyFields },
   } = useForm<WorkFormValues>({
     resolver: zodResolver(workSchema),
     values: work ? toFormValues(work) : undefined,
@@ -226,7 +226,17 @@ export function WorkEditor({ workId }: { workId: string }) {
           authorId: values.authorId,
           categoryId: values.categoryId || undefined,
           status: values.status,
-          visibility: values.visibility,
+          // N'envoyer la visibilité que si l'auteur de la modification l'a
+          // lui-même choisie dans le menu : sinon le champ reste à sa valeur
+          // chargée (souvent `private`, la valeur par défaut d'une œuvre
+          // jamais publiée) et l'enverrait tel quel, écrasant le filet de
+          // sécurité du backend (`resolveVisibility`) qui, sans valeur
+          // explicite, aligne automatiquement la visibilité sur le nouveau
+          // statut — `public` en publiant, `private` sinon. C'est ce filet
+          // qui a fait défaut jusqu'ici : publier une œuvre sans toucher au
+          // menu « Visibilité » l'enregistrait `published` + `private`,
+          // donc invisible partout malgré le badge « Publiée » affiché ici.
+          visibility: dirtyFields.visibility ? values.visibility : undefined,
           featured: values.featured,
           pageCount: values.pageCount,
           translations: buildTranslationsPayload(values),
