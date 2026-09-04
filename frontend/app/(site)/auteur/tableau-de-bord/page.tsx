@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Info } from "lucide-react";
 
 import { AccountShell } from "@/src/components/account/account-shell";
+import { AuthorRevenueChartSection } from "@/src/components/author/author-revenue-chart-section";
 import { TenantSwitcher } from "@/src/components/layout/tenant-switcher";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
@@ -100,6 +101,8 @@ export default async function AuthorDashboardPage(
             hint="Aucun reversement automatique n’existe encore — ce solde n’a pas été versé."
           />
         </dl>
+
+        <AuthorRevenueChartSection />
 
         <section>
           <h2 className="type-h3 text-secondary mb-4">Détail des ventes</h2>

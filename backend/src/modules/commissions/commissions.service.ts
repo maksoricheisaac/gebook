@@ -490,6 +490,43 @@ export class CommissionsService {
   }
 
   /**
+   * Part revenant à l'auteur, par jour, sur la période demandée — parité avec
+   * les graphes déjà présents côté plateforme (`revenueTimeseries()`) et
+   * espace (`tenantRevenueTimeseries()`). `author_net_amount`, pas
+   * `gross_amount` : ce qui intéresse un auteur sur son propre tableau de
+   * bord, c'est ce qui lui revient réellement — la même grandeur que le KPI
+   * « Vous revient » de `revenue()` ci-dessus.
+   */
+  async authorRevenueTimeseries(
+    authorId: string,
+    ctx: RlsContext,
+    range?: DateRangeQuery,
+  ): Promise<RevenueTimeseriesPoint[]> {
+    const { from, to } = resolveDateRange(range);
+
+    const rows = await this.prisma.withRlsContext(
+      ctx,
+      (tx) =>
+        tx.$queryRaw<{ day: Date; total: Prisma.Decimal }[]>`
+        SELECT date_trunc('day', calculated_at) AS day, SUM(author_net_amount) AS total
+        FROM sale_distributions
+        WHERE author_id = ${authorId}
+          AND payout_status != 'cancelled'
+          AND calculated_at >= ${from}
+          AND calculated_at <= ${to}
+        GROUP BY 1
+        ORDER BY 1
+      `,
+    );
+
+    const byDay = new Map(
+      rows.map((row) => [toDateKey(row.day), decimalToString(row.total)]),
+    );
+
+    return fillMissingDays(byDay, from, to);
+  }
+
+  /**
    * Encaissé par jour pour UN tenant, sur la période demandée (brief §7,
    * Phase 9 — parité avec le graphe déjà présent sur le tableau de bord
    * plateforme, `revenueTimeseries()`).

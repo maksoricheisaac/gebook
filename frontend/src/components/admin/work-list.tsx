@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { BookText, CheckCircle2, FileEdit, Plus, Search } from "lucide-react";
+import { BookText, CheckCircle2, FileEdit, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPagination } from "@/src/components/admin/admin-pagination";
@@ -16,6 +16,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
@@ -97,6 +98,7 @@ export function WorkList() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<WorkListItem | null>(null);
 
   // Un changement de recherche doit revenir à la page 1 : rester en page 4
   // d'une recherche qui n'a plus que 2 pages de résultats afficherait une
@@ -168,6 +170,22 @@ export function WorkList() {
     },
     onError: (error: unknown) => {
       setServerError(
+        error instanceof AdminApiError ? error.message : "Une erreur est survenue.",
+      );
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => adminFetch<void>(`/works/${id}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      const title = toDelete?.title;
+      setToDelete(null);
+      toast.success(title ? `Œuvre « ${title} » supprimée.` : "Œuvre supprimée.");
+      await queryClient.invalidateQueries({ queryKey: ["admin", "works"] });
+    },
+    onError: (error: unknown) => {
+      setToDelete(null);
+      toast.error(
         error instanceof AdminApiError ? error.message : "Une erreur est survenue.",
       );
     },
@@ -264,12 +282,24 @@ export function WorkList() {
                       </Badge>
                     </td>
                     <td className="text-right">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/admin/oeuvres/${work.id}`}>
-                          Gérer
-                          <span className="sr-only"> — {work.title}</span>
-                        </Link>
-                      </Button>
+                      <div className="flex justify-end gap-1.5">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/admin/oeuvres/${work.id}`}>
+                            Gérer
+                            <span className="sr-only"> — {work.title}</span>
+                          </Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:bg-destructive-muted"
+                          onClick={() => setToDelete(work)}
+                        >
+                          <Trash2 aria-hidden />
+                          <span className="sr-only">Supprimer {work.title}</span>
+                        </Button>
+                      </div>
                     </td>
                   </DataRow>
                 ))
@@ -352,6 +382,20 @@ export function WorkList() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Supprimer cette œuvre ?"
+        description={
+          toDelete
+            ? `« ${toDelete.title} » sera retirée du catalogue. Cette action échouera si l’œuvre a encore des commandes ou des exemplaires en bibliothèque.`
+            : ""
+        }
+        confirmLabel="Supprimer l’œuvre"
+        isPending={deleteMutation.isPending}
+        onCancel={() => setToDelete(null)}
+        onConfirm={() => toDelete && deleteMutation.mutate(toDelete.id)}
+      />
     </div>
   );
 }

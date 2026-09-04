@@ -13,8 +13,10 @@ import { buildRlsContext } from '../../prisma/rls-context';
 import {
   CommissionsService,
   type AuthorRevenueResponse,
+  type RevenueTimeseriesPoint,
 } from './commissions.service';
 import { ListQuery } from './dto/commission-rule.dto';
+import { DateRangeQuery } from './dto/date-range.query';
 
 /**
  * Revenus de l'auteur connecté.
@@ -51,6 +53,18 @@ export class AuthorRevenueController {
     return this.commissions.revenue(
       await this.authorIdOf(user),
       buildRlsContext(user),
+    );
+  }
+
+  @Get('sales/timeseries')
+  async salesTimeseries(
+    @Query() range: DateRangeQuery,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<RevenueTimeseriesPoint[]> {
+    return this.commissions.authorRevenueTimeseries(
+      await this.authorIdOf(user),
+      buildRlsContext(user),
+      range,
     );
   }
 
