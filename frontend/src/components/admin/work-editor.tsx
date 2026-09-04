@@ -3,13 +3,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ArrowLeft, ExternalLink, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPageHeader, AdminPanel } from "@/src/components/admin/admin-page";
+import { CoverCropperDialog } from "@/src/components/admin/cover-cropper-dialog";
 import { FormatManager } from "@/src/components/admin/format-manager";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
 import { useTenant } from "@/src/components/providers/tenant-provider";
@@ -171,6 +172,17 @@ function STATUS_OPTIONS_FOR_ROLE(
 export function WorkEditor({ workId }: { workId: string }) {
   const queryClient = useQueryClient();
   const coverInputRef = useRef<HTMLInputElement>(null);
+  // URL objet du fichier choisi, tant que la modale de rognage est ouverte —
+  // `null` sinon. Révoquée à chaque fermeture (annulation ou envoi réussi) :
+  // c'est le seul moment où plus rien n'en a besoin.
+  const [coverSourceUrl, setCoverSourceUrl] = useState<string | null>(null);
+
+  const closeCoverCropper = (): void => {
+    if (coverSourceUrl) {
+      URL.revokeObjectURL(coverSourceUrl);
+    }
+    setCoverSourceUrl(null);
+  };
   // Reflet, côté formulaire, de la machine à états `assertAllowedStatus` du
   // back-office (Phase 4) — une aide à l'affichage, jamais l'autorité : le
   // backend revalide chaque transition indépendamment de ce que ce menu
@@ -256,6 +268,7 @@ export function WorkEditor({ workId }: { workId: string }) {
       return adminFetch<Work>(`/works/${workId}/cover`, { method: "POST", formData });
     },
     onSuccess: async () => {
+      closeCoverCropper();
       toast.success("Couverture mise à jour.");
       await invalidate();
     },
@@ -337,7 +350,11 @@ export function WorkEditor({ workId }: { workId: string }) {
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) {
-                coverMutation.mutate(file);
+                // Le fichier choisi n'est jamais envoyé tel quel : la modale de
+                // rognage s'intercale toujours avant `coverMutation` (voir
+                // `CoverCropperDialog`, qui appelle `coverMutation.mutate`
+                // lui-même une fois le cadrage confirmé).
+                setCoverSourceUrl(URL.createObjectURL(file));
               }
               event.target.value = "";
             }}
@@ -346,10 +363,9 @@ export function WorkEditor({ workId }: { workId: string }) {
             type="button"
             variant="outline"
             className="mt-4 w-full"
-            isLoading={coverMutation.isPending}
             onClick={() => coverInputRef.current?.click()}
           >
-            {!coverMutation.isPending && <ImagePlus aria-hidden />}
+            <ImagePlus aria-hidden />
             {work.coverPath ? "Remplacer" : "Ajouter"}
           </Button>
 
@@ -360,6 +376,13 @@ export function WorkEditor({ workId }: { workId: string }) {
                 : "Le téléversement a échoué."}
             </p>
           )}
+
+          <CoverCropperDialog
+            imageSrc={coverSourceUrl}
+            isSaving={coverMutation.isPending}
+            onCancel={closeCoverCropper}
+            onCropped={(file) => coverMutation.mutate(file)}
+          />
         </AdminPanel>
 
         <AdminPanel title="Informations">
