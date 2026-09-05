@@ -35,7 +35,18 @@ export async function SiteHeader() {
 
   return (
     <header className="border-border bg-background/85 sticky top-0 z-50 border-b backdrop-blur-md">
-      <div className="mx-auto flex h-18 w-full max-w-7xl items-center gap-4 px-5 sm:px-8">
+      <div className="mx-auto flex h-18 w-full max-w-7xl items-center justify-between gap-4 px-5 sm:px-8">
+        {/*
+         * `justify-between` sur la rangée : sous `lg`, le bloc `MainNav`
+         * ci-dessous est en `display: none` — il ne compte plus du tout dans
+         * la répartition flex, et rien d'autre ne poussait plus les actions
+         * (panier, menu) vers la droite. Logo et actions se retrouvaient
+         * collés l'un à l'autre à gauche, tout l'espace restant vide à
+         * droite. `justify-between` les écarte aux deux extrémités sur
+         * mobile ; à `lg` et au-delà, `flex-1` sur `MainNav` absorbe déjà
+         * tout l'espace libre restant, donc `justify-between` n'a plus rien
+         * à redistribuer et ne change rien à ce comportement.
+         */}
         <LogoLink priority className="h-9 sm:h-10" />
 
         {/*
