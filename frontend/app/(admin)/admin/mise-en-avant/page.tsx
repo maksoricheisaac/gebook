@@ -12,7 +12,7 @@ export default function AdminFeaturedWorksPage() {
     <>
       <AdminPageHeader
         title="Mise en avant"
-        description="Choisissez les œuvres publiées affichées en avant sur l’accueil, et leur ordre de priorité — réservé au SuperAdmin."
+        description="Choisissez les œuvres publiées ET de visibilité publique à afficher en avant sur l’accueil, et leur ordre de priorité — réservé au SuperAdmin. Une œuvre réservée à un espace (« tenant_only ») ou privée n’apparaît pas ici : elle ne pourrait de toute façon jamais s’afficher sur l’accueil public."
       />
       <FeaturedWorksManager />
     </>

@@ -578,8 +578,13 @@ export class AdminWorksService {
    * Catalogue de curation « à la une » — plateforme entière, jamais scopé à
    * un tenant : contrairement à `list()`, appelée depuis des routes
    * `@Roles('admin')` (voir `AdminWorksController`), donc sans
-   * `TenantContext` à respecter. Restreint aux œuvres publiées : mettre en
-   * avant un brouillon n'aurait aucun sens, personne ne peut encore l'ouvrir.
+   * `TenantContext` à respecter. Restreint aux œuvres publiées ET
+   * `visibility: public` : une œuvre `published`/`tenant_only` (ou
+   * `private`) ne remonte jamais dans `WorksService#publiclyVisible`, donc
+   * la mettre en avant ici sans cette condition produisait un « à la une »
+   * qui se cochait dans l'admin sans jamais apparaître sur l'accueil —
+   * exactement le panneau qui fait qu'une deuxième œuvre cochée « featured »
+   * semble disparaître (règle n° 3, la même que le catalogue public).
    */
   async listFeaturable(
     query: AdminListQuery,
@@ -591,6 +596,7 @@ export class AdminWorksService {
     };
     const where: Prisma.WorkWhereInput = {
       status: WorkStatus.published,
+      visibility: WorkVisibility.public,
       deletedAt: null,
       ...(query.q && {
         translations: {
@@ -661,6 +667,21 @@ export class AdminWorksService {
         });
         if (!existing) {
           throw new NotFoundException("Cette œuvre n'existe pas.");
+        }
+        // Défense en profondeur (`listFeaturable` filtre déjà ces candidats,
+        // mais rien n'empêche un appel direct de cette route) : une œuvre
+        // que le catalogue public n'affichera de toute façon jamais
+        // (`WorksService#publiclyVisible`) ne doit pas pouvoir être cochée
+        // « à la une » — ce décalage est précisément ce qui faisait
+        // disparaître silencieusement une deuxième œuvre mise en avant.
+        if (
+          dto.featured &&
+          (existing.status !== WorkStatus.published ||
+            existing.visibility !== WorkVisibility.public)
+        ) {
+          throw new ForbiddenException(
+            'Seule une œuvre publiée et de visibilité publique peut être mise en avant.',
+          );
         }
 
         return tx.work.update({
