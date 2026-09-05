@@ -2,12 +2,14 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import {
   BookText,
   CheckCircle2,
+  Eye,
   FolderTree,
   Pencil,
   Plus,
@@ -381,6 +383,12 @@ export function CategoryManager() {
                     <td className="tabular-nums">{category._count.works}</td>
                     <td>
                       <div className="flex justify-end gap-1.5">
+                        <Button asChild variant="ghost" size="sm">
+                          <Link href={`/admin/categories/${category.id}`}>
+                            <Eye aria-hidden />
+                            <span className="sr-only"> — {category.name}</span>
+                          </Link>
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"

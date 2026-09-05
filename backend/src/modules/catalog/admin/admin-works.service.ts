@@ -303,6 +303,7 @@ export class AdminWorksService {
         },
       }),
       ...(query.authorId && { authorId: query.authorId }),
+      ...(query.categoryId && { categoryId: query.categoryId }),
       ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
     };
 

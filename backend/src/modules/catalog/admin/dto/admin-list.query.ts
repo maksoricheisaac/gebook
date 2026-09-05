@@ -35,9 +35,16 @@ export interface AdminPaginatedResponse<T> {
   meta: { page: number; perPage: number; total: number; totalPages: number };
 }
 
-/** Liste des œuvres, filtrable par auteur — page de détail d'un auteur (brief admin). */
+/**
+ * Liste des œuvres, filtrable par auteur ou par catégorie — pages de détail
+ * d'un auteur ou d'une catégorie (brief admin).
+ */
 export class AdminListWorksQuery extends AdminListQuery {
   @IsOptional()
   @IsString()
   authorId?: string;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
 }
