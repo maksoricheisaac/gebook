@@ -7,8 +7,11 @@ import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import type { ErrorResponseBody } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
+import { MailService } from './../src/modules/mail/mail.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import { adminDb } from './support/admin-db';
+import { fakeMailService } from './support/fake-mail';
+import { verifyAndLogin } from './support/verify-and-login';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@phase7.e2e.test';
@@ -45,12 +48,16 @@ describe('Commandes (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
+    await verifyAndLogin(agent, prisma, ORIGIN, email);
   };
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailService)
+      .useValue(fakeMailService())
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());

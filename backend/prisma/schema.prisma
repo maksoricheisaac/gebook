@@ -299,7 +299,7 @@ model Tenant {
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  creator          User?                    @relation(fields: [createdBy], references: [id], onDelete: SetNull, map: "fk_tenants_created_by")
+  creator          User?                   @relation(fields: [createdBy], references: [id], onDelete: SetNull, map: "fk_tenants_created_by")
   members          TenantMember[]
   settings         TenantSetting[]
   authors          Author[]
@@ -372,18 +372,19 @@ model User {
   /// Pluriel depuis le V2 : un même utilisateur peut avoir un profil auteur dans
   /// plusieurs tenants (brief §3, §7). Voir la contrainte `[tenantId, userId]` sur
   /// `Author` — au plus un profil auteur par tenant pour un même utilisateur.
-  authors           Author[]
-  userRoles         UserRole[]
-  sessions          Session[]
-  orders            Order[]
-  library           ReaderLibrary[]
-  downloads         Download[]
-  activityLogs      ActivityLog[]
-  tenantMemberships TenantMember[]
-  createdTenants    Tenant[]
-  payoutsRequested  Payout[]                @relation("PayoutRequester")
-  payoutsApproved   Payout[]                @relation("PayoutApprover")
-  termsAcceptances  TenantTermsAcceptance[]
+  authors                 Author[]
+  userRoles               UserRole[]
+  sessions                Session[]
+  orders                  Order[]
+  library                 ReaderLibrary[]
+  downloads               Download[]
+  activityLogs            ActivityLog[]
+  tenantMemberships       TenantMember[]
+  createdTenants          Tenant[]
+  payoutsRequested        Payout[]                 @relation("PayoutRequester")
+  payoutsApproved         Payout[]                 @relation("PayoutApprover")
+  termsAcceptances        TenantTermsAcceptance[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@index([status], map: "idx_users_status")
   @@index([phone], map: "idx_users_phone")
@@ -449,6 +450,25 @@ model LoginAttempt {
 
   @@unique([key], map: "uq_login_attempts_key")
   @@map("login_attempts")
+}
+
+/// Jeton de vérification d'adresse e-mail, sur le même principe que `Session` :
+/// seul `tokenHash` (SHA-256 du jeton envoyé par e-mail) est stocké, jamais le
+/// jeton lui-même — une fuite de la base ne suffit pas à vérifier un compte à
+/// la place de son propriétaire. Un clic sur le lien vérifie ET connecte
+/// directement (une preuve fraîche par e-mail vaut une saisie manuelle) ; le
+/// jeton est alors supprimé, à usage unique.
+model EmailVerificationToken {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique(map: "uq_email_verification_tokens_token_hash") @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_email_verification_tokens_user")
+
+  @@index([userId], map: "idx_email_verification_tokens_user")
+  @@map("email_verification_tokens")
 }
 
 // ---------------------------------------------------------------------------
@@ -1050,8 +1070,8 @@ model SaleDistribution {
 /// chaque vendeur EST un tenant dans ce modèle, brief §20). Passe toujours par
 /// l'abstraction `PayoutProvider`, jamais par un pilote concret (brief §22).
 model Payout {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
+  id          String @id @default(uuid(7)) @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
   /// Qui a déclenché la demande (owner/admin/finance du tenant, ou un
   /// platform_admin agissant pour son compte).
   requestedBy String @map("requested_by") @db.Uuid
@@ -1127,17 +1147,17 @@ model PayoutEvent {
 /// version antérieure — `TenantTermsAcceptance` fige quelle version était en
 /// vigueur au moment de l'acceptation, jamais recalculée.
 model DistributionTerms {
-  id     String     @id @default(uuid(7)) @db.Uuid
-  tenantType TenantType @map("tenant_type")
-  version Int
-  title   String     @db.VarChar(200)
+  id          String     @id @default(uuid(7)) @db.Uuid
+  tenantType  TenantType @map("tenant_type")
+  version     Int
+  title       String     @db.VarChar(200)
   /// Contenu administrable. Tant qu'aucun texte juridique définitif n'est fourni,
   /// doit rester une structure clairement marquée « à compléter » — jamais de
   /// contenu juridique fictif (brief §16, §92).
-  content     String   @db.Text
-  isActive    Boolean  @default(true) @map("is_active")
-  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  content     String     @db.Text
+  isActive    Boolean    @default(true) @map("is_active")
+  publishedAt DateTime   @default(now()) @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
   acceptances TenantTermsAcceptance[]
 

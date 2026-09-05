@@ -15,6 +15,39 @@ interface AuthUserPayload {
   roles: string[];
 }
 
+type AuthOutcome =
+  | { status: "ok"; user: AuthUserPayload }
+  | { status: "verification_required"; email: string }
+  | { formState: AuthFormState };
+
+/**
+ * Pose le cookie de session de première partie à partir du `Set-Cookie` renvoyé
+ * par l'API — voir le commentaire de `proxyAuthRequest` ci-dessous pour le
+ * pourquoi de cette indirection.
+ */
+async function applySessionCookie(response: Response): Promise<void> {
+  const sessionCookie = response.headers
+    .getSetCookie()
+    .find((value) => value.startsWith(`${SESSION_COOKIE_NAME}=`));
+
+  if (!sessionCookie) {
+    return;
+  }
+
+  const token = sessionCookie.split(";")[0]?.split("=")[1];
+  const expiresMatch = /Expires=([^;]+)/i.exec(sessionCookie);
+
+  if (token) {
+    (await cookies()).set(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      expires: expiresMatch?.[1] ? new Date(expiresMatch[1]) : undefined,
+    });
+  }
+}
+
 /**
  * Connexion, inscription et déconnexion passent par une Server Action plutôt que par
  * un appel direct du navigateur à l'API (audit §32).
@@ -24,11 +57,15 @@ interface AuthUserPayload {
  * en plus strictes des navigateurs. Passer par le serveur Next.js fait du cookie un
  * cookie de première partie du point de vue du visiteur — l'API ne voit qu'un appel
  * serveur à serveur, jamais le navigateur.
+ *
+ * `/auth/register` et `/auth/login` renvoient désormais un troisième état, distinct
+ * d'une erreur : l'adresse e-mail reste à confirmer, aucune session n'est créée
+ * (brief « vérification d'e-mail obligatoire »).
  */
 export async function proxyAuthRequest(
   path: string,
   body: unknown,
-): Promise<{ user: AuthUserPayload } | { formState: AuthFormState }> {
+): Promise<AuthOutcome> {
   // Next.js exige déjà cet en-tête sur toute Server Action : le réutiliser ici évite
   // d'inventer une nouvelle variable d'environnement pour la même information.
   const origin = (await headers()).get("origin") ?? "";
@@ -40,7 +77,8 @@ export async function proxyAuthRequest(
   });
 
   const payload = (await response.json().catch(() => null)) as
-    | (AuthUserPayload & Record<string, unknown>)
+    | { status: "ok"; user: AuthUserPayload }
+    | { status: "verification_required"; email: string }
     | { message?: string; errors?: Record<string, string[]> }
     | null;
 
@@ -57,26 +95,13 @@ export async function proxyAuthRequest(
     };
   }
 
-  const sessionCookie = response.headers
-    .getSetCookie()
-    .find((value) => value.startsWith(`${SESSION_COOKIE_NAME}=`));
-
-  if (sessionCookie) {
-    const token = sessionCookie.split(";")[0]?.split("=")[1];
-    const expiresMatch = /Expires=([^;]+)/i.exec(sessionCookie);
-
-    if (token) {
-      (await cookies()).set(SESSION_COOKIE_NAME, token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        expires: expiresMatch?.[1] ? new Date(expiresMatch[1]) : undefined,
-      });
-    }
+  if (payload && "status" in payload && payload.status === "verification_required") {
+    return { status: "verification_required", email: payload.email };
   }
 
-  return { user: payload as AuthUserPayload };
+  await applySessionCookie(response);
+
+  return { status: "ok", user: (payload as { user: AuthUserPayload }).user };
 }
 
 function retourFrom(formData: FormData): string | undefined {
@@ -101,6 +126,10 @@ export async function registerAction(
     return result.formState;
   }
 
+  if (result.status === "verification_required") {
+    redirect(`/verifier-email?email=${encodeURIComponent(result.email)}`);
+  }
+
   redirect(retourFrom(formData) ?? (await resolveDestination(result.user.roles)));
 }
 
@@ -117,7 +146,65 @@ export async function loginAction(
     return result.formState;
   }
 
+  if (result.status === "verification_required") {
+    redirect(`/verifier-email?email=${encodeURIComponent(result.email)}`);
+  }
+
   redirect(retourFrom(formData) ?? (await resolveDestination(result.user.roles)));
+}
+
+/**
+ * Consomme le jeton du lien reçu par e-mail : vérifie l'adresse et connecte
+ * directement (brief « un clic sur le lien envoyé par e-mail vaut connexion »).
+ *
+ * Même forme que `registerAction`/`loginAction` (état de formulaire en cas
+ * d'échec, `redirect()` en cas de succès) : la page `/verifier-email` soumet
+ * un formulaire caché automatiquement au chargement plutôt que d'appeler ceci
+ * directement, pour que la résolution de destination (rôles, tenant actif)
+ * reste côté serveur, exactement comme après une connexion normale.
+ */
+export async function verifyEmailAction(
+  _previous: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const token = formData.get("token");
+  const origin = (await headers()).get("origin") ?? "";
+
+  const response = await fetch(`${apiBaseUrl()}/auth/verify-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: origin },
+    body: JSON.stringify({ token }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    (AuthUserPayload & Record<string, unknown>) | { message?: string } | null;
+
+  if (!response.ok) {
+    const record = (payload ?? {}) as { message?: string };
+    return {
+      error: record.message ?? "Ce lien de vérification est invalide ou a expiré.",
+    };
+  }
+
+  await applySessionCookie(response);
+
+  const user = payload as AuthUserPayload;
+  redirect(await resolveDestination(user.roles));
+}
+
+/**
+ * Renvoi manuel du lien de vérification, depuis la page « vérifiez votre boîte
+ * mail ». Toujours silencieux côté API (204, que le compte existe ou non) —
+ * voir `AuthService.resendVerification()` côté backend.
+ */
+export async function resendVerificationAction(email: string): Promise<void> {
+  const origin = (await headers()).get("origin") ?? "";
+
+  await fetch(`${apiBaseUrl()}/auth/verify-email/resend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: origin },
+    body: JSON.stringify({ email }),
+  }).catch(() => undefined);
 }
 
 export async function logoutAction(): Promise<void> {

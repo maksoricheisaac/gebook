@@ -17,7 +17,9 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import {
   toAuthUserResponse,
   type AuthUserResponse,
@@ -29,6 +31,16 @@ import {
   sessionCookieOptions,
 } from './session-cookie';
 import type { AuthenticatedUser, RequestMeta } from './auth.types';
+
+/** Réponse d'inscription/connexion quand l'adresse e-mail reste à confirmer
+ * (brief §1) — pas une erreur, un état d'attente distinct. */
+export interface VerificationRequiredResponse {
+  status: 'verification_required';
+  email: string;
+}
+
+export type LoginResponse =
+  { status: 'ok'; user: AuthUserResponse } | VerificationRequiredResponse;
 
 /**
  * Authentification publique.
@@ -48,9 +60,38 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
+  ): Promise<LoginResponse> {
+    const outcome = await this.auth.register(dto, requestMeta(request));
+    return this.applyOutcome(outcome, response);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(
+    @Body() dto: LoginDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<LoginResponse> {
+    const outcome = await this.auth.login(dto, requestMeta(request));
+    return this.applyOutcome(outcome, response);
+  }
+
+  /**
+   * Consomme le lien reçu par e-mail : vérifie l'adresse et connecte
+   * directement (brief §1). En `POST`, jamais `GET` — un lien cliqué depuis
+   * un client mail est parfois pré-chargé automatiquement par un filtre
+   * antispam, ce qui consommerait le jeton avant même que la personne ne
+   * clique ; la page frontend soumet ce jeton explicitement.
+   */
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<AuthUserResponse> {
-    const { user, session } = await this.auth.register(
-      dto,
+    const { user, session } = await this.auth.verifyEmail(
+      dto.token,
       requestMeta(request),
     );
     response.cookie(
@@ -61,20 +102,33 @@ export class AuthController {
     return user;
   }
 
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  async login(
-    @Body() dto: LoginDto,
+  /**
+   * Renvoi manuel du lien, depuis la page « vérifiez votre boîte mail ».
+   * Toujours `204`, que le compte existe ou non, ou soit déjà vérifié —
+   * voir `AuthService.resendVerification()`.
+   */
+  @Post('verify-email/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resendVerification(
+    @Body() dto: ResendVerificationDto,
     @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<AuthUserResponse> {
-    const { user, session } = await this.auth.login(dto, requestMeta(request));
+  ): Promise<void> {
+    await this.auth.resendVerification(dto.email, requestMeta(request));
+  }
+
+  private applyOutcome(
+    outcome: Awaited<ReturnType<AuthService['login']>>,
+    response: Response,
+  ): LoginResponse {
+    if (outcome.status === 'verification_required') {
+      return outcome;
+    }
     response.cookie(
       SESSION_COOKIE_NAME,
-      session.token,
-      sessionCookieOptions(session.expiresAt),
+      outcome.session.token,
+      sessionCookieOptions(outcome.session.expiresAt),
     );
-    return user;
+    return { status: 'ok', user: outcome.user };
   }
 
   @Post('logout')

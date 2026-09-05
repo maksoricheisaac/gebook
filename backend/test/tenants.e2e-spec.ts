@@ -8,8 +8,11 @@ import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
 import { ACTIVE_TENANT_COOKIE_NAME } from './../src/modules/tenants/active-tenant-cookie';
+import { MailService } from './../src/modules/mail/mail.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import { adminPrismaProxy } from './support/admin-db';
+import { fakeMailService } from './support/fake-mail';
+import { verifyAndLogin } from './support/verify-and-login';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@phase5.e2e.test';
@@ -31,7 +34,10 @@ describe('Tenants — support TenantContext (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailService)
+      .useValue(fakeMailService())
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());
@@ -67,6 +73,7 @@ describe('Tenants — support TenantContext (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
+    await verifyAndLogin(agent, adminPrisma, ORIGIN, email);
     const user = await adminPrisma.user.findUniqueOrThrow({ where: { email } });
 
     const tenantA = await adminPrisma.tenant.create({

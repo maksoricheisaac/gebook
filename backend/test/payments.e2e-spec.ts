@@ -8,8 +8,11 @@ import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
 import { FakePaymentDriver } from './../src/modules/payments/drivers/fake-payment.driver';
+import { MailService } from './../src/modules/mail/mail.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import { adminPrismaProxy } from './support/admin-db';
+import { fakeMailService } from './support/fake-mail';
+import { verifyAndLogin } from './support/verify-and-login';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@phase8.e2e.test';
@@ -60,7 +63,7 @@ describe('Paiements (e2e)', () => {
     agent: ReturnType<typeof request.agent>,
     email: string,
   ): Promise<string> => {
-    const response = await agent
+    await agent
       .post('/auth/register')
       .set('Origin', ORIGIN)
       .send({
@@ -73,7 +76,9 @@ describe('Paiements (e2e)', () => {
       })
       .expect(201);
 
-    return (response.body as { id: string }).id;
+    await verifyAndLogin(agent, prisma, ORIGIN, email);
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    return user.id;
   };
 
   /** Crée une commande d'un article numérique et ouvre sa tentative de paiement. */
@@ -144,7 +149,10 @@ describe('Paiements (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailService)
+      .useValue(fakeMailService())
+      .compile();
 
     // `rawBody` comme dans `main.ts` : sans lui, aucune signature n'est
     // vérifiable et le test ne prouverait rien de ce qui tourne en production.

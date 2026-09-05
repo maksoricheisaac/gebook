@@ -7,9 +7,11 @@ import type { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
+import { MailService } from './../src/modules/mail/mail.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import type { RlsContext } from './../src/prisma/rls-context';
 import { adminPrismaProxy } from './support/admin-db';
+import { fakeMailService } from './support/fake-mail';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@rls.e2e.test';
@@ -86,7 +88,10 @@ describe('Isolation multi-tenant — RLS PostgreSQL (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailService)
+      .useValue(fakeMailService())
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());

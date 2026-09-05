@@ -6,10 +6,13 @@ import type { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
+import { MailService } from './../src/modules/mail/mail.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import { UserStatus } from './../src/generated/prisma/enums';
 import type { AuthUserResponse } from './../src/modules/auth/dto/auth-user.response';
 import type { ErrorResponseBody } from './../src/common/filters/http-exception.filter';
+import { extractVerificationToken, fakeMailService } from './support/fake-mail';
+import { verifyAndLogin } from './support/verify-and-login';
 
 const ORIGIN = 'http://localhost:3000';
 /** Préfixe dédié : nettoyé intégralement en fin de suite, sans toucher au seed. */
@@ -25,6 +28,16 @@ const EMAIL_DOMAIN = '@phase5.e2e.test';
 describe('Authentification (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
+  const mail = fakeMailService();
+
+  /** Dernier jeton de vérification envoyé à cette adresse (voir `mail.sent`). */
+  const lastVerificationToken = (email: string): string => {
+    const message = [...mail.sent].reverse().find((sent) => sent.to === email);
+    if (!message) {
+      throw new Error(`Aucun e-mail de vérification envoyé à ${email}.`);
+    }
+    return extractVerificationToken(message.html);
+  };
 
   const registerPayload = (
     overrides: Record<string, unknown> = {},
@@ -41,7 +54,10 @@ describe('Authentification (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailService)
+      .useValue(mail)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());
@@ -75,20 +91,23 @@ describe('Authentification (e2e)', () => {
   });
 
   describe('POST /auth/register', () => {
-    it('inscrit un lecteur et pose un cookie de session', async () => {
+    it('inscrit un lecteur mais ne pose pas de cookie tant que l’adresse n’est pas confirmée', async () => {
+      const email = `jeanne.kimbangu${EMAIL_DOMAIN}`;
       const response = await request(app.getHttpServer())
         .post('/auth/register')
         .set('Origin', ORIGIN)
         .send(registerPayload())
         .expect(201);
 
-      const body = response.body as AuthUserResponse;
-      expect(body.email).toBe(`jeanne.kimbangu${EMAIL_DOMAIN}`);
-      expect(body.roles).toEqual(['reader']);
-      expect(JSON.stringify(body)).not.toMatch(/passwordHash|password_hash/i);
+      expect(response.body).toEqual({
+        status: 'verification_required',
+        email,
+      });
+      expect(response.headers['set-cookie']).toBeUndefined();
 
-      const setCookie = response.headers['set-cookie'];
-      expect(setCookie?.[0]).toMatch(/gebook_session=.+HttpOnly/);
+      const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+      expect(user.emailVerifiedAt).toBeNull();
+      expect(mail.sent.some((sent) => sent.to === email)).toBe(true);
     });
 
     it('refuse une écriture sans origine autorisée', async () => {
@@ -210,6 +229,80 @@ describe('Authentification (e2e)', () => {
     });
   });
 
+  describe('POST /auth/verify-email', () => {
+    it('confirme l’adresse, connecte directement et n’autorise le jeton qu’une seule fois', async () => {
+      const email = `verification${EMAIL_DOMAIN}`;
+      await request(app.getHttpServer())
+        .post('/auth/register')
+        .set('Origin', ORIGIN)
+        .send(registerPayload({ email }))
+        .expect(201);
+
+      const token = lastVerificationToken(email);
+
+      const response = await request(app.getHttpServer())
+        .post('/auth/verify-email')
+        .set('Origin', ORIGIN)
+        .send({ token })
+        .expect(200);
+
+      expect((response.body as AuthUserResponse).email).toBe(email);
+      const setCookie = response.headers['set-cookie'];
+      expect(setCookie?.[0]).toMatch(/gebook_session=.+HttpOnly/);
+
+      const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+      expect(user.emailVerifiedAt).not.toBeNull();
+
+      // Jeton à usage unique : un second clic sur le même lien est refusé.
+      await request(app.getHttpServer())
+        .post('/auth/verify-email')
+        .set('Origin', ORIGIN)
+        .send({ token })
+        .expect(401);
+    });
+
+    it('refuse un jeton invalide', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/verify-email')
+        .set('Origin', ORIGIN)
+        .send({ token: 'jeton-invente' })
+        .expect(401);
+    });
+  });
+
+  describe('POST /auth/verify-email/resend', () => {
+    it('renvoie un nouveau lien à un compte non vérifié', async () => {
+      const email = `renvoi${EMAIL_DOMAIN}`;
+      await request(app.getHttpServer())
+        .post('/auth/register')
+        .set('Origin', ORIGIN)
+        .send(registerPayload({ email }))
+        .expect(201);
+
+      const sentBefore = mail.sent.filter((sent) => sent.to === email).length;
+
+      await request(app.getHttpServer())
+        .post('/auth/verify-email/resend')
+        .set('Origin', ORIGIN)
+        .send({ email })
+        .expect(204);
+
+      const sentAfter = mail.sent.filter((sent) => sent.to === email).length;
+      expect(sentAfter).toBe(sentBefore + 1);
+    });
+
+    it('répond 204 de façon identique pour un compte inexistant, sans rien envoyer', async () => {
+      const email = `inexistant${EMAIL_DOMAIN}`;
+      await request(app.getHttpServer())
+        .post('/auth/verify-email/resend')
+        .set('Origin', ORIGIN)
+        .send({ email })
+        .expect(204);
+
+      expect(mail.sent.some((sent) => sent.to === email)).toBe(false);
+    });
+  });
+
   describe('POST /auth/login', () => {
     const email = `connexion${EMAIL_DOMAIN}`;
     const password = 'MotDePasse1';
@@ -221,6 +314,12 @@ describe('Authentification (e2e)', () => {
         .send(
           registerPayload({ email, password, passwordConfirmation: password }),
         );
+      // Adresse marquée vérifiée directement en base : ce bloc teste la mécanique
+      // de connexion elle-même, pas la vérification d'adresse (couverte plus bas).
+      await prisma.user.update({
+        where: { email },
+        data: { emailVerifiedAt: new Date() },
+      });
     });
 
     it('connecte un lecteur avec les bons identifiants', async () => {
@@ -230,7 +329,38 @@ describe('Authentification (e2e)', () => {
         .send({ email, password })
         .expect(200);
 
-      expect((response.body as AuthUserResponse).email).toBe(email);
+      const body = response.body as { status: string; user: AuthUserResponse };
+      expect(body.status).toBe('ok');
+      expect(body.user.email).toBe(email);
+      const setCookie = response.headers['set-cookie'];
+      expect(setCookie?.[0]).toMatch(/gebook_session=.+HttpOnly/);
+    });
+
+    it('renvoie « verification_required » et ne pose pas de cookie pour un compte non vérifié', async () => {
+      const unverifiedEmail = `non-verifie${EMAIL_DOMAIN}`;
+      await request(app.getHttpServer())
+        .post('/auth/register')
+        .set('Origin', ORIGIN)
+        .send(
+          registerPayload({
+            email: unverifiedEmail,
+            password,
+            passwordConfirmation: password,
+          }),
+        )
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .post('/auth/login')
+        .set('Origin', ORIGIN)
+        .send({ email: unverifiedEmail, password })
+        .expect(200);
+
+      expect(response.body).toEqual({
+        status: 'verification_required',
+        email: unverifiedEmail,
+      });
+      expect(response.headers['set-cookie']).toBeUndefined();
     });
 
     it('refuse un mot de passe incorrect, avec un message générique', async () => {
@@ -342,6 +472,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const response = await agent.get('/auth/me').expect(200);
       expect((response.body as AuthUserResponse).email).toBe(email);
@@ -360,6 +491,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       await agent.get('/auth/me').expect(200);
 
@@ -385,6 +517,7 @@ describe('Authentification (e2e)', () => {
         .send(
           registerPayload({ email, password, passwordConfirmation: password }),
         );
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       await agent.post('/auth/logout').set('Origin', ORIGIN).expect(204);
       await agent.get('/auth/me').expect(401);
@@ -419,6 +552,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const newEmail = `profil-modifie${EMAIL_DOMAIN}`;
       const response = await agent
@@ -455,6 +589,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const response = await agent
         .patch('/auth/me')
@@ -478,6 +613,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const response = await agent
         .patch('/auth/me')
@@ -523,6 +659,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       await agent
         .post('/auth/me/password')
@@ -568,6 +705,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(registerAgent, prisma, ORIGIN, email, password);
 
       // Une deuxième session, ouverte séparément (agent distinct = cookie distinct).
       const otherAgent = request.agent(app.getHttpServer());
@@ -605,6 +743,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const response = await agent
         .post('/auth/me/password')
@@ -632,6 +771,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const response = await agent
         .post('/auth/me/password')
@@ -659,6 +799,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const response = await agent
         .post('/auth/me/password')
@@ -689,6 +830,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
 
       const user = await prisma.user.findUniqueOrThrow({ where: { email } });
       const authorRole = await prisma.role.findUniqueOrThrow({

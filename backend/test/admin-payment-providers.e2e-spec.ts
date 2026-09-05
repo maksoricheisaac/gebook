@@ -6,7 +6,10 @@ import type { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
+import { MailService } from './../src/modules/mail/mail.service';
 import { PrismaService } from './../src/prisma/prisma.service';
+import { fakeMailService } from './support/fake-mail';
+import { verifyAndLogin } from './support/verify-and-login';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@paymentproviders.e2e.test';
@@ -38,12 +41,16 @@ describe('Superadmin — Prestataires de paiement (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
+    await verifyAndLogin(agent, prisma, ORIGIN, email);
   };
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailService)
+      .useValue(fakeMailService())
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());

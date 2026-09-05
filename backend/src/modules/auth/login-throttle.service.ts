@@ -5,6 +5,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
 
+/** `email_verify` : renvois du lien de vérification d'adresse (brief §1) —
+ * même mécanisme, pour éviter qu'un compte non vérifié ne serve à bombarder
+ * une boîte mail de renvois. `otp` : renvois du code de connexion (brief §2). */
+export type ThrottleScope = 'email' | 'ip' | 'setup' | 'email_verify' | 'otp';
+
 /**
  * Limitation des tentatives de connexion, à double compteur (audit §32, corrige S-05).
  *
@@ -16,10 +21,7 @@ const WINDOW_MS = 15 * 60 * 1000;
 export class LoginThrottleService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async isBlocked(
-    scope: 'email' | 'ip' | 'setup',
-    identifier: string,
-  ): Promise<boolean> {
+  async isBlocked(scope: ThrottleScope, identifier: string): Promise<boolean> {
     const record = await this.prisma.loginAttempt.findUnique({
       where: { key: this.key(scope, identifier) },
     });
@@ -31,10 +33,7 @@ export class LoginThrottleService {
     return record.count >= MAX_ATTEMPTS;
   }
 
-  async hit(
-    scope: 'email' | 'ip' | 'setup',
-    identifier: string,
-  ): Promise<void> {
+  async hit(scope: ThrottleScope, identifier: string): Promise<void> {
     const key = this.key(scope, identifier);
     const now = new Date();
     const existing = await this.prisma.loginAttempt.findUnique({
@@ -58,16 +57,13 @@ export class LoginThrottleService {
     });
   }
 
-  async clear(
-    scope: 'email' | 'ip' | 'setup',
-    identifier: string,
-  ): Promise<void> {
+  async clear(scope: ThrottleScope, identifier: string): Promise<void> {
     await this.prisma.loginAttempt
       .delete({ where: { key: this.key(scope, identifier) } })
       .catch(() => undefined);
   }
 
-  private key(scope: 'email' | 'ip' | 'setup', identifier: string): string {
+  private key(scope: ThrottleScope, identifier: string): string {
     return createHash('sha256')
       .update(`${scope}:${identifier.toLowerCase()}`)
       .digest('hex');

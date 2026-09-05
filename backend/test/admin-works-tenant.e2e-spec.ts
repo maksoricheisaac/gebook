@@ -7,9 +7,12 @@ import type { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { HttpExceptionFilter } from './../src/common/filters/http-exception.filter';
 import { validationExceptionFactory } from './../src/common/validation/validation-exception.factory';
+import { MailService } from './../src/modules/mail/mail.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 import type { ErrorResponseBody } from './../src/common/filters/http-exception.filter';
 import { adminPrismaProxy } from './support/admin-db';
+import { fakeMailService } from './support/fake-mail';
+import { verifyAndLogin } from './support/verify-and-login';
 
 const ORIGIN = 'http://localhost:3000';
 const EMAIL_DOMAIN = '@tenant-works.e2e.test';
@@ -49,6 +52,7 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
+    await verifyAndLogin(agent, adminPrisma, ORIGIN, email);
     const user = await adminPrisma.user.findUniqueOrThrow({ where: { email } });
     return user.id;
   };
@@ -79,7 +83,10 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailService)
+      .useValue(fakeMailService())
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());

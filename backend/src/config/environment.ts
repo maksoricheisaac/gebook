@@ -209,6 +209,16 @@ export class Environment {
   @IsString()
   API_PUBLIC_URL?: string;
 
+  /**
+   * URL publique du FRONTEND — symétrique d'`API_PUBLIC_URL` ci-dessus, pour
+   * construire les liens envoyés par e-mail (vérification d'adresse…), qui
+   * doivent pointer vers une page du site, jamais vers l'API. Optionnelle :
+   * à défaut, le premier `CORS_ORIGINS` sert de repli en développement.
+   */
+  @IsOptional()
+  @IsString()
+  APP_PUBLIC_URL?: string;
+
   // ---------------------------------------------------------------------
   // Scan antivirus (ClamAV) — tout fichier téléversé par un utilisateur
   // (couverture, photo d'auteur, ouvrage numérique) passe par `clamd` avant
@@ -267,6 +277,63 @@ export class Environment {
   @IsOptional()
   @IsString()
   R2_BUCKET?: string;
+
+  // ---------------------------------------------------------------------
+  // Envoi d'e-mails (SMTP du domaine propre) — vérification d'adresse à
+  // l'inscription, code à usage unique à la connexion. Optionnelles au niveau
+  // de la validation comme ClamAV/R2 ci-dessus : sans elles, ce n'est pas le
+  // démarrage qui échoue, c'est `MailService` qui refuse d'envoyer (503) —
+  // jamais un compte silencieusement vérifié faute de pouvoir prévenir son
+  // propriétaire.
+  // ---------------------------------------------------------------------
+
+  @IsOptional()
+  @IsString()
+  SMTP_HOST?: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined ? undefined : Number(value),
+  )
+  @IsOptional()
+  @IsInt({ message: 'SMTP_PORT doit être un nombre entier.' })
+  @Min(1, { message: 'SMTP_PORT doit être compris entre 1 et 65535.' })
+  @Max(65535, { message: 'SMTP_PORT doit être compris entre 1 et 65535.' })
+  SMTP_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  /** Jamais journalisée, jamais renvoyée par une route Superadmin. */
+  @IsOptional()
+  @IsString()
+  SMTP_PASSWORD?: string;
+
+  /**
+   * Adresse d'expédition (« Nom <adresse@domaine> ») — en pratique la même
+   * boîte que `SMTP_USER`, sur le domaine propre de l'installation.
+   */
+  @IsOptional()
+  @IsString()
+  MAIL_FROM?: string;
+
+  // ---------------------------------------------------------------------
+  // CAPTCHA (Cloudflare Turnstile) — inscription et connexion. Le jeton est
+  // systématiquement revérifié côté serveur auprès de Cloudflare : un contrôle
+  // uniquement frontend serait contourné par un simple appel direct à l'API.
+  // Optionnelles au niveau de la validation, mais sans `TURNSTILE_SECRET_KEY`
+  // ces deux routes refusent toute tentative (503) plutôt que de laisser
+  // passer sans vérification.
+  // ---------------------------------------------------------------------
+
+  @IsOptional()
+  @IsString()
+  TURNSTILE_SITE_KEY?: string;
+
+  /** Jamais journalisée, jamais renvoyée par une route Superadmin. */
+  @IsOptional()
+  @IsString()
+  TURNSTILE_SECRET_KEY?: string;
 }
 
 /**

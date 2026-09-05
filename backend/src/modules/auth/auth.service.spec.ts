@@ -1,6 +1,7 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { EmailVerificationService } from './email-verification.service';
 import type { SessionService } from './session.service';
 import type { LoginThrottleService } from './login-throttle.service';
 import type { RegisterDto } from './dto/register.dto';
@@ -50,8 +51,11 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
     const sessionsCreate = jest.fn();
     const sessions = { create: sessionsCreate } as unknown as SessionService;
     const throttle = {} as LoginThrottleService;
+    const emailVerification = {
+      send: jest.fn(),
+    } as unknown as EmailVerificationService;
 
-    const auth = new AuthService(prisma, sessions, throttle);
+    const auth = new AuthService(prisma, sessions, throttle, emailVerification);
 
     await expect(
       auth.register(registerDto, { ip: '127.0.0.1' }),
@@ -73,8 +77,11 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
 
     const sessions = { create: jest.fn() } as unknown as SessionService;
     const throttle = {} as LoginThrottleService;
+    const emailVerification = {
+      send: jest.fn(),
+    } as unknown as EmailVerificationService;
 
-    const auth = new AuthService(prisma, sessions, throttle);
+    const auth = new AuthService(prisma, sessions, throttle, emailVerification);
 
     await expect(
       auth.register(registerDto, { ip: '127.0.0.1' }),

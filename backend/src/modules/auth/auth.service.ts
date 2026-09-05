@@ -12,6 +12,7 @@ import * as argon2 from 'argon2';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserStatus } from '../../generated/prisma/enums';
+import { EmailVerificationService } from './email-verification.service';
 import { LoginThrottleService } from './login-throttle.service';
 import { SessionService, type CreatedSession } from './session.service';
 import {
@@ -29,6 +30,16 @@ export interface AuthResult {
   session: CreatedSession;
 }
 
+/**
+ * Issue possible de `register()`/`login()` : soit une session est créée
+ * (`ok`), soit l'adresse e-mail du compte reste à confirmer (brief §1) et
+ * aucune session n'est créée tant que ce n'est pas fait — jamais un compte
+ * « à moitié connecté ».
+ */
+export type AuthOutcome =
+  | ({ status: 'ok' } & AuthResult)
+  | { status: 'verification_required'; email: string };
+
 /** Rôle attribué à toute inscription publique — inchangé depuis la version PHP. */
 const READER_ROLE = 'reader';
 
@@ -38,9 +49,10 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly sessions: SessionService,
     private readonly throttle: LoginThrottleService,
+    private readonly emailVerification: EmailVerificationService,
   ) {}
 
-  async register(dto: RegisterDto, meta: RequestMeta): Promise<AuthResult> {
+  async register(dto: RegisterDto, meta: RequestMeta): Promise<AuthOutcome> {
     if (dto.password !== dto.passwordConfirmation) {
       throw new BadRequestException({
         message: 'Les données envoyées sont invalides.',
@@ -96,15 +108,19 @@ export class AuthService {
 
     await this.logActivity(user.id, 'auth.register', meta);
 
-    const session = await this.sessions.create(user.id, meta);
+    // Aucune session n'est créée ici : le compte n'est « pleinement actif »
+    // qu'une fois l'adresse e-mail confirmée (brief §1). C'est le clic sur le
+    // lien envoyé qui connectera l'utilisateur (voir `verifyEmail()`).
+    await this.emailVerification.send({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+    });
 
-    return {
-      user: toAuthUserResponse({ ...user, roles: [READER_ROLE] }),
-      session,
-    };
+    return { status: 'verification_required', email: user.email };
   }
 
-  async login(dto: LoginDto, meta: RequestMeta): Promise<AuthResult> {
+  async login(dto: LoginDto, meta: RequestMeta): Promise<AuthOutcome> {
     if (
       (await this.throttle.isBlocked('email', dto.email)) ||
       (await this.throttle.isBlocked('ip', meta.ip))
@@ -137,6 +153,26 @@ export class AuthService {
 
     await this.throttle.clear('email', dto.email);
     await this.throttle.clear('ip', meta.ip);
+
+    // Identifiants corrects mais adresse jamais confirmée (brief §1) : aucune
+    // exception, y compris pour un compte administrateur créé avant
+    // l'introduction de cette exigence — `emailVerifiedAt` est `null` pour
+    // tout compte existant, quel que soit son rôle. Le renvoi du lien reste
+    // limité en fréquence (`email_verify`) : redemander une connexion en boucle
+    // ne doit pas bombarder la boîte mail de renvois.
+    if (!user.emailVerifiedAt) {
+      if (!(await this.throttle.isBlocked('email_verify', user.email))) {
+        await this.throttle.hit('email_verify', user.email);
+        await this.emailVerification.send({
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+        });
+      }
+      await this.logActivity(user.id, 'auth.login.unverified', meta);
+      return { status: 'verification_required', email: user.email };
+    }
+
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
@@ -146,7 +182,72 @@ export class AuthService {
     const roles = await this.rolesFor(user.id);
     const session = await this.sessions.create(user.id, meta);
 
+    return {
+      status: 'ok',
+      user: toAuthUserResponse({ ...user, roles }),
+      session,
+    };
+  }
+
+  /**
+   * Consomme le jeton du lien de vérification envoyé par e-mail : marque le
+   * compte comme vérifié et connecte directement (un clic sur un lien reçu
+   * par e-mail est une preuve au moins aussi forte qu'une saisie manuelle de
+   * code, brief §1 — pas de double friction juste après l'inscription).
+   */
+  async verifyEmail(token: string, meta: RequestMeta): Promise<AuthResult> {
+    const consumed = await this.emailVerification.consume(token);
+    if (!consumed) {
+      throw new UnauthorizedException(
+        'Ce lien de vérification est invalide ou a expiré.',
+      );
+    }
+
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: consumed.userId },
+    });
+
+    if (user.status !== UserStatus.active) {
+      throw new UnauthorizedException("Ce compte n'est plus actif.");
+    }
+
+    await this.logActivity(user.id, 'auth.email.verify', meta);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    const roles = await this.rolesFor(user.id);
+    const session = await this.sessions.create(user.id, meta);
+
     return { user: toAuthUserResponse({ ...user, roles }), session };
+  }
+
+  /**
+   * Renvoi manuel du lien de vérification (page « vérifiez votre boîte mail »
+   * après inscription, si le premier e-mail n'est jamais arrivé). Réponse
+   * volontairement identique que le compte existe ou non, et qu'il soit déjà
+   * vérifié ou non : une route sans mot de passe ne doit jamais permettre de
+   * deviner quelles adresses sont inscrites (même principe que le message
+   * générique de `login()`).
+   */
+  async resendVerification(email: string, meta: RequestMeta): Promise<void> {
+    if (await this.throttle.isBlocked('email_verify', email)) {
+      return;
+    }
+    await this.throttle.hit('email_verify', email);
+
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.emailVerifiedAt || user.status !== UserStatus.active) {
+      return;
+    }
+
+    await this.emailVerification.send({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+    });
+    await this.logActivity(user.id, 'auth.email.verify.resend', meta);
   }
 
   /**
