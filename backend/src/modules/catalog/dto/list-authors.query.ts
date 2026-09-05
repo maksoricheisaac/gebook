@@ -13,4 +13,10 @@ export class ListAuthorsQuery extends LocaleQuery {
   @IsString()
   @MaxLength(120)
   tenant?: string;
+
+  /** Recherche par nom de plume — insensible à la casse. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
 }

@@ -108,9 +108,11 @@ export function fetchWork(slug: string): Promise<WorkDetail> {
   });
 }
 
-export function fetchAuthors(tenant?: string): Promise<AuthorSummary[]> {
+export function fetchAuthors(
+  filters: { tenant?: string; q?: string } = {},
+): Promise<AuthorSummary[]> {
   return apiFetch<AuthorSummary[]>("/authors", {
-    query: tenant ? { tenant } : undefined,
+    query: { ...filters },
     revalidate: CATALOG_REVALIDATE,
   });
 }

@@ -32,3 +32,29 @@ export function toTenantPublicProfile(
     socialLinks: (tenant.socialLinks as Record<string, string> | null) ?? null,
   };
 }
+
+/**
+ * Ligne de l'annuaire public des espaces (`GET /tenants/public`) — plus
+ * étroit encore que `TenantPublicProfileResponse` : un visiteur qui parcourt
+ * l'annuaire n'a pas besoin de `website`/`socialLinks`/`coverPath`, réservés
+ * à la vitrine d'UN espace déjà ouverte.
+ */
+export interface TenantPublicSummaryResponse {
+  slug: string;
+  name: string;
+  type: string;
+  description: string | null;
+  logoPath: string | null;
+}
+
+export function toTenantPublicSummary(
+  tenant: Pick<Tenant, 'slug' | 'name' | 'type' | 'description' | 'logoPath'>,
+): TenantPublicSummaryResponse {
+  return {
+    slug: tenant.slug,
+    name: tenant.name,
+    type: tenant.type,
+    description: tenant.description,
+    logoPath: tenant.logoPath,
+  };
+}

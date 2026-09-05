@@ -52,7 +52,7 @@ export class CatalogController {
   listAuthors(
     @Query() query: ListAuthorsQuery,
   ): Promise<AuthorSummaryResponse[]> {
-    return this.authors.list(query.locale, query.tenant);
+    return this.authors.list(query.locale, query.tenant, query.q);
   }
 
   @Get('authors/:slug')

@@ -68,7 +68,7 @@ export default async function TenantStorefrontPage(props: PageProps<"/espaces/[s
   const { slug } = await props.params;
   const tenant = await loadTenant(slug);
   const [authors, works] = await Promise.all([
-    fetchAuthors(slug),
+    fetchAuthors({ tenant: slug }),
     fetchWorks({ tenant: slug, perPage: 24 }),
   ]);
 

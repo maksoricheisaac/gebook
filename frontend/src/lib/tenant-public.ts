@@ -16,11 +16,27 @@ export interface TenantPublicProfile {
   socialLinks: Record<string, string> | null;
 }
 
+/** Ligne de l'annuaire public (`/espaces`) — reflet de `TenantPublicSummaryResponse`. */
+export interface TenantPublicSummary {
+  slug: string;
+  name: string;
+  type: string;
+  description: string | null;
+  logoPath: string | null;
+}
+
 /** Même cache léger que le reste du catalogue public (`catalog.ts`). */
 const TENANT_REVALIDATE = 60;
 
 export function fetchTenantPublicProfile(slug: string): Promise<TenantPublicProfile> {
   return apiFetch<TenantPublicProfile>(`/tenants/public/${encodeURIComponent(slug)}`, {
+    revalidate: TENANT_REVALIDATE,
+  });
+}
+
+export function fetchTenantsPublic(q?: string): Promise<TenantPublicSummary[]> {
+  return apiFetch<TenantPublicSummary[]>("/tenants/public", {
+    query: q ? { q } : undefined,
     revalidate: TENANT_REVALIDATE,
   });
 }

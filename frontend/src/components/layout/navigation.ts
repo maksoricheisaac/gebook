@@ -19,6 +19,7 @@ export const MAIN_NAVIGATION: NavItem[] = [
   { href: "/", label: "Accueil", hint: "Retour à la page d'accueil" },
   { href: "/livres", label: "Catalogue", hint: "Toutes les œuvres publiées" },
   { href: "/auteurs", label: "Auteurs", hint: "Les voix de GeBook" },
+  { href: "/espaces", label: "Espaces", hint: "Maisons d'édition et collectifs" },
   { href: "/a-propos", label: "La plateforme", hint: "Notre mission" },
   { href: "/contact", label: "Contact", hint: "Nous écrire" },
 ];

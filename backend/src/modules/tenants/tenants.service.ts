@@ -15,7 +15,9 @@ import {
 } from './dto/tenant-membership.response';
 import {
   toTenantPublicProfile,
+  toTenantPublicSummary,
   type TenantPublicProfileResponse,
+  type TenantPublicSummaryResponse,
 } from './dto/tenant-public.response';
 
 @Injectable()
@@ -196,6 +198,32 @@ export class TenantsService {
     }
 
     return toTenantPublicProfile(tenant);
+  }
+
+  /**
+   * Annuaire public des espaces (maisons d'édition, auteurs indépendants…) —
+   * jusqu'ici introuvable sans connaître déjà l'adresse exacte de sa vitrine
+   * (`/tenants/public/:slug`). Même absence de RLS que `findPublicBySlug`
+   * juste au-dessus : un visiteur anonyme doit pouvoir parcourir l'annuaire,
+   * pas seulement ouvrir une fiche dont il a déjà le lien.
+   */
+  async listPublic(q?: string): Promise<TenantPublicSummaryResponse[]> {
+    const tenants = await this.prisma.tenant.findMany({
+      where: {
+        status: 'active',
+        ...(q && { name: { contains: q, mode: 'insensitive' } }),
+      },
+      select: {
+        slug: true,
+        name: true,
+        type: true,
+        description: true,
+        logoPath: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return tenants.map(toTenantPublicSummary);
   }
 
   /**

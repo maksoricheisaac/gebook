@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { AuthorCard } from "@/src/components/catalog/author-card";
+import { SimpleSearchForm } from "@/src/components/catalog/simple-search-form";
 import { Container, PageHeader } from "@/src/components/layout/page-shell";
 import { Reveal } from "@/src/components/motion/reveal";
 import { Button } from "@/src/components/ui/button";
@@ -13,13 +14,16 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Auteurs",
-  description:
-    "Les écrivains, enseignants et chercheurs qui publient sur GeBook.",
+  description: "Les écrivains, enseignants et chercheurs qui publient sur GeBook.",
   alternates: { canonical: "/auteurs" },
 };
 
-export default async function AuthorsPage() {
-  const authors = await fetchAuthors();
+export default async function AuthorsPage(props: PageProps<"/auteurs">) {
+  const searchParams = await props.searchParams;
+  const qParam = searchParams.q;
+  const q = (Array.isArray(qParam) ? qParam[0] : qParam) ?? "";
+
+  const authors = await fetchAuthors({ q: q || undefined });
 
   return (
     <Container className="pb-20">
@@ -29,13 +33,30 @@ export default async function AuthorsPage() {
         description="Écrivains, enseignants et chercheurs. Chaque fiche donne accès à l’ensemble de leurs ouvrages publiés."
       />
 
+      <SimpleSearchForm
+        action="/auteurs"
+        label="Rechercher un auteur"
+        placeholder="Nom de plume"
+        initialQuery={q}
+      />
+
       {authors.length === 0 ? (
         <EmptyState
-          title="Aucun auteur n’est publié pour le moment"
-          description="Les premières fiches d’auteur arriveront avec les prochaines publications."
+          title={
+            q
+              ? "Aucun auteur ne correspond à cette recherche"
+              : "Aucun auteur n’est publié pour le moment"
+          }
+          description={
+            q
+              ? "Essayez un autre nom de plume."
+              : "Les premières fiches d’auteur arriveront avec les prochaines publications."
+          }
         >
           <Button asChild variant="outline">
-            <Link href="/livres">Voir le catalogue</Link>
+            <Link href={q ? "/auteurs" : "/livres"}>
+              {q ? "Réinitialiser la recherche" : "Voir le catalogue"}
+            </Link>
           </Button>
         </EmptyState>
       ) : (

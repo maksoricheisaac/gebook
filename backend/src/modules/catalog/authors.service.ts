@@ -45,11 +45,13 @@ export class AuthorsService {
   async list(
     locale: ContentLocale,
     tenantSlug?: string,
+    q?: string,
   ): Promise<AuthorSummaryResponse[]> {
     const authors = await this.prisma.author.findMany({
       where: {
         ...publiclyVisible,
         ...(tenantSlug && { tenant: { slug: tenantSlug } }),
+        ...(q && { penName: { contains: q, mode: 'insensitive' } }),
       },
       select: {
         ...buildAuthorSelection(locale),

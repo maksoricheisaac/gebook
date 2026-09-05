@@ -1,5 +1,9 @@
-import { Controller, Get, Param } from '@nestjs/common';
-import type { TenantPublicProfileResponse } from './dto/tenant-public.response';
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ListTenantsPublicQuery } from './dto/list-tenants-public.query';
+import type {
+  TenantPublicProfileResponse,
+  TenantPublicSummaryResponse,
+} from './dto/tenant-public.response';
 import { TenantsService } from './tenants.service';
 
 /**
@@ -13,6 +17,19 @@ import { TenantsService } from './tenants.service';
 @Controller('tenants/public')
 export class TenantsPublicController {
   constructor(private readonly tenants: TenantsService) {}
+
+  /**
+   * Annuaire — déclaré avant `:slug` pour la même raison que `stats`/`:id`
+   * ailleurs dans le back-office : sans ça, une requête sans slug (`GET
+   * /tenants/public`) ne matcherait de toute façon aucune route ici, mais un
+   * futur slug littéralement nommé pourrait un jour entrer en collision.
+   */
+  @Get()
+  listPublic(
+    @Query() query: ListTenantsPublicQuery,
+  ): Promise<TenantPublicSummaryResponse[]> {
+    return this.tenants.listPublic(query.q);
+  }
 
   @Get(':slug')
   findBySlug(
