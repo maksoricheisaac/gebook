@@ -38,11 +38,20 @@ export async function SiteHeader() {
       <div className="mx-auto flex h-18 w-full max-w-7xl items-center gap-4 px-5 sm:px-8">
         <LogoLink priority className="h-9 sm:h-10" />
 
-        <div className="mx-auto hidden lg:block">
+        {/*
+         * `flex-1` + `justify-center`, pas `mx-auto` : avec `ml-auto` sur le
+         * bloc d'actions à droite, les deux marges automatiques se
+         * partageaient le même espace libre — plus `MainNav` gagnait de
+         * liens, plus cet espace libre rétrécissait, resserrant toute la
+         * rangée au lieu de laisser la nav respirer. `flex-1` lui garantit
+         * toute la place restante entre le logo et les actions, quel que
+         * soit son nombre de liens.
+         */}
+        <div className="hidden min-w-0 flex-1 justify-center lg:flex">
           <MainNav />
         </div>
 
-        <div className="ml-auto flex items-center gap-2 lg:gap-3">
+        <div className="flex shrink-0 items-center gap-2 lg:gap-3">
           <SearchField className="hidden w-56 xl:block xl:w-64" />
 
           <CartLink />

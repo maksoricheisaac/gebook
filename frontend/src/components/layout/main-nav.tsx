@@ -20,7 +20,9 @@ export function MainNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Navigation principale" className="hidden lg:block">
+    // Visibilité déjà tranchée par le parent (`hidden lg:flex` dans
+    // `site-header.tsx`) — pas de classe `hidden` en double ici.
+    <nav aria-label="Navigation principale" className="min-w-0">
       <ul className="flex items-center gap-1">
         {MAIN_NAVIGATION.map((item) => {
           const active = isActivePath(pathname, item.href);
@@ -31,9 +33,9 @@ export function MainNav() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative inline-flex h-10 items-center rounded-md px-3 text-sm font-medium",
+                  "relative inline-flex h-10 items-center rounded-md px-2.5 text-sm font-medium whitespace-nowrap",
                   "transition-colors duration-[--duration-fast]",
-                  "after:absolute after:inset-x-3 after:bottom-1.5 after:h-px after:origin-left after:scale-x-0 after:bg-accent after:transition-transform after:duration-[--duration-base] after:ease-[--ease-out]",
+                  "after:absolute after:inset-x-2.5 after:bottom-1.5 after:h-px after:origin-left after:scale-x-0 after:bg-accent after:transition-transform after:duration-[--duration-base] after:ease-[--ease-out]",
                   "hover:after:scale-x-100",
                   active
                     ? "text-secondary after:scale-x-100"
