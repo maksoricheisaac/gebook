@@ -617,6 +617,15 @@ model Work {
   /// `NULLS LAST` par défaut sur un `ORDER BY ... ASC`).
   featuredRank     Int?           @map("featured_rank")
   publishedAt      DateTime?      @map("published_at") @db.Timestamptz(6)
+  /// Suppression douce (audit) : `null` tant que l'œuvre est active. Une
+  /// œuvre déjà commandée (`order_items.work_id`, `onDelete: Restrict`) ne
+  /// peut pas être supprimée pour de vrai sans perdre l'historique de vente —
+  /// « supprimer » depuis l'administration pose cette date à la place d'un
+  /// vrai `DELETE`, et chaque lecture publique/admin l'exclut explicitement
+  /// (`deletedAt: null`) plutôt que de compter sur une policy RLS qui ignore
+  /// cette notion. Les lignes `work_formats`/`work_translations`/`work_files`
+  /// restent intactes : rien n'est perdu, seulement caché.
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz(6)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -635,6 +644,7 @@ model Work {
   @@index([visibility], map: "idx_works_visibility")
   @@index([featured, featuredRank], map: "idx_works_featured")
   @@index([title], map: "idx_works_title")
+  @@index([deletedAt], map: "idx_works_deleted_at")
   @@map("works")
 }
 

@@ -24,7 +24,11 @@ const publiclyVisible = { status: AuthorStatus.active };
  * contexte tenant, où seule l'exposition publique a un sens.
  */
 const publishedPublicWorks = {
-  where: { status: WorkStatus.published, visibility: WorkVisibility.public },
+  where: {
+    status: WorkStatus.published,
+    visibility: WorkVisibility.public,
+    deletedAt: null,
+  },
 };
 
 /**
@@ -35,6 +39,7 @@ const publishedWorksWithinOwnTenant = {
   where: {
     status: WorkStatus.published,
     visibility: { not: WorkVisibility.private },
+    deletedAt: null,
   },
 };
 

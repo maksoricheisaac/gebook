@@ -37,6 +37,7 @@ export const publiclyVisible = {
   status: WorkStatus.published,
   visibility: WorkVisibility.public,
   author: { status: AuthorStatus.active },
+  deletedAt: null,
 } satisfies Prisma.WorkWhereInput;
 
 /**
@@ -51,6 +52,7 @@ const visibleWithinOwnTenant = {
   status: WorkStatus.published,
   visibility: { not: WorkVisibility.private },
   author: { status: AuthorStatus.active },
+  deletedAt: null,
 } satisfies Prisma.WorkWhereInput;
 
 @Injectable()

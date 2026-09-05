@@ -311,7 +311,7 @@ export class CommissionsService {
       available,
     ] = await this.prisma.withRlsContext(ctx, (tx) =>
       Promise.all([
-        tx.work.count({ where: { status: 'published' } }),
+        tx.work.count({ where: { status: 'published', deletedAt: null } }),
         tx.author.count({ where: { status: 'active' } }),
         tx.payment.count({
           where: { status: 'successful', paidAt: { gte: from, lte: to } },
@@ -387,7 +387,9 @@ export class CommissionsService {
       buildRlsContext(admin, tenantId),
       (tx) =>
         Promise.all([
-          tx.work.count({ where: { tenantId, status: 'published' } }),
+          tx.work.count({
+            where: { tenantId, status: 'published', deletedAt: null },
+          }),
           tx.author.count({ where: { tenantId, status: 'active' } }),
           // Phase 7 : `cancelled` (remboursement) exclu — voir le même
           // commentaire dans `platformStatistics()`.

@@ -271,6 +271,7 @@ export class AdminWorksService {
     tenant: TenantContext,
   ): Promise<AdminWorkStats> {
     const where: Prisma.WorkWhereInput = {
+      deletedAt: null,
       ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
     };
 
@@ -295,6 +296,7 @@ export class AdminWorksService {
     tenant: TenantContext,
   ): Promise<AdminPaginatedResponse<WorkWithFormats>> {
     const where: Prisma.WorkWhereInput = {
+      deletedAt: null,
       ...(query.q && {
         translations: {
           some: { title: { contains: query.q, mode: 'insensitive' } },
@@ -345,6 +347,7 @@ export class AdminWorksService {
         tx.work.findFirst({
           where: {
             id,
+            deletedAt: null,
             ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
           },
           include: workInclude,
@@ -520,6 +523,19 @@ export class AdminWorksService {
     return work;
   }
 
+  /**
+   * Suppression douce : une œuvre déjà commandée ne peut pas être vraiment
+   * supprimée (`order_items.work_id`, `ON DELETE RESTRICT` — l'historique de
+   * vente d'un client ne doit jamais dépendre d'un livre encore présent en
+   * base) sans quoi `tx.work.delete()` échouait purement et simplement dès
+   * qu'une seule commande existait. Poser `deletedAt` à la place : l'œuvre
+   * disparaît de tout ce qui est public ou listé (`stats`/`list`/`findOne`
+   * et le catalogue public excluent déjà `deletedAt: null`), sans toucher
+   * aux commandes déjà passées ni aux formats/traductions/fichiers, qui
+   * restent intacts — rien n'est perdu, seulement caché. Aucun retour en
+   * arrière depuis l'administration pour l'instant (pas demandé) : la ligne
+   * reste en base, restaurable à la main si nécessaire.
+   */
   async remove(
     id: string,
     admin: AuthenticatedUser,
@@ -528,17 +544,23 @@ export class AdminWorksService {
     await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
         // Filtre applicatif redondant avec la RLS (défense en profondeur,
-        // audit Phase 0 §0.3).
+        // audit Phase 0 §0.3) : exclut aussi une œuvre déjà supprimée, pour
+        // ne pas rafraîchir sa date de suppression ni générer une entrée de
+        // journal d'activité en double.
         const existing = await tx.work.findFirst({
           where: {
             id,
+            deletedAt: null,
             ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
           },
         });
         if (!existing) {
           throw new NotFoundException("Cette œuvre n'existe pas.");
         }
-        await tx.work.delete({ where: { id } });
+        await tx.work.update({
+          where: { id },
+          data: { deletedAt: new Date() },
+        });
       })
       .catch((error: unknown) => {
         throw translateWorkError(error);
@@ -569,6 +591,7 @@ export class AdminWorksService {
     };
     const where: Prisma.WorkWhereInput = {
       status: WorkStatus.published,
+      deletedAt: null,
       ...(query.q && {
         translations: {
           some: { title: { contains: query.q, mode: 'insensitive' } },
@@ -633,7 +656,9 @@ export class AdminWorksService {
 
     const work = await this.prisma
       .withRlsContext(ctx, async (tx) => {
-        const existing = await tx.work.findUnique({ where: { id } });
+        const existing = await tx.work.findFirst({
+          where: { id, deletedAt: null },
+        });
         if (!existing) {
           throw new NotFoundException("Cette œuvre n'existe pas.");
         }
@@ -947,10 +972,15 @@ export class AdminWorksService {
     tenantId: string | null = null,
   ): Promise<Work & { author: { userId: string | null } }> {
     // Filtre applicatif redondant avec la RLS (défense en profondeur, audit
-    // Phase 0 §0.3, même correctif que `findOne()`/`remove()`).
+    // Phase 0 §0.3, même correctif que `findOne()`/`remove()`). `deletedAt:
+    // null` couvre en un seul endroit tous les appelants de ce helper
+    // (`update`, `updateCover`, `createFormat`, `uploadFormatFile`,
+    // `previewFile`) : une œuvre supprimée en douceur ne doit plus pouvoir
+    // être modifiée.
     const work = await tx.work.findFirst({
       where: {
         id: workId,
+        deletedAt: null,
         ...(tenantId !== null && { tenantId }),
       },
       include: { author: { select: { userId: true } } },
@@ -985,8 +1015,12 @@ function translateWorkError(error: unknown): Error {
       return new NotFoundException("Cette œuvre n'existe pas.");
     }
     if (error.code === 'P2003') {
+      // Seuls `create()`/`update()` peuvent encore heurter cette contrainte :
+      // `remove()` ne fait plus de `DELETE` réel depuis le passage à la
+      // suppression douce (`deletedAt`), donc plus aucun appelant de cette
+      // fonction ne peut la déclencher via une commande existante.
       return new ConflictException(
-        "L'auteur ou la catégorie indiqués n'existent pas, ou cette œuvre a encore des commandes associées.",
+        "L'auteur ou la catégorie indiqués n'existent pas.",
       );
     }
   }

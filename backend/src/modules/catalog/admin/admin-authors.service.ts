@@ -137,6 +137,7 @@ export class AdminAuthorsService {
             tx.author.count({ where: { ...where, photoPath: null } }),
             tx.work.count({
               where: {
+                deletedAt: null,
                 ...(tenant.tenantId !== null && { tenantId: tenant.tenantId }),
               },
             }),

@@ -85,7 +85,9 @@ export class AdminCategoriesService {
     const [total, active, totalWorks] = await Promise.all([
       this.prisma.category.count(),
       this.prisma.category.count({ where: { status: 'active' } }),
-      this.prisma.work.count({ where: { categoryId: { not: null } } }),
+      this.prisma.work.count({
+        where: { categoryId: { not: null }, deletedAt: null },
+      }),
     ]);
 
     return {

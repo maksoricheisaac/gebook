@@ -411,7 +411,7 @@ export function WorkList() {
         title="Supprimer cette œuvre ?"
         description={
           toDelete
-            ? `« ${toDelete.title} » sera retirée du catalogue. Cette action échouera si l’œuvre a encore des commandes ou des exemplaires en bibliothèque.`
+            ? `« ${toDelete.title} » sera retirée du catalogue et invisible partout, y compris pour vos lecteurs. Les commandes déjà passées restent intactes — l’œuvre n’est pas définitivement effacée.`
             : ""
         }
         confirmLabel="Supprimer l’œuvre"
