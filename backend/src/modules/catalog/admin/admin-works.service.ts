@@ -3,8 +3,10 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { Prisma } from '../../../generated/prisma/client';
 import type {
   Work,
@@ -44,7 +46,7 @@ import type {
 } from './dto/work.dto';
 
 type WorkWithFormats = Work & {
-  formats: WorkFormat[];
+  formats: (WorkFormat & { files: WorkFileSummary[] })[];
   translations: WorkTranslation[];
 };
 
@@ -60,8 +62,39 @@ export interface WorkFileSummary {
   createdAt: Date;
 }
 
+/** Ce qu'il faut pour diffuser un fichier — jamais renvoyé tel quel au client, voir `sendInline`. */
+export interface FilePreview {
+  buffer: Buffer;
+  fileName: string;
+  mimeType: string;
+}
+
+const workFileSummarySelect = {
+  id: true,
+  fileType: true,
+  originalName: true,
+  mimeType: true,
+  fileSize: true,
+  checksum: true,
+  isActive: true,
+  createdAt: true,
+} as const;
+
 const workInclude = {
-  formats: { orderBy: { formatType: 'asc' as const } },
+  formats: {
+    orderBy: { formatType: 'asc' as const },
+    include: {
+      // Sélection restreinte, jamais un `include` nu : `WorkFile` porte
+      // `storagePath`/`storedName`, qui ne doivent jamais atteindre le
+      // client (même règle que `WorkFileSummary`, ci-dessus — c'est
+      // d'ailleurs exactement sa forme).
+      files: {
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' as const },
+        select: workFileSummarySelect,
+      },
+    },
+  },
   translations: true,
 };
 
@@ -836,6 +869,76 @@ export class AdminWorksService {
       isActive: workFile.isActive,
       createdAt: workFile.createdAt,
     };
+  }
+
+  /**
+   * Aperçu d'un fichier déjà téléversé — pour que l'équipe éditoriale puisse
+   * vérifier ce qu'elle vient d'envoyer sans avoir à le retélécharger « à
+   * l'aveugle » sur son poste. Lecture seule : aucun contrôle de rôle
+   * d'écriture ici (contrairement à `uploadFormatFile`), la même visibilité
+   * que `findOne()` suffit — quiconque peut voir la fiche peut voir son
+   * fichier.
+   */
+  async previewFile(
+    workId: string,
+    formatId: string,
+    fileId: string,
+    admin: AuthenticatedUser,
+    tenant: TenantContext,
+  ): Promise<FilePreview> {
+    const file = await this.prisma.withRlsContext(
+      buildRlsContext(admin, tenant.tenantId),
+      async (tx) => {
+        await this.getWorkWithAuthorOrThrow(tx, workId, tenant.tenantId);
+        await this.findFormatOrThrow(tx, workId, formatId);
+        const found = await tx.workFile.findFirst({
+          where: { id: fileId, workFormatId: formatId },
+        });
+        if (!found) {
+          throw new NotFoundException("Ce fichier n'existe pas.");
+        }
+        return found;
+      },
+    );
+
+    return {
+      buffer: await this.readAndVerifyPrivateFile(
+        file.storagePath,
+        file.checksum,
+      ),
+      fileName: file.originalName ?? file.storedName,
+      mimeType: file.mimeType ?? 'application/octet-stream',
+    };
+  }
+
+  /**
+   * Même garde-fou que `LibraryService.readAndVerify` : l'empreinte prise au
+   * téléversement détecte une corruption du stockage plutôt que de diffuser
+   * un fichier illisible sans prévenir personne.
+   */
+  private async readAndVerifyPrivateFile(
+    storagePath: string,
+    expectedChecksum: string | null,
+  ): Promise<Buffer> {
+    let buffer: Buffer;
+    try {
+      buffer = await this.storage.readPrivate(storagePath);
+    } catch {
+      throw new NotFoundException(
+        "Ce fichier n'est pas disponible pour le moment.",
+      );
+    }
+
+    if (expectedChecksum) {
+      const actual = createHash('sha256').update(buffer).digest('hex');
+      if (actual !== expectedChecksum) {
+        throw new InternalServerErrorException(
+          'Ce fichier est endommagé. Notre équipe a été prévenue.',
+        );
+      }
+    }
+
+    return buffer;
   }
 
   private async getWorkWithAuthorOrThrow(

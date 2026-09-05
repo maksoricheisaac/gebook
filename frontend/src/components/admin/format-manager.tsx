@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { Eye, Plus, Trash2, Upload } from "lucide-react";
 
 import { AdminPanel } from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
@@ -12,7 +12,14 @@ import { Field, FormError } from "@/src/components/ui/field";
 import { Input, Select } from "@/src/components/ui/input";
 import { Skeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
+import { uploadWithProgress } from "@/src/lib/admin-upload";
 import { deliveryTypeLabel, formatPrice, formatTypeLabel } from "@/src/lib/format";
+
+interface WorkFile {
+  id: string;
+  originalName: string | null;
+  createdAt: string;
+}
 
 interface WorkFormat {
   id: string;
@@ -23,6 +30,8 @@ interface WorkFormat {
   isAvailable: boolean;
   stockQuantity: number | null;
   unlimitedStock: boolean;
+  /** La plus récente d'abord (tri serveur) — `files[0]` est donc le fichier actif à prévisualiser. */
+  files: WorkFile[];
 }
 
 // Liste des formats possibles
@@ -145,20 +154,37 @@ export function FormatManager({ workId }: { workId: string }) {
     onError: (e: unknown) => setError(errorMessage(e)),
   });
 
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+
   const uploadFile = useMutation({
     mutationFn: ({ formatId, file }: { formatId: string; file: File }) => {
       const formData = new FormData();
       formData.set("file", file);
-      return adminFetch(`/works/${workId}/formats/${formatId}/file`, {
-        method: "POST",
+      setUploadProgress((progress) => ({ ...progress, [formatId]: 0 }));
+      return uploadWithProgress(
+        `/works/${workId}/formats/${formatId}/file`,
         formData,
-      });
+        (fraction) =>
+          setUploadProgress((progress) => ({ ...progress, [formatId]: fraction })),
+      );
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, { formatId }) => {
       setError(null);
+      setUploadProgress((progress) => {
+        const next = { ...progress };
+        delete next[formatId];
+        return next;
+      });
       await invalidate();
     },
-    onError: (e: unknown) => setError(errorMessage(e)),
+    onError: (e: unknown, { formatId }) => {
+      setError(errorMessage(e));
+      setUploadProgress((progress) => {
+        const next = { ...progress };
+        delete next[formatId];
+        return next;
+      });
+    },
   });
 
   return (
@@ -288,27 +314,55 @@ export function FormatManager({ workId }: { workId: string }) {
                         event.target.value = "";
                       }}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      // `variables` (pas juste `isPending`) : le fichier scanné
-                      // (ClamAV, contenu actif) peut prendre plusieurs secondes —
-                      // seul le format réellement en cours d'envoi doit tourner,
-                      // pas les autres lignes le temps qu'il termine.
-                      isLoading={
-                        uploadFile.isPending &&
-                        uploadFile.variables?.formatId === format.id
-                      }
-                      onClick={() => fileInputRefs.current[format.id]?.click()}
-                    >
-                      {!uploadFile.isPending && <Upload aria-hidden />}
-                      Fichier
-                      <span className="sr-only">
-                        {" "}
-                        du format {format.formatType.toUpperCase()}
-                      </span>
-                    </Button>
+
+                    {uploadProgress[format.id] !== undefined ? (
+                      // Progression réelle de l'envoi (`uploadWithProgress`,
+                      // XMLHttpRequest) : un fichier de plusieurs dizaines de
+                      // Mo peut prendre du temps, un simple spinner ne dit pas
+                      // si l'envoi avance ou s'est figé.
+                      <div className="w-36">
+                        <div className="bg-muted h-2 overflow-hidden rounded-full">
+                          <div
+                            className="bg-primary h-full rounded-full transition-[width]"
+                            style={{
+                              width: `${Math.round(uploadProgress[format.id] * 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="type-caption mt-1">
+                          {Math.round(uploadProgress[format.id] * 100)}%
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRefs.current[format.id]?.click()}
+                        >
+                          <Upload aria-hidden />
+                          {format.files.length > 0 ? "Remplacer" : "Fichier"}
+                          <span className="sr-only">
+                            {" "}
+                            du format {format.formatType.toUpperCase()}
+                          </span>
+                        </Button>
+
+                        {format.files.length > 0 && (
+                          <Button asChild variant="ghost" size="sm">
+                            <a
+                              href={`/api/admin/works/${workId}/formats/${format.id}/files/${format.files[0].id}/preview`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <Eye aria-hidden />
+                              Aperçu
+                            </a>
+                          </Button>
+                        )}
+                      </>
+                    )}
                   </>
                 )}
 

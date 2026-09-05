@@ -71,6 +71,14 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
   if (responseContentType) {
     responseHeaders.set("content-type", responseContentType);
   }
+  // `AdminWorksController.previewFile` définit cet en-tête pour qu'un PDF
+  // s'ouvre dans l'onglet plutôt que d'être proposé au téléchargement — sans
+  // le relayer, le nom de fichier et la disposition `inline` se perdaient en
+  // route.
+  const responseContentDisposition = response.headers.get("content-disposition");
+  if (responseContentDisposition) {
+    responseHeaders.set("content-disposition", responseContentDisposition);
+  }
 
   return new NextResponse(response.body, {
     status: response.status,

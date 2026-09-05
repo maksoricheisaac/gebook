@@ -10,11 +10,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import type { Work, WorkFormat } from '../../../generated/prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -29,6 +32,7 @@ import {
   AdminWorksService,
   type AdminWorkStats,
   type FeaturableWork,
+  type FilePreview,
   type WorkFileSummary,
 } from './admin-works.service';
 import {
@@ -215,4 +219,45 @@ export class AdminWorksController {
       tenant,
     );
   }
+
+  /**
+   * Aperçu d'un fichier déjà téléversé, affiché dans l'onglet plutôt
+   * qu'enregistré (`inline`, pas `attachment` — voir `sendInline` ci-dessous) :
+   * c'est une vérification par l'équipe éditoriale, pas un téléchargement.
+   */
+  @Get(':id/formats/:formatId/files/:fileId/preview')
+  async previewFile(
+    @Param('id') workId: string,
+    @Param('formatId') formatId: string,
+    @Param('fileId') fileId: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @CurrentTenant() tenant: TenantContext,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const file = await this.works.previewFile(
+      workId,
+      formatId,
+      fileId,
+      admin,
+      tenant,
+    );
+    return sendInline(file, response);
+  }
+}
+
+/**
+ * Même esprit que `sendAsAttachment` (`library.controller.ts`), disposition
+ * opposée : `inline` pour qu'un PDF s'ouvre directement dans l'onglet plutôt
+ * que de proposer un enregistrement — c'est un aperçu de vérification, pas
+ * un fichier acheté à conserver.
+ */
+function sendInline(file: FilePreview, response: Response): StreamableFile {
+  response.set({
+    'Content-Type': file.mimeType,
+    'Content-Disposition': `inline; filename="${file.fileName}"`,
+    'Content-Length': String(file.buffer.length),
+    'Cache-Control': 'private, no-store',
+  });
+
+  return new StreamableFile(file.buffer);
 }
