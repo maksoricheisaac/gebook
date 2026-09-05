@@ -36,4 +36,28 @@ describe('findDangerousPdfContent', () => {
 
     expect(findDangerousPdfContent(pdf)).toBeNull();
   });
+
+  it('ne signale plus un simple /OpenAction bénin (aller à une page)', () => {
+    const pdf = Buffer.from(
+      '%PDF-1.4\n<< /Type /Catalog /OpenAction << /S /GoTo /D [0 /Fit] >> >>\n',
+    );
+
+    expect(findDangerousPdfContent(pdf)).toBeNull();
+  });
+
+  it('ne signale plus un simple /AA bénin (mise en forme de champ)', () => {
+    const pdf = Buffer.from(
+      '%PDF-1.4\n<< /Type /Annot /FT /Tx /AA << /F 5 0 R >> >>\n',
+    );
+
+    expect(findDangerousPdfContent(pdf)).toBeNull();
+  });
+
+  it('détecte toujours un /OpenAction dont la charge est du JavaScript', () => {
+    const pdf = Buffer.from(
+      '%PDF-1.4\n<< /OpenAction << /S /JavaScript /JS (app.alert(1)) >> >>\n',
+    );
+
+    expect(findDangerousPdfContent(pdf)).toBe('/JavaScript');
+  });
 });

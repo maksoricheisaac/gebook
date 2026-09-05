@@ -17,16 +17,24 @@
  * par la norme PDF) peut cacher ces mots-clés à une recherche sur les octets
  * bruts. ClamAV, lui, décompresse et inspecte ces flux — c'est précisément
  * pour ça que les deux couches se complètent au lieu de se remplacer.
+ *
+ * `/OpenAction` et `/AA` (Additional Actions) ne figurent plus dans la liste
+ * (retirés 2026-09, trop de faux positifs signalés sur des PDF légitimes) :
+ * ce sont de simples *déclencheurs* — « à l'ouverture », « au focus d'un
+ * champ » — produits couramment par des exports Acrobat/Word/LibreOffice
+ * pour des usages bénins (aller à une page, formater un champ de formulaire).
+ * Rien de dangereux ne peut passer par un déclencheur sans que sa *charge*
+ * ne soit elle-même un des tokens encore surveillés (`/JavaScript`, `/JS`,
+ * `/Launch`) — retirer le déclencheur seul ne réduit donc pas la détection
+ * réelle d'un `/OpenAction` ou `/AA` qui lancerait vraiment quelque chose.
  */
 
 const DANGEROUS_PDF_TOKENS = [
   '/JavaScript',
   '/JS',
-  '/OpenAction',
   '/Launch',
   '/EmbeddedFile',
   '/RichMedia',
-  '/AA',
 ] as const;
 
 export function findDangerousPdfContent(buffer: Buffer): string | null {
