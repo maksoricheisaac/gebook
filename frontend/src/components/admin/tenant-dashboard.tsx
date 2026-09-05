@@ -143,7 +143,13 @@ export function TenantDashboard({ user }: { user: CurrentUser }) {
         </ErrorState>
       ) : (
         <>
-          <AdminStatGrid>
+          {/*
+           * `columns={3}` plutôt que la grille par défaut à 4 colonnes :
+           * avec 6 cartes, 4 colonnes auraient laissé une deuxième ligne de
+           * seulement 2 cartes, entourées de deux emplacements vides. 3
+           * colonnes remplissent exactement deux lignes pleines.
+           */}
+          <AdminStatGrid columns={3}>
             <AdminStatCard
               label="Œuvres publiées"
               value={statistics.publishedWorks}

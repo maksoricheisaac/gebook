@@ -128,26 +128,46 @@ export function PlatformDashboard({
             </Button>
           </ErrorState>
         ) : (
-          <AdminStatGrid>
-            <AdminStatCard label="Commandes réglées" value={statistics.paidOrders} />
-            <AdminStatCard
-              label="Encaissé"
-              value={formatPrice(statistics.revenueCollected)}
-            />
-            <AdminStatCard
-              label="Commission GeBook"
-              value={formatPrice(statistics.commissionTotal)}
-            />
-            <AdminStatCard
-              label="Dû aux auteurs"
-              value={formatPrice(statistics.authorNetTotal)}
-            />
-            <AdminStatCard
-              label="Solde disponible"
-              value={formatPrice(statistics.availableBalance)}
-              hint="Aucun reversement automatique n’existe encore — ce solde n’a pas été versé."
-            />
-          </AdminStatGrid>
+          <>
+            {/*
+             * « Solde disponible » sortie de cette grille, pas seulement pour
+             * remplir l'espace : c'est un total courant (tout l'historique),
+             * pas une valeur de la période choisie comme ses quatre voisines
+             * — `platformStatistics()` ne le filtre jamais par `from`/`to`.
+             * Le laisser dans la même grille laissait croire qu'il bougeait
+             * avec le sélecteur de date, et la 5e carte dans une grille à 4
+             * colonnes se retrouvait seule sur sa ligne, entourée de vide.
+             */}
+            <AdminStatGrid>
+              <AdminStatCard label="Commandes réglées" value={statistics.paidOrders} />
+              <AdminStatCard
+                label="Encaissé"
+                value={formatPrice(statistics.revenueCollected)}
+              />
+              <AdminStatCard
+                label="Commission GeBook"
+                value={formatPrice(statistics.commissionTotal)}
+              />
+              <AdminStatCard
+                label="Dû aux auteurs"
+                value={formatPrice(statistics.authorNetTotal)}
+              />
+            </AdminStatGrid>
+
+            <div className="border-border bg-card mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-5">
+              <div>
+                <p className="type-label text-muted-foreground">Solde disponible</p>
+                <p className="type-caption mt-0.5">
+                  Total courant, tous auteurs confondus — indépendant de la période
+                  choisie ci-dessus. Aucun reversement automatique n’existe encore : ce
+                  solde n’a pas été versé.
+                </p>
+              </div>
+              <p className="font-heading text-secondary tnum text-2xl font-semibold">
+                {formatPrice(statistics.availableBalance)}
+              </p>
+            </div>
+          </>
         )}
       </section>
 
