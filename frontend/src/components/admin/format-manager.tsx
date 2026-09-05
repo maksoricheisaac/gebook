@@ -21,6 +21,8 @@ interface WorkFormat {
   price: string;
   deliveryType: "digital_download" | "physical_delivery" | "pickup";
   isAvailable: boolean;
+  stockQuantity: number | null;
+  unlimitedStock: boolean;
 }
 
 // Liste des formats possibles
@@ -49,6 +51,8 @@ export function FormatManager({ workId }: { workId: string }) {
   const [newFormat, setNewFormat] = useState({
     formatType: "pdf" as (typeof FORMAT_TYPES)[number]["value"],
     price: "",
+    stockQuantity: "",
+    unlimitedStock: false,
   });
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -66,22 +70,57 @@ export function FormatManager({ workId }: { workId: string }) {
   const createFormat = useMutation({
     mutationFn: () => {
       const definition = FORMAT_TYPES.find((f) => f.value === newFormat.formatType)!;
+      const isPhysical = definition.deliveryType === "physical_delivery";
       return adminFetch<WorkFormat>(`/works/${workId}/formats`, {
         method: "POST",
         body: {
           formatType: newFormat.formatType,
           price: newFormat.price,
           deliveryType: definition.deliveryType,
+          // Le stock n'a de sens que pour une remise physique : un
+          // téléchargement numérique n'est jamais en rupture.
+          ...(isPhysical && {
+            unlimitedStock: newFormat.unlimitedStock,
+            ...(!newFormat.unlimitedStock &&
+              newFormat.stockQuantity !== "" && {
+                stockQuantity: Number(newFormat.stockQuantity),
+              }),
+          }),
         },
       });
     },
     onSuccess: async () => {
-      setNewFormat({ formatType: "pdf", price: "" });
+      setNewFormat({
+        formatType: "pdf",
+        price: "",
+        stockQuantity: "",
+        unlimitedStock: false,
+      });
       setError(null);
       await invalidate();
     },
     onError: (e: unknown) => setError(errorMessage(e)),
   });
+
+  const updateStock = useMutation({
+    mutationFn: ({
+      formatId,
+      stockQuantity,
+      unlimitedStock,
+    }: {
+      formatId: string;
+      stockQuantity?: number;
+      unlimitedStock?: boolean;
+    }) =>
+      adminFetch<WorkFormat>(`/works/${workId}/formats/${formatId}`, {
+        method: "PATCH",
+        body: { stockQuantity, unlimitedStock },
+      }),
+    onSuccess: invalidate,
+    onError: (e: unknown) => setError(errorMessage(e)),
+  });
+
+  const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
 
   const deleteFormat = useMutation({
     mutationFn: (formatId: string) =>
@@ -177,6 +216,61 @@ export function FormatManager({ workId }: { workId: string }) {
                   </Badge>
                 </label>
 
+                {format.deliveryType === "physical_delivery" && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <label className="flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={format.unlimitedStock}
+                        disabled={updateStock.isPending}
+                        onChange={(event) =>
+                          updateStock.mutate({
+                            formatId: format.id,
+                            unlimitedStock: event.target.checked,
+                          })
+                        }
+                        className="accent-primary size-4 cursor-pointer"
+                      />
+                      Illimité
+                    </label>
+                    {!format.unlimitedStock && (
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="h-9 w-20"
+                        placeholder="Stock"
+                        aria-label={`Stock du format ${format.formatType.toUpperCase()}`}
+                        value={
+                          stockDrafts[format.id] ??
+                          (format.stockQuantity != null
+                            ? String(format.stockQuantity)
+                            : "")
+                        }
+                        onChange={(event) =>
+                          setStockDrafts((drafts) => ({
+                            ...drafts,
+                            [format.id]: event.target.value,
+                          }))
+                        }
+                        onBlur={(event) => {
+                          const raw = event.target.value.trim();
+                          if (raw === "") return;
+                          updateStock.mutate({
+                            formatId: format.id,
+                            stockQuantity: Number(raw),
+                          });
+                          setStockDrafts((drafts) => {
+                            const next = { ...drafts };
+                            delete next[format.id];
+                            return next;
+                          });
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+
                 {format.deliveryType !== "physical_delivery" && (
                   <>
                     <input
@@ -270,6 +364,43 @@ export function FormatManager({ workId }: { workId: string }) {
               }
             />
           </Field>
+
+          {newFormat.formatType === "paper" && (
+            <>
+              <label className="flex h-10 cursor-pointer items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={newFormat.unlimitedStock}
+                  onChange={(event) =>
+                    setNewFormat((current) => ({
+                      ...current,
+                      unlimitedStock: event.target.checked,
+                    }))
+                  }
+                  className="accent-primary size-4 cursor-pointer"
+                />
+                Stock illimité
+              </label>
+
+              {!newFormat.unlimitedStock && (
+                <Field id="new-format-stock" label="Stock" className="w-28">
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="0"
+                    value={newFormat.stockQuantity}
+                    onChange={(event) =>
+                      setNewFormat((current) => ({
+                        ...current,
+                        stockQuantity: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+              )}
+            </>
+          )}
 
           <Button type="submit" isLoading={createFormat.isPending}>
             {!createFormat.isPending && <Plus aria-hidden />}
