@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
   CheckCircle2,
+  Filter,
   Percent,
   Pencil,
   Plus,
@@ -351,11 +352,12 @@ export function CommissionRuleManager() {
           icon={Percent}
         />
         <AdminStatCard label="Actives" value={activeCount} icon={CheckCircle2} />
+        <AdminStatCard label="Générales" value={generalCount} icon={UserSquare2} />
         <AdminStatCard
-          label="Générales"
-          value={generalCount}
-          hint={scopedCount > 0 ? `${scopedCount} à portée réduite` : undefined}
-          icon={UserSquare2}
+          label="À portée réduite"
+          value={scopedCount}
+          hint="Limitées à un espace ou un type d’espace"
+          icon={Filter}
         />
       </AdminStatGrid>
 
