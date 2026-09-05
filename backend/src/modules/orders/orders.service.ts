@@ -166,9 +166,17 @@ export class OrdersService {
   async listForAdmin(
     query: AdminListOrdersQuery,
   ): Promise<PaginatedOrdersResponse<AdminOrderResponse>> {
-    const where: Prisma.OrderWhereInput = query.status
-      ? { status: query.status }
-      : {};
+    const where: Prisma.OrderWhereInput = {
+      ...(query.status && { status: query.status }),
+      ...(query.q && {
+        OR: [
+          { orderNumber: { contains: query.q, mode: 'insensitive' } },
+          { user: { email: { contains: query.q, mode: 'insensitive' } } },
+          { user: { firstName: { contains: query.q, mode: 'insensitive' } } },
+          { user: { lastName: { contains: query.q, mode: 'insensitive' } } },
+        ],
+      }),
+    };
     const ctx: RlsContext = {
       userId: null,
       tenantId: null,
@@ -181,7 +189,7 @@ export class OrdersService {
         tx.order.findMany({
           where,
           include: adminOrderInclude,
-          orderBy: { createdAt: 'desc' },
+          orderBy: { [query.sortBy ?? 'createdAt']: query.sortDir ?? 'desc' },
           skip: (query.page - 1) * query.perPage,
           take: query.perPage,
         }),

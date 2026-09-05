@@ -1,6 +1,18 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { OrderStatus } from '../../../generated/prisma/enums';
+
+const SORTABLE_FIELDS = ['createdAt', 'totalAmount', 'orderNumber'] as const;
+export type OrderSortField = (typeof SORTABLE_FIELDS)[number];
 
 export class ListOrdersQuery {
   @IsOptional()
@@ -21,6 +33,20 @@ export class AdminListOrdersQuery extends ListOrdersQuery {
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
+
+  /** Numéro de commande, e-mail ou nom du client — insensible à la casse. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @IsOptional()
+  @IsIn(SORTABLE_FIELDS)
+  sortBy?: OrderSortField;
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface PaginatedOrdersResponse<T> {
