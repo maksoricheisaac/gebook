@@ -14,6 +14,7 @@ import {
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { IdCell } from "@/src/components/admin/id-cell";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
 import {
@@ -172,7 +173,7 @@ export function TeamManager() {
         }
       >
         {isLoading ? (
-          <TableSkeleton rows={4} columns={4} />
+          <TableSkeleton rows={4} columns={5} />
         ) : isError ? (
           <RetryRow onRetry={() => void refetch()} label="l'équipe" />
         ) : (
@@ -181,6 +182,7 @@ export function TeamManager() {
             className="rounded-none border-0"
             head={
               <>
+                <th scope="col">#</th>
                 <th scope="col">Membre</th>
                 <th scope="col">Rôle</th>
                 <th scope="col">Membre depuis</th>
@@ -191,10 +193,13 @@ export function TeamManager() {
             }
           >
             {members.length === 0 ? (
-              <DataRowFull colSpan={4}>Aucun membre pour le moment.</DataRowFull>
+              <DataRowFull colSpan={5}>Aucun membre pour le moment.</DataRowFull>
             ) : (
               members.map((member) => (
                 <DataRow key={member.id}>
+                  <td>
+                    <IdCell id={member.id} />
+                  </td>
                   <td>
                     <span className="text-secondary flex items-center gap-2 font-medium">
                       {member.firstName} {member.lastName ?? ""}

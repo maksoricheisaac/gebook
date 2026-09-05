@@ -25,6 +25,7 @@ import {
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { IdCell } from "@/src/components/admin/id-cell";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
@@ -271,7 +272,7 @@ export function WorkList() {
         }
       >
         {isLoading ? (
-          <TableSkeleton rows={5} columns={3} />
+          <TableSkeleton rows={5} columns={4} />
         ) : isError ? (
           <RetryRow onRetry={() => void refetch()} label="œuvres" />
         ) : (
@@ -281,6 +282,7 @@ export function WorkList() {
               className="rounded-none border-0"
               head={
                 <>
+                  <th scope="col">#</th>
                   <th scope="col">Titre</th>
                   <th scope="col">Statut</th>
                   <th scope="col" className="text-right!">
@@ -290,7 +292,7 @@ export function WorkList() {
               }
             >
               {items.length === 0 ? (
-                <DataRowFull colSpan={3}>
+                <DataRowFull colSpan={4}>
                   {search
                     ? "Aucune œuvre ne correspond à cette recherche."
                     : "Aucune œuvre pour le moment. Créez la première avec le bouton ci-dessus."}
@@ -298,6 +300,9 @@ export function WorkList() {
               ) : (
                 items.map((work) => (
                   <DataRow key={work.id}>
+                    <td>
+                      <IdCell id={work.id} />
+                    </td>
                     <td>
                       <p className="text-secondary font-medium">{work.title}</p>
                       <p className="type-caption">/livres/{work.slug}</p>

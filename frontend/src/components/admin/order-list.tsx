@@ -21,6 +21,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { IdCell } from "@/src/components/admin/id-cell";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
 import { FormError } from "@/src/components/ui/field";
@@ -222,7 +223,7 @@ export function OrderList() {
         }
       >
         {isLoading ? (
-          <TableSkeleton rows={5} columns={6} />
+          <TableSkeleton rows={5} columns={7} />
         ) : isError ? (
           <div className="px-5 py-10 text-center">
             <p className="text-muted-foreground text-sm">
@@ -243,6 +244,7 @@ export function OrderList() {
               className="rounded-none border-0"
               head={
                 <>
+                  <th scope="col">#</th>
                   {sortableHeader("orderNumber", "Commande")}
                   <th scope="col">Client</th>
                   {sortableHeader("createdAt", "Date")}
@@ -257,7 +259,7 @@ export function OrderList() {
               }
             >
               {orders.length === 0 ? (
-                <DataRowFull colSpan={6}>
+                <DataRowFull colSpan={7}>
                   {statusFilter || search
                     ? "Aucune commande ne correspond à ces critères."
                     : "Aucune commande pour le moment."}
@@ -268,6 +270,9 @@ export function OrderList() {
                     key={order.id}
                     className={pendingId === order.id ? "opacity-55" : undefined}
                   >
+                    <td>
+                      <IdCell id={order.id} />
+                    </td>
                     <td className="text-secondary tnum font-medium">
                       {order.orderNumber}
                     </td>

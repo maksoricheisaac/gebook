@@ -26,6 +26,7 @@ import {
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { IdCell } from "@/src/components/admin/id-cell";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
@@ -342,7 +343,7 @@ export function CategoryManager() {
         }
       >
         {isLoading ? (
-          <TableSkeleton rows={4} columns={5} />
+          <TableSkeleton rows={4} columns={6} />
         ) : isError ? (
           <RetryRow onRetry={() => void refetch()} label="catégories" />
         ) : (
@@ -352,6 +353,7 @@ export function CategoryManager() {
               className="rounded-none border-0"
               head={
                 <>
+                  <th scope="col">#</th>
                   <th scope="col">Nom</th>
                   <th scope="col">Adresse</th>
                   <th scope="col">Statut</th>
@@ -363,7 +365,7 @@ export function CategoryManager() {
               }
             >
               {categories.length === 0 ? (
-                <DataRowFull colSpan={5}>
+                <DataRowFull colSpan={6}>
                   {search
                     ? "Aucune catégorie ne correspond à cette recherche."
                     : "Aucune catégorie pour le moment."}
@@ -371,6 +373,9 @@ export function CategoryManager() {
               ) : (
                 categories.map((category) => (
                   <DataRow key={category.id}>
+                    <td>
+                      <IdCell id={category.id} />
+                    </td>
                     <td className="text-secondary font-medium">{category.name}</td>
                     <td className="text-muted-foreground">/{category.slug}</td>
                     <td>

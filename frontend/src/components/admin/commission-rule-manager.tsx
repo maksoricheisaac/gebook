@@ -23,6 +23,7 @@ import {
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { IdCell } from "@/src/components/admin/id-cell";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
@@ -387,7 +388,7 @@ export function CommissionRuleManager() {
           </div>
         }
       >
-        {isLoading && <TableSkeleton rows={3} columns={5} />}
+        {isLoading && <TableSkeleton rows={3} columns={6} />}
         {isError && <RetryRow onRetry={() => void refetch()} label="règles" />}
 
         {!isLoading && !isError && (
@@ -396,6 +397,7 @@ export function CommissionRuleManager() {
             className="rounded-none border-0"
             head={
               <>
+                <th scope="col">#</th>
                 <th scope="col">Règle</th>
                 <th scope="col">Taux</th>
                 <th scope="col">Base de calcul</th>
@@ -407,7 +409,7 @@ export function CommissionRuleManager() {
             }
           >
             {filtered.length === 0 ? (
-              <DataRowFull colSpan={5}>
+              <DataRowFull colSpan={6}>
                 {search
                   ? "Aucune règle ne correspond à cette recherche."
                   : "Aucune règle de commission pour le moment."}
@@ -415,6 +417,9 @@ export function CommissionRuleManager() {
             ) : (
               filtered.map((rule) => (
                 <DataRow key={rule.id}>
+                  <td>
+                    <IdCell id={rule.id} />
+                  </td>
                   <td>
                     <span className="text-secondary font-medium">{rule.name}</span>
                     <span className="type-caption block">{scopeDetail(rule)}</span>

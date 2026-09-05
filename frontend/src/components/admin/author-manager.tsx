@@ -17,6 +17,7 @@ import {
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
 import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { IdCell } from "@/src/components/admin/id-cell";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
@@ -304,7 +305,7 @@ export function AuthorManager() {
         }
       >
         {isLoading ? (
-          <TableSkeleton rows={4} columns={5} />
+          <TableSkeleton rows={4} columns={6} />
         ) : isError ? (
           <RetryRow onRetry={() => void refetch()} label="fiches auteur" />
         ) : (
@@ -314,6 +315,7 @@ export function AuthorManager() {
               className="rounded-none border-0"
               head={
                 <>
+                  <th scope="col">#</th>
                   <th scope="col">Nom de plume</th>
                   <th scope="col">Adresse</th>
                   <th scope="col">Statut</th>
@@ -325,7 +327,7 @@ export function AuthorManager() {
               }
             >
               {authors.length === 0 ? (
-                <DataRowFull colSpan={5}>
+                <DataRowFull colSpan={6}>
                   {search
                     ? "Aucun auteur ne correspond à cette recherche."
                     : "Aucun auteur pour le moment."}
@@ -333,6 +335,9 @@ export function AuthorManager() {
               ) : (
                 authors.map((author) => (
                   <DataRow key={author.id}>
+                    <td>
+                      <IdCell id={author.id} />
+                    </td>
                     <td className="text-secondary font-medium">{author.penName}</td>
                     <td className="text-muted-foreground">/auteurs/{author.slug}</td>
                     <td>
