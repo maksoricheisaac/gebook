@@ -147,10 +147,6 @@ export class CreateWorkDto {
   @IsOptional()
   @IsEnum(WorkVisibility)
   visibility?: WorkVisibility;
-
-  @IsOptional()
-  @IsBoolean()
-  featured?: boolean;
 }
 
 export class UpdateWorkDto {
@@ -205,10 +201,24 @@ export class UpdateWorkDto {
   @IsOptional()
   @IsEnum(WorkVisibility)
   visibility?: WorkVisibility;
+}
 
-  @IsOptional()
+/**
+ * Mise en avant d'une œuvre ("à la une") — jamais mêlée à `UpdateWorkDto` :
+ * une décision de curation plateforme, réservée au SuperAdmin
+ * (`AdminWorksController.setFeatured`), pas un champ qu'un membre de tenant
+ * ou un auteur pourrait faire glisser dans une mise à jour ordinaire de son
+ * œuvre.
+ */
+export class SetFeaturedDto {
   @IsBoolean()
-  featured?: boolean;
+  featured!: boolean;
+
+  /** Ignoré si `featured` est faux — voir `AdminWorksService.setFeatured`. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  featuredRank?: number;
 }
 
 export class CreateWorkFormatDto {

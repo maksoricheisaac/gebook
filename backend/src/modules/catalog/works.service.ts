@@ -68,9 +68,17 @@ export class WorksService {
       this.prisma.work.findMany({
         where,
         select: buildWorkSelection(query.locale),
-        // Les œuvres mises en avant remontent, puis les plus récentes. `id` départage
-        // pour garantir un ordre stable d'une page à l'autre.
-        orderBy: [{ featured: 'desc' }, { publishedAt: 'desc' }, { id: 'asc' }],
+        // Les œuvres mises en avant remontent, dans l'ordre de priorité fixé
+        // par le SuperAdmin (`featuredRank`, `NULLS LAST` par défaut sur un
+        // tri ASC — une œuvre mise en avant sans priorité explicite passe
+        // donc après celles qui en ont une), puis les plus récentes. `id`
+        // départage pour garantir un ordre stable d'une page à l'autre.
+        orderBy: [
+          { featured: 'desc' },
+          { featuredRank: 'asc' },
+          { publishedAt: 'desc' },
+          { id: 'asc' },
+        ],
         skip,
         take: query.perPage,
       }),

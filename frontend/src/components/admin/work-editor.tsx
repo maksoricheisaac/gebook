@@ -49,7 +49,6 @@ interface Work {
   categoryId: string | null;
   status: WorkStatus;
   visibility: "private" | "tenant_only" | "public";
-  featured: boolean;
   pageCount: number | null;
   translations: WorkTranslation[];
 }
@@ -86,7 +85,6 @@ const workSchema = z
       "archived",
     ]),
     visibility: z.enum(["private", "tenant_only", "public"]),
-    featured: z.boolean(),
     pageCount: z
       .number()
       .int()
@@ -249,7 +247,6 @@ export function WorkEditor({ workId }: { workId: string }) {
           // menu « Visibilité » l'enregistrait `published` + `private`,
           // donc invisible partout malgré le badge « Publiée » affiché ici.
           visibility: dirtyFields.visibility ? values.visibility : undefined,
-          featured: values.featured,
           pageCount: values.pageCount,
           translations: buildTranslationsPayload(values),
         },
@@ -495,20 +492,6 @@ export function WorkEditor({ workId }: { workId: string }) {
               </Field>
             </div>
 
-            <label className="flex cursor-pointer items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                className="accent-primary mt-0.5 size-4 cursor-pointer"
-                {...register("featured")}
-              />
-              <span>
-                <span className="text-secondary block font-medium">Mettre en avant</span>
-                <span className="type-caption">
-                  Affichée dans la sélection de l’accueil.
-                </span>
-              </span>
-            </label>
-
             <LocaleTabs
               isEnTranslated={isEnTranslated}
               fr={
@@ -633,7 +616,6 @@ function toFormValues(work: Work): WorkFormValues {
     categoryId: work.categoryId ?? "",
     status: work.status,
     visibility: work.visibility,
-    featured: work.featured,
     pageCount: work.pageCount ?? undefined,
     translations: {
       fr: {

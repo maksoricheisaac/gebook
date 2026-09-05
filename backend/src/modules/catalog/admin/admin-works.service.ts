@@ -20,6 +20,7 @@ import {
 import type { TenantMemberRole } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { buildRlsContext } from '../../../prisma/rls-context';
+import type { RlsContext } from '../../../prisma/rls-context';
 import type { AuthenticatedUser } from '../../auth/auth.types';
 import { ActivityLogService } from '../../../common/activity-log.service';
 import { TENANT_CATALOG_WRITE_ROLES } from '../../tenants/tenant-context';
@@ -30,12 +31,14 @@ import {
   UploadValidatorService,
 } from '../../files/upload-validator.service';
 import type {
+  AdminListQuery,
   AdminListWorksQuery,
   AdminPaginatedResponse,
 } from './dto/admin-list.query';
 import type {
   CreateWorkDto,
   CreateWorkFormatDto,
+  SetFeaturedDto,
   UpdateWorkDto,
   UpdateWorkFormatDto,
 } from './dto/work.dto';
@@ -202,6 +205,19 @@ export interface AdminWorkStats {
   published: number;
   submitted: number;
   draft: number;
+}
+
+/** Ligne de la liste de curation « à la une » — voir `AdminWorksService.listFeaturable`. */
+export interface FeaturableWork {
+  id: string;
+  title: string;
+  slug: string;
+  coverPath: string | null;
+  featured: boolean;
+  featuredRank: number | null;
+  publishedAt: Date | null;
+  author: { penName: string };
+  tenant: { name: string };
 }
 
 @Injectable()
@@ -501,6 +517,117 @@ export class AdminWorksService {
       entityType: 'work',
       entityId: id,
     });
+  }
+
+  /**
+   * Catalogue de curation « à la une » — plateforme entière, jamais scopé à
+   * un tenant : contrairement à `list()`, appelée depuis des routes
+   * `@Roles('admin')` (voir `AdminWorksController`), donc sans
+   * `TenantContext` à respecter. Restreint aux œuvres publiées : mettre en
+   * avant un brouillon n'aurait aucun sens, personne ne peut encore l'ouvrir.
+   */
+  async listFeaturable(
+    query: AdminListQuery,
+  ): Promise<AdminPaginatedResponse<FeaturableWork>> {
+    const ctx: RlsContext = {
+      userId: null,
+      tenantId: null,
+      isPlatformAdmin: true,
+    };
+    const where: Prisma.WorkWhereInput = {
+      status: WorkStatus.published,
+      ...(query.q && {
+        translations: {
+          some: { title: { contains: query.q, mode: 'insensitive' } },
+        },
+      }),
+    };
+
+    const [total, data] = await this.prisma.withRlsContext(ctx, (tx) =>
+      Promise.all([
+        tx.work.count({ where }),
+        tx.work.findMany({
+          where,
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            coverPath: true,
+            featured: true,
+            featuredRank: true,
+            publishedAt: true,
+            author: { select: { penName: true } },
+            tenant: { select: { name: true } },
+          },
+          orderBy: [
+            { featured: 'desc' },
+            { featuredRank: 'asc' },
+            { publishedAt: 'desc' },
+          ],
+          skip: (query.page - 1) * query.perPage,
+          take: query.perPage,
+        }),
+      ]),
+    );
+
+    return {
+      data,
+      meta: {
+        page: query.page,
+        perPage: query.perPage,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / query.perPage)),
+      },
+    };
+  }
+
+  /**
+   * Ajoute/retire le badge « à la une » et sa priorité — SuperAdmin
+   * uniquement (`@Roles('admin')`, voir `AdminWorksController`), jamais
+   * exposé via `update()`/`UpdateWorkDto`, pour qu'aucun membre de tenant ni
+   * auteur ne puisse se mettre en avant lui-même.
+   */
+  async setFeatured(
+    id: string,
+    dto: SetFeaturedDto,
+    admin: AuthenticatedUser,
+  ): Promise<Work> {
+    const ctx: RlsContext = {
+      userId: null,
+      tenantId: null,
+      isPlatformAdmin: true,
+    };
+
+    const work = await this.prisma
+      .withRlsContext(ctx, async (tx) => {
+        const existing = await tx.work.findUnique({ where: { id } });
+        if (!existing) {
+          throw new NotFoundException("Cette œuvre n'existe pas.");
+        }
+
+        return tx.work.update({
+          where: { id },
+          data: {
+            featured: dto.featured,
+            // Une œuvre retirée de la sélection ne garde pas une priorité
+            // fantôme : la prochaine mise en avant repart sans ordre imposé,
+            // plutôt que de resurgir au même rang qu'avant son retrait.
+            featuredRank: dto.featured ? (dto.featuredRank ?? null) : null,
+          },
+        });
+      })
+      .catch((error: unknown) => {
+        throw translateWorkError(error);
+      });
+
+    await this.activityLog.record({
+      userId: admin.id,
+      action: dto.featured ? 'admin.work.feature' : 'admin.work.unfeature',
+      entityType: 'work',
+      entityId: id,
+    });
+
+    return work;
   }
 
   async updateCover(

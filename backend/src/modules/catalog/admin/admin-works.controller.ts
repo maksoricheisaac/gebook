@@ -18,7 +18,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Work, WorkFormat } from '../../../generated/prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../../auth/auth.types';
 import { CurrentTenant } from '../../tenants/decorators/current-tenant.decorator';
 import { TenantAccessGuard } from '../../tenants/guards/tenant-access.guard';
@@ -26,15 +28,18 @@ import type { TenantContext } from '../../tenants/tenant-context';
 import {
   AdminWorksService,
   type AdminWorkStats,
+  type FeaturableWork,
   type WorkFileSummary,
 } from './admin-works.service';
 import {
+  AdminListQuery,
   AdminListWorksQuery,
   type AdminPaginatedResponse,
 } from './dto/admin-list.query';
 import {
   CreateWorkDto,
   CreateWorkFormatDto,
+  SetFeaturedDto,
   UpdateWorkDto,
   UpdateWorkFormatDto,
   UploadWorkFileDto,
@@ -65,6 +70,31 @@ export class AdminWorksController {
     @CurrentTenant() tenant: TenantContext,
   ): Promise<AdminWorkStats> {
     return this.works.stats(admin, tenant);
+  }
+
+  /**
+   * Curation « à la une » — plateforme entière, SuperAdmin uniquement.
+   * Déclarée avant `:id` pour que Nest ne capture pas "featured" comme un
+   * identifiant (même raison que `stats` ci-dessus).
+   */
+  @Get('featured')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  listFeatured(
+    @Query() query: AdminListQuery,
+  ): Promise<AdminPaginatedResponse<FeaturableWork>> {
+    return this.works.listFeaturable(query);
+  }
+
+  @Patch('featured/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  setFeatured(
+    @Param('id') id: string,
+    @Body() dto: SetFeaturedDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<Work> {
+    return this.works.setFeatured(id, dto, admin);
   }
 
   @Get(':id')

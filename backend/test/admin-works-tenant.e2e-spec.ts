@@ -453,18 +453,20 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
 
       // Renvoyer le même statut (formulaire qui ne touche qu'un autre champ)
       // n'est pas une transition et ne doit jamais être refusé, même à un
-      // rôle qui ne pourrait pas ATTEINDRE ce statut lui-même.
+      // rôle qui ne pourrait pas ATTEINDRE ce statut lui-même. `pageCount`
+      // sert d'« autre champ » ici — `featured` ne se PATCH plus du tout par
+      // cette route (réservé au SuperAdmin, voir `PATCH /admin/works/featured/:id`).
       await editorAgent
         .patch(`/admin/works/${workId}`)
         .set('Origin', ORIGIN)
-        .send({ status: 'published', featured: true })
+        .send({ status: 'published', pageCount: 250 })
         .expect(200);
 
       const stillPublished = await adminPrisma.work.findUniqueOrThrow({
         where: { id: workId },
       });
       expect(stillPublished.status).toBe('published');
-      expect(stillPublished.featured).toBe(true);
+      expect(stillPublished.pageCount).toBe(250);
     });
   });
 

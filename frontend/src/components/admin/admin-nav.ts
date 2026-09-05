@@ -5,6 +5,7 @@ import {
   Percent,
   ReceiptText,
   Settings,
+  Star,
   Users,
   UserSquare2,
   Wallet,
@@ -43,6 +44,13 @@ const ADMIN_NAV: AdminNavItem[] = [
     financeOnly: true,
   },
   { href: "/admin/oeuvres", label: "Œuvres", icon: BookText, group: "Catalogue" },
+  {
+    href: "/admin/mise-en-avant",
+    label: "Mise en avant",
+    icon: Star,
+    platformOnly: true,
+    group: "Catalogue",
+  },
   { href: "/admin/auteurs", label: "Auteurs", icon: UserSquare2, group: "Catalogue" },
   {
     href: "/admin/categories",

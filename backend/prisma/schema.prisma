@@ -605,7 +605,17 @@ model Work {
   /// une œuvre `published` peut rester `tenant_only` (catalogue interne) sans
   /// apparaître dans le catalogue public agrégé de GeBook.
   visibility       WorkVisibility @default(private)
+  /// Piloté exclusivement par le SuperAdmin (curation plateforme, brief
+  /// admin) — jamais par un membre de tenant ni un auteur, même sur sa
+  /// propre œuvre : voir `AdminWorksController`'s `featured/:id`, distinct
+  /// de la mise à jour générale d'une œuvre (`CreateWorkDto`/`UpdateWorkDto`
+  /// n'exposent plus ce champ du tout).
   featured         Boolean        @default(false)
+  /// Ordre d'affichage entre œuvres mises en avant (plus petit = affiché en
+  /// premier) — `null` pour une œuvre non mise en avant, ou mise en avant
+  /// sans priorité explicite (affichée après les œuvres classées, tri SQL
+  /// `NULLS LAST` par défaut sur un `ORDER BY ... ASC`).
+  featuredRank     Int?           @map("featured_rank")
   publishedAt      DateTime?      @map("published_at") @db.Timestamptz(6)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -623,7 +633,7 @@ model Work {
   @@index([categoryId], map: "idx_works_category")
   @@index([status], map: "idx_works_status")
   @@index([visibility], map: "idx_works_visibility")
-  @@index([featured], map: "idx_works_featured")
+  @@index([featured, featuredRank], map: "idx_works_featured")
   @@index([title], map: "idx_works_title")
   @@map("works")
 }
