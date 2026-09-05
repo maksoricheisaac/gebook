@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   ArrowDownToLine,
@@ -53,15 +53,21 @@ interface ConnectionTestResponse {
 /**
  * Superadmin → Paramètres → Paiements (mission plateforme de paiement, Phase 2).
  *
- * Lecture seule à dessein : les secrets des prestataires (PawaPay, CinetPay,
- * FeexPay) ne vivent que dans la configuration serveur (`.env`), jamais en
- * base — cette page ne fait donc que refléter ce que le serveur voit
- * (variable présente ou non, pilote installé ou non), jamais les valeurs
- * elles-mêmes. « Tester la connexion » appelle un vrai test côté serveur ;
- * un prestataire sans pilote installé le dit explicitement plutôt que de
- * fabriquer un succès.
+ * Lecture seule pour tout ce qui est dérivé de l'environnement : les secrets
+ * des prestataires (PawaPay, CinetPay, FeexPay) ne vivent que dans la
+ * configuration serveur (`.env`), jamais en base — cette page ne fait donc
+ * que refléter ce que le serveur voit (variable présente ou non, pilote
+ * installé ou non), jamais les valeurs elles-mêmes. « Tester la connexion »
+ * appelle un vrai test côté serveur ; un prestataire sans pilote installé le
+ * dit explicitement plutôt que de fabriquer un succès.
+ *
+ * `status` (actif/inactif) fait exception : ce n'est pas un secret, c'est
+ * une colonne ordinaire que `PaymentsService#resolveProvider` relit à chaque
+ * paiement — la case à cocher de la colonne « Statut » la change directement,
+ * sans redémarrage ni variable d'environnement à toucher.
  */
 export function PaymentProvidersManager() {
+  const queryClient = useQueryClient();
   const [testResults, setTestResults] = useState<Record<string, ConnectionTestResponse>>(
     {},
   );
@@ -69,6 +75,27 @@ export function PaymentProvidersManager() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin", "payment-providers"],
     queryFn: () => adminFetch<AdminPaymentProvider[]>("/payment-providers"),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ code, status }: { code: string; status: "active" | "inactive" }) =>
+      adminFetch<AdminPaymentProvider>(`/payment-providers/${code}/status`, {
+        method: "PATCH",
+        body: { status },
+      }),
+    onSuccess: async (provider) => {
+      toast.success(
+        `${provider.name} : ${provider.status === "active" ? "activé" : "désactivé"}.`,
+      );
+      await queryClient.invalidateQueries({ queryKey: ["admin", "payment-providers"] });
+    },
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof AdminApiError
+          ? error.message
+          : "Une erreur est survenue. Veuillez réessayer.",
+      );
+    },
   });
 
   const testMutation = useMutation({
@@ -172,11 +199,28 @@ export function PaymentProvidersManager() {
                       </Badge>
                     </td>
                     <td>
-                      <Badge
-                        variant={provider.status === "active" ? "success" : "neutral"}
-                      >
-                        {provider.status === "active" ? "Actif" : "Inactif"}
-                      </Badge>
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={provider.status === "active"}
+                          disabled={
+                            statusMutation.isPending &&
+                            statusMutation.variables?.code === provider.code
+                          }
+                          onChange={(event) =>
+                            statusMutation.mutate({
+                              code: provider.code,
+                              status: event.target.checked ? "active" : "inactive",
+                            })
+                          }
+                          className="accent-primary size-4 cursor-pointer"
+                        />
+                        <Badge
+                          variant={provider.status === "active" ? "success" : "neutral"}
+                        >
+                          {provider.status === "active" ? "Actif" : "Inactif"}
+                        </Badge>
+                      </label>
                     </td>
                     <td>
                       <DriverBadge
@@ -259,9 +303,10 @@ export function PaymentProvidersManager() {
 
       <p className="type-caption max-w-2xl">
         Les identifiants réels (URL d’API, clé, jeton) se configurent exclusivement via
-        les variables d’environnement du serveur — jamais depuis cette page. Modifier un
-        prestataire ici n’est pas possible tant que ses secrets ne sont pas fournis à
-        l’API.
+        les variables d’environnement du serveur — jamais depuis cette page. Le statut
+        actif/inactif, lui, se change ici à tout moment, sans reconfiguration : un
+        prestataire désactivé n’est plus proposé au règlement dès ce changement,
+        immédiatement.
       </p>
     </div>
   );

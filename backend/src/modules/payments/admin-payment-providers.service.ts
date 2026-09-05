@@ -73,6 +73,36 @@ export class AdminPaymentProvidersService {
     return providers.map((provider) => this.toResponse(provider));
   }
 
+  /**
+   * Bascule active/inactive — jamais `maintenance` ici (pas demandé par
+   * cette page, réservée à un usage opérationnel plus fin ailleurs si
+   * besoin). Aucune variable d'environnement à toucher : `status` est une
+   * colonne ordinaire, et `PaymentsService#resolveProvider` la relit à
+   * chaque nouveau paiement — l'effet est donc immédiat, pas seulement au
+   * prochain redémarrage.
+   */
+  async updateStatus(
+    code: string,
+    status: 'active' | 'inactive',
+  ): Promise<AdminPaymentProviderResponse> {
+    const provider = await this.prisma.withRlsContext(
+      SYSTEM_CONTEXT,
+      async (tx) => {
+        const existing = await tx.paymentProvider.findUnique({
+          where: { code },
+        });
+        if (!existing) {
+          throw new NotFoundException(
+            'Ce prestataire de paiement est introuvable.',
+          );
+        }
+        return tx.paymentProvider.update({ where: { code }, data: { status } });
+      },
+    );
+
+    return this.toResponse(provider);
+  }
+
   async testConnection(
     code: string,
   ): Promise<AdminProviderConnectionTestResponse> {
