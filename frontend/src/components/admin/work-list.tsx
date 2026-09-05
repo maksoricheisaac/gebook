@@ -7,7 +7,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { BookText, CheckCircle2, FileEdit, Plus, Search, Trash2 } from "lucide-react";
+import {
+  BookText,
+  CheckCircle2,
+  Eye,
+  FileEdit,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPagination } from "@/src/components/admin/admin-pagination";
@@ -32,6 +40,7 @@ import { Field, FormError } from "@/src/components/ui/field";
 import { Input, Select } from "@/src/components/ui/input";
 import { RetryRow, TableSkeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
+import { formatDate } from "@/src/lib/format";
 import { slugify } from "@/src/lib/slugify";
 import {
   WORK_STATUS_LABELS,
@@ -44,6 +53,10 @@ interface WorkListItem {
   title: string;
   slug: string;
   status: WorkStatus;
+  authorId: string;
+  categoryId: string | null;
+  pageCount: number | null;
+  publishedAt: string | null;
 }
 
 interface WorkStats {
@@ -105,6 +118,7 @@ export function WorkList() {
   const [page, setPage] = useState(1);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [toDelete, setToDelete] = useState<WorkListItem | null>(null);
+  const [toView, setToView] = useState<WorkListItem | null>(null);
 
   // Un changement de recherche doit revenir à la page 1 : rester en page 4
   // d'une recherche qui n'a plus que 2 pages de résultats afficherait une
@@ -295,6 +309,15 @@ export function WorkList() {
                     </td>
                     <td className="text-right">
                       <div className="flex justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setToView(work)}
+                        >
+                          <Eye aria-hidden />
+                          <span className="sr-only">Consulter {work.title}</span>
+                        </Button>
                         <Button asChild variant="outline" size="sm">
                           <Link href={`/admin/oeuvres/${work.id}`}>
                             Gérer
@@ -406,6 +429,50 @@ export function WorkList() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={toView !== null} onOpenChange={(open) => !open && setToView(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{toView?.title}</DialogTitle>
+          </DialogHeader>
+          {toView && (
+            <DialogBody className="space-y-5">
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <InfoRow label="Auteur">
+                  {authors?.data.find((author) => author.id === toView.authorId)
+                    ?.penName ?? "—"}
+                </InfoRow>
+                <InfoRow label="Domaine">
+                  {categories?.data.find((category) => category.id === toView.categoryId)
+                    ?.name ?? "Aucun"}
+                </InfoRow>
+                <InfoRow label="Statut">
+                  <Badge variant={workStatusTone(toView.status)}>
+                    {WORK_STATUS_LABELS[toView.status]}
+                  </Badge>
+                </InfoRow>
+                <InfoRow label="Date de publication">
+                  {toView.publishedAt ? formatDate(toView.publishedAt) : "Non publiée"}
+                </InfoRow>
+                <InfoRow label="Nombre de pages">
+                  {toView.pageCount ?? "Non précisé"}
+                </InfoRow>
+                <InfoRow label="Adresse">/livres/{toView.slug}</InfoRow>
+              </dl>
+            </DialogBody>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setToView(null)}>
+              Fermer
+            </Button>
+            {toView && (
+              <Button asChild>
+                <Link href={`/admin/oeuvres/${toView.id}`}>Gérer cette œuvre</Link>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={toDelete !== null}
         title="Supprimer cette œuvre ?"
@@ -419,6 +486,15 @@ export function WorkList() {
         onCancel={() => setToDelete(null)}
         onConfirm={() => toDelete && deleteMutation.mutate(toDelete.id)}
       />
+    </div>
+  );
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="type-caption">{label}</dt>
+      <dd className="text-secondary mt-1 text-sm font-medium">{children}</dd>
     </div>
   );
 }
