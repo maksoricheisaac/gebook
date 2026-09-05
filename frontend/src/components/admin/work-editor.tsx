@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { ArrowLeft, ExternalLink, ImagePlus } from "lucide-react";
+import { ArrowLeft, ExternalLink, ImagePlus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPageHeader, AdminPanel } from "@/src/components/admin/admin-page";
@@ -22,6 +22,7 @@ import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
 import { Skeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 import { resolveAssetUrl } from "@/src/lib/assets";
+import { slugify } from "@/src/lib/slugify";
 import { emptyToUndefined, hasAnyValue } from "@/src/lib/translation-form";
 import {
   WORK_STATUS_LABELS,
@@ -74,6 +75,12 @@ const workSchema = z
   .object({
     authorId: z.string().min(1, "Choisissez un auteur."),
     categoryId: z.string().optional(),
+    slug: z
+      .string()
+      .trim()
+      .min(1, "Le slug est obligatoire.")
+      .max(280)
+      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Minuscules, chiffres et tirets uniquement."),
     status: z.enum([
       "draft",
       "submitted",
@@ -211,12 +218,14 @@ export function WorkEditor({ workId }: { workId: string }) {
     handleSubmit,
     reset,
     control,
+    setValue,
     formState: { errors, isSubmitting, isDirty, dirtyFields },
   } = useForm<WorkFormValues>({
     resolver: zodResolver(workSchema),
     values: work ? toFormValues(work) : undefined,
   });
 
+  const frTitleValue = useWatch({ control, name: "translations.fr.title" });
   const enFields = useWatch({ control, name: "translations.en" });
   const isEnTranslated = hasAnyValue({
     title: enFields?.title,
@@ -235,6 +244,7 @@ export function WorkEditor({ workId }: { workId: string }) {
         body: {
           authorId: values.authorId,
           categoryId: values.categoryId || undefined,
+          slug: values.slug,
           status: values.status,
           // N'envoyer la visibilité que si l'auteur de la modification l'a
           // lui-même choisie dans le menu : sinon le champ reste à sa valeur
@@ -425,6 +435,31 @@ export function WorkEditor({ workId }: { workId: string }) {
               </Field>
             </div>
 
+            <Field
+              id="work-slug"
+              label="Adresse (slug)"
+              hint={`/livres/${work.slug} — modifier l’adresse change l’URL publique de l’œuvre.`}
+              required
+              error={errors.slug?.message}
+            >
+              <div className="flex gap-2">
+                <Input {...register("slug")} className="flex-1" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setValue("slug", slugify(frTitleValue ?? ""), {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                >
+                  <RefreshCw aria-hidden />
+                  Régénérer depuis le titre
+                </Button>
+              </div>
+            </Field>
+
             <Controller
               control={control}
               name="pageCount"
@@ -614,6 +649,7 @@ function toFormValues(work: Work): WorkFormValues {
   return {
     authorId: work.authorId,
     categoryId: work.categoryId ?? "",
+    slug: work.slug,
     status: work.status,
     visibility: work.visibility,
     pageCount: work.pageCount ?? undefined,
