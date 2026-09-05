@@ -58,6 +58,11 @@ interface AuthorOption {
   penName: string;
 }
 
+interface CategoryOption {
+  id: string;
+  name: string;
+}
+
 interface Paginated<T> {
   data: T[];
   meta: { page: number; perPage: number; total: number; totalPages: number };
@@ -74,11 +79,12 @@ const workSchema = z.object({
     .max(280)
     .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Minuscules, chiffres et tirets uniquement."),
   authorId: z.string().min(1, "Choisissez un auteur."),
+  categoryId: z.string().optional(),
 });
 
 type WorkFormValues = z.infer<typeof workSchema>;
 
-const EMPTY: WorkFormValues = { title: "", slug: "", authorId: "" };
+const EMPTY: WorkFormValues = { title: "", slug: "", authorId: "", categoryId: "" };
 
 /**
  * Liste des œuvres et création rapide.
@@ -130,6 +136,11 @@ export function WorkList() {
     queryFn: () => adminFetch<Paginated<AuthorOption>>("/authors?perPage=100"),
   });
 
+  const { data: categories } = useQuery({
+    queryKey: ["admin", "categories", "options"],
+    queryFn: () => adminFetch<Paginated<CategoryOption>>("/categories?perPage=100"),
+  });
+
   const {
     register,
     handleSubmit,
@@ -157,6 +168,7 @@ export function WorkList() {
         // « bilinguisme »). Seul `fr.title` est requis à cette étape.
         body: {
           authorId: values.authorId,
+          categoryId: values.categoryId || undefined,
           slug: values.slug,
           translations: { fr: { title: values.title } },
         },
@@ -364,6 +376,17 @@ export function WorkList() {
                   {authors?.data.map((author) => (
                     <option key={author.id} value={author.id}>
                       {author.penName}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field id="work-category" label="Domaine" optional>
+                <Select {...register("categoryId")}>
+                  <option value="">Aucun</option>
+                  {categories?.data.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
                     </option>
                   ))}
                 </Select>
