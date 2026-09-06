@@ -15,8 +15,10 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { buildRlsContext } from '../../../prisma/rls-context';
 import type { AuthenticatedUser } from '../../auth/auth.types';
 import { ActivityLogService } from '../../../common/activity-log.service';
-import { LEGACY_SINGLE_TENANT_ID } from '../../tenants/legacy-tenant';
-import { TENANT_CATALOG_WRITE_ROLES } from '../../tenants/tenant-context';
+import {
+  TENANT_CATALOG_WRITE_ROLES,
+  TENANT_MANAGEMENT_ROLES,
+} from '../../tenants/tenant-context';
 import type { TenantContext } from '../../tenants/tenant-context';
 import { STORAGE_DRIVER, type StorageDriver } from '../../files/storage-driver';
 import {
@@ -61,6 +63,45 @@ function assertCanWriteCatalog(tenant: TenantContext): void {
   if (!tenant.role || !TENANT_CATALOG_WRITE_ROLES.includes(tenant.role)) {
     throw new ForbiddenException(
       'Votre rôle ne permet pas de créer ou modifier un auteur pour cet espace.',
+    );
+  }
+}
+
+/**
+ * Aligné sur la policy RLS `authors_update` : les rôles d'édition peuvent
+ * modifier n'importe quel auteur du tenant ; un membre au rôle `author` ne
+ * peut modifier que son propre profil (`Author.userId` = son propre id).
+ */
+function assertCanUpdateAuthor(
+  tenant: TenantContext,
+  author: { userId: string | null },
+  callerId: string,
+): void {
+  if (tenant.isPlatformAdmin) {
+    return;
+  }
+  if (tenant.role && TENANT_CATALOG_WRITE_ROLES.includes(tenant.role)) {
+    return;
+  }
+  if (tenant.role === 'author' && author.userId === callerId) {
+    return;
+  }
+  throw new ForbiddenException(
+    'Votre rôle ne permet pas de modifier cet auteur.',
+  );
+}
+
+/**
+ * Aligné sur la policy RLS `authors_delete` : owner/admin uniquement — pas
+ * d'auto-suppression par l'auteur lui-même, contrairement à la modification.
+ */
+function assertCanDeleteAuthor(tenant: TenantContext): void {
+  if (tenant.isPlatformAdmin) {
+    return;
+  }
+  if (!tenant.role || !TENANT_MANAGEMENT_ROLES.includes(tenant.role)) {
+    throw new ForbiddenException(
+      'Votre rôle ne permet pas de supprimer cet auteur.',
     );
   }
 }
@@ -184,10 +225,18 @@ export class AdminAuthorsService {
   ): Promise<AuthorWithTranslations> {
     assertCanWriteCatalog(tenant);
 
-    // Un platform_admin sans espace sélectionné garde le comportement d'avant
-    // le Tenant Dashboard (tenant historique unique) ; un membre de tenant a
-    // toujours un `tenantId` résolu ici — `TenantAccessGuard` l'a garanti.
-    const tenantId = tenant.tenantId ?? LEGACY_SINGLE_TENANT_ID;
+    // Un membre de tenant a toujours un `tenantId` résolu ici —
+    // `TenantAccessGuard` l'a garanti. Seul un platform_admin peut atteindre
+    // cette route sans espace actif sélectionné (vue plateforme) : plutôt que
+    // de deviner un tenant à sa place (l'ancien repli `LEGACY_SINGLE_TENANT_ID`
+    // pointait vers un tenant de démonstration qui n'a plus vocation à
+    // exister — voir `prisma/seed.ts`), on le lui demande explicitement.
+    if (tenant.tenantId === null) {
+      throw new ForbiddenException(
+        'Sélectionnez un espace actif avant de créer un auteur.',
+      );
+    }
+    const tenantId = tenant.tenantId;
 
     const { userId, birthDate, translations, ...rest } = dto;
 
@@ -260,6 +309,7 @@ export class AdminAuthorsService {
         if (!existing) {
           throw new NotFoundException("Cet auteur n'existe pas.");
         }
+        assertCanUpdateAuthor(tenant, existing, admin.id);
         await tx.author.update({
           where: { id },
           data: {
@@ -323,6 +373,8 @@ export class AdminAuthorsService {
     admin: AuthenticatedUser,
     tenant: TenantContext,
   ): Promise<void> {
+    assertCanDeleteAuthor(tenant);
+
     await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
         // Filtre applicatif redondant avec la RLS (défense en profondeur,
