@@ -218,7 +218,7 @@ export default async function WorkPage(props: PageProps<"/livres/[slug]">) {
             <div className="border-border bg-card shadow-raised rounded-xl border p-6">
               {priceFrom && (
                 <div className="border-border mb-6 flex items-baseline justify-between gap-3 border-b pb-5">
-                  <span className="type-caption">À partir de</span>
+                  <span className="type-caption">Prix</span>
                   <span className="font-heading text-secondary tnum text-2xl font-semibold">
                     {priceFrom}
                   </span>

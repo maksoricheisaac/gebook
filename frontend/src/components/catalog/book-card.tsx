@@ -67,10 +67,7 @@ export function BookCard({
 
         <div className="mt-auto flex items-end justify-between gap-2 pt-2.5">
           {price ? (
-            <p className="text-secondary tnum text-[0.9375rem] font-semibold">
-              <span className="type-caption mr-1 font-normal">dès</span>
-              {price}
-            </p>
+            <p className="text-secondary tnum text-[0.9375rem] font-semibold">{price}</p>
           ) : (
             <span className="type-caption">Bientôt disponible</span>
           )}
