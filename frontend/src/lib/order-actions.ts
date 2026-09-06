@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiBaseUrl } from "./api";
@@ -9,6 +10,60 @@ export interface PurchaseFormState {
   error?: string;
   /** Erreurs de validation renvoyées par l'API, indexées par champ. */
   fieldErrors?: Record<string, string[]>;
+}
+
+export interface CancelOrderFormState {
+  error?: string;
+}
+
+/**
+ * Annulation par le lecteur, tant que sa commande n'a pas encore été validée
+ * par un paiement (`OrdersService.cancel()`, audit pré-production — il
+ * n'existait auparavant aucun moyen de revenir sur une commande passée par
+ * erreur). Même raisonnement que `purchaseAction` : le cookie de session vit
+ * sur l'origine du frontend, un appel direct du navigateur vers l'API ne le
+ * porterait pas.
+ */
+export async function cancelOrderAction(
+  _previous: CancelOrderFormState,
+  formData: FormData,
+): Promise<CancelOrderFormState> {
+  const orderNumber = formData.get("orderNumber");
+  if (typeof orderNumber !== "string" || !orderNumber) {
+    return { error: "Commande introuvable." };
+  }
+
+  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  if (!token) {
+    return { error: "Votre session a expiré. Veuillez vous reconnecter." };
+  }
+
+  const origin = (await headers()).get("origin") ?? "";
+
+  const response = await fetch(
+    `${apiBaseUrl()}/orders/${encodeURIComponent(orderNumber)}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: origin,
+        cookie: `${SESSION_COOKIE_NAME}=${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+    } | null;
+    return {
+      error: payload?.message ?? "Une erreur est survenue. Veuillez réessayer.",
+    };
+  }
+
+  revalidatePath(`/paiement/${orderNumber}`);
+  revalidatePath("/mes-commandes");
+  return {};
 }
 
 /**

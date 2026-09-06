@@ -363,4 +363,123 @@ describe('Commandes (e2e)', () => {
       );
     });
   });
+
+  describe('Annulation par le lecteur', () => {
+    const createOwnOrder = async (
+      agent: ReturnType<typeof request.agent>,
+    ): Promise<string> => {
+      const response = await agent
+        .post('/orders')
+        .set('Origin', ORIGIN)
+        .send({ items: [{ workFormatId: formatId, quantity: 1 }] })
+        .expect(201);
+      return (response.body as { orderNumber: string }).orderNumber;
+    };
+
+    it('annule sa propre commande tant qu’elle n’est pas encore validée', async () => {
+      const orderNumber = await createOwnOrder(readerAAgent);
+
+      const response = await readerAAgent
+        .post(`/orders/${orderNumber}/cancel`)
+        .set('Origin', ORIGIN)
+        .expect(200);
+
+      expect((response.body as { status: string }).status).toBe('cancelled');
+
+      const reloaded = await readerAAgent
+        .get(`/orders/${orderNumber}`)
+        .expect(200);
+      const body = reloaded.body as {
+        status: string;
+        cancelledAt: string | null;
+      };
+      expect(body.status).toBe('cancelled');
+      expect(body.cancelledAt).not.toBeNull();
+    });
+
+    it('annule aussi une commande déjà passée en attente de paiement', async () => {
+      const orderNumber = await createOwnOrder(readerAAgent);
+      const order = await adminAgent.get(`/admin/orders`).expect(200);
+      const orderId = (
+        order.body as { data: Array<{ id: string; orderNumber: string }> }
+      ).data.find((o) => o.orderNumber === orderNumber)?.id;
+
+      await adminAgent
+        .patch(`/admin/orders/${orderId}/status`)
+        .set('Origin', ORIGIN)
+        .send({ status: 'awaiting_payment' })
+        .expect(200);
+
+      await readerAAgent
+        .post(`/orders/${orderNumber}/cancel`)
+        .set('Origin', ORIGIN)
+        .expect(200);
+    });
+
+    it('refuse d’annuler la commande d’un autre lecteur (404, jamais 403)', async () => {
+      const orderNumber = await createOwnOrder(readerAAgent);
+
+      await readerBAgent
+        .post(`/orders/${orderNumber}/cancel`)
+        .set('Origin', ORIGIN)
+        .expect(404);
+
+      const unchanged = await readerAAgent
+        .get(`/orders/${orderNumber}`)
+        .expect(200);
+      expect((unchanged.body as { status: string }).status).toBe('pending');
+    });
+
+    it('une seconde annulation reste sans effet plutôt que d’échouer (opération idempotente)', async () => {
+      const orderNumber = await createOwnOrder(readerAAgent);
+
+      await readerAAgent
+        .post(`/orders/${orderNumber}/cancel`)
+        .set('Origin', ORIGIN)
+        .expect(200);
+
+      const response = await readerAAgent
+        .post(`/orders/${orderNumber}/cancel`)
+        .set('Origin', ORIGIN)
+        .expect(200);
+      expect((response.body as { status: string }).status).toBe('cancelled');
+    });
+
+    it('refuse d’annuler une commande déjà passée en livraison (statut non annulable)', async () => {
+      const orderNumber = await createOwnOrder(readerAAgent);
+      const order = await adminAgent.get(`/admin/orders`).expect(200);
+      const orderId = (
+        order.body as { data: Array<{ id: string; orderNumber: string }> }
+      ).data.find((o) => o.orderNumber === orderNumber)?.id;
+
+      await adminAgent
+        .patch(`/admin/orders/${orderId}/status`)
+        .set('Origin', ORIGIN)
+        .send({ status: 'awaiting_payment' })
+        .expect(200);
+
+      await readerAAgent
+        .post(`/orders/${orderNumber}/cancel`)
+        .set('Origin', ORIGIN)
+        .expect(200);
+
+      // Une fois annulée, la commande ne peut plus reprendre son cours — même
+      // une transition par ailleurs structurellement valide depuis un autre
+      // statut de départ est refusée depuis un statut terminal.
+      await adminAgent
+        .patch(`/admin/orders/${orderId}/status`)
+        .set('Origin', ORIGIN)
+        .send({ status: 'awaiting_payment' })
+        .expect(400);
+    });
+
+    it('refuse une annulation non authentifiée', async () => {
+      const orderNumber = await createOwnOrder(readerAAgent);
+
+      await request(app.getHttpServer())
+        .post(`/orders/${orderNumber}/cancel`)
+        .set('Origin', ORIGIN)
+        .expect(401);
+    });
+  });
 });

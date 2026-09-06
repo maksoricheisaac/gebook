@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { AdminPageHeader, AdminPanel } from "@/src/components/admin/admin-page";
 import { Button } from "@/src/components/ui/button";
-import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
 import { FormError } from "@/src/components/ui/field";
 import { Select } from "@/src/components/ui/input";

@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { Eye, Plus, Trash2, Upload } from "lucide-react";
 
 import { AdminPanel } from "@/src/components/admin/admin-page";
-import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Field, FormError } from "@/src/components/ui/field";

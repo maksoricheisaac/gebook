@@ -53,4 +53,17 @@ export class OrdersController {
   ): Promise<OrderResponse> {
     return this.orders.findByNumber(orderNumber, user);
   }
+
+  /**
+   * Annulation par son propriétaire, tant qu'aucun paiement ne l'a validée —
+   * voir `OrdersService.cancel()`.
+   */
+  @Post('orders/:orderNumber/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancel(
+    @Param('orderNumber') orderNumber: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<OrderResponse> {
+    return this.orders.cancel(orderNumber, user);
+  }
 }

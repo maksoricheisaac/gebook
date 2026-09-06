@@ -1,11 +1,20 @@
 "use client";
 
-import { useActionState } from "react";
-import { CheckCircle2, CreditCard, ExternalLink, FlaskConical, Info } from "lucide-react";
+import { useActionState, useRef, useState } from "react";
+import {
+  CheckCircle2,
+  CreditCard,
+  ExternalLink,
+  FlaskConical,
+  Info,
+  XCircle,
+} from "lucide-react";
 
 import { Button } from "@/src/components/ui/button";
+import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { FormError } from "@/src/components/ui/field";
 import { formatDateTime, formatPrice } from "@/src/lib/format";
+import { cancelOrderAction, type CancelOrderFormState } from "@/src/lib/order-actions";
 import {
   simulatePaymentAction,
   startPaymentAction,
@@ -19,6 +28,7 @@ import {
 } from "@/src/lib/payment-shared";
 
 const initialState: PaymentFormState = {};
+const initialCancelState: CancelOrderFormState = {};
 
 /** Statuts de commande depuis lesquels une tentative de paiement est recevable. */
 const PAYABLE_ORDER_STATUSES = ["pending", "awaiting_payment", "failed"];
@@ -58,6 +68,12 @@ export function PaymentPanel({
     simulatePaymentAction,
     initialState,
   );
+  const [cancelState, cancelAction, cancelPending] = useActionState(
+    cancelOrderAction,
+    initialCancelState,
+  );
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const cancelFormRef = useRef<HTMLFormElement>(null);
 
   const inFlight = payments.find(isPaymentInFlight);
   const lastAttempt = payments[0];
@@ -193,6 +209,45 @@ export function PaymentPanel({
             </div>
           </div>
         )}
+
+        {/*
+         * Tant que la commande n'est pas encore validée par un paiement, le
+         * lecteur doit pouvoir revenir dessus — passer une commande par
+         * erreur (mauvais format, changement d'avis) n'avait auparavant
+         * aucune issue.
+         */}
+        <div className="border-border mt-6 border-t pt-5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => setConfirmCancelOpen(true)}
+          >
+            <XCircle aria-hidden />
+            Annuler la commande
+          </Button>
+          <div className="mt-2">
+            <FormError message={cancelState.error} />
+          </div>
+        </div>
+
+        <form ref={cancelFormRef} action={cancelAction}>
+          <input type="hidden" name="orderNumber" value={orderNumber} />
+        </form>
+
+        <ConfirmDialog
+          open={confirmCancelOpen}
+          title="Annuler cette commande ?"
+          description={`La commande ${orderNumber} sera annulée et ne pourra plus être réglée. Cette action est définitive.`}
+          confirmLabel="Annuler la commande"
+          isPending={cancelPending}
+          onConfirm={() => {
+            setConfirmCancelOpen(false);
+            cancelFormRef.current?.requestSubmit();
+          }}
+          onCancel={() => setConfirmCancelOpen(false)}
+        />
       </div>
     </section>
   );

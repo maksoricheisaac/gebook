@@ -162,6 +162,50 @@ export class OrdersService {
     return toOrderResponse(order);
   }
 
+  /**
+   * Annulation par le lecteur lui-même, tant que la commande n'a pas encore
+   * été validée par un paiement — `assertOrderTransitionAllowed` est la seule
+   * autorité sur ce qui compte comme « pas encore validée » (`pending`,
+   * `awaiting_payment`, `failed`) : elle refuse déjà toute autre commande
+   * (`paid`, `processing`…) sans qu'il faille dupliquer cette liste ici.
+   * Aucun effet de bord à défaire (contrairement à un remboursement) : une
+   * commande qui n'a jamais été payée n'a jamais alimenté la bibliothèque du
+   * lecteur ni les commissions.
+   */
+  async cancel(
+    orderNumber: string,
+    user: AuthenticatedUser,
+  ): Promise<OrderResponse> {
+    const updated = await this.prisma.withRlsContext(
+      buildRlsContext(user),
+      async (tx) => {
+        const order = await tx.order.findUnique({ where: { orderNumber } });
+        // Même raisonnement que `findByNumber` : 404 plutôt que 403, pour ne
+        // jamais confirmer l'existence de la commande d'un autre lecteur.
+        if (!order || order.userId !== user.id) {
+          throw new NotFoundException("Cette commande n'existe pas.");
+        }
+
+        assertOrderTransitionAllowed(order.status, OrderStatus.cancelled);
+
+        return tx.order.update({
+          where: { orderNumber },
+          data: { status: OrderStatus.cancelled, cancelledAt: new Date() },
+          include: orderInclude,
+        });
+      },
+    );
+
+    await this.activityLog.record({
+      userId: user.id,
+      action: 'order.cancel',
+      entityType: 'order',
+      entityId: updated.id,
+    });
+
+    return toOrderResponse(updated);
+  }
+
   /** `AdminOrdersController` est `@Roles('admin')` : platform_admin garanti. */
   async listForAdmin(
     query: AdminListOrdersQuery,

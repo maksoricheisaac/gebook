@@ -20,7 +20,7 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.shipped]: [OrderStatus.delivered, OrderStatus.refunded],
   [OrderStatus.delivered]: [OrderStatus.refunded],
   [OrderStatus.cancelled]: [],
-  [OrderStatus.failed]: [OrderStatus.awaiting_payment],
+  [OrderStatus.failed]: [OrderStatus.awaiting_payment, OrderStatus.cancelled],
   [OrderStatus.refunded]: [],
 };
 

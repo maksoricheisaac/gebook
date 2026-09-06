@@ -25,7 +25,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
-import { ConfirmDialog } from "@/src/components/admin/confirm-dialog";
+import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { IdCell } from "@/src/components/admin/id-cell";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
 import { Badge } from "@/src/components/ui/badge";

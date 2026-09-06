@@ -35,6 +35,27 @@ describe('assertOrderTransitionAllowed', () => {
     ).toThrow();
   });
 
+  it('autorise un lecteur à annuler une commande pas encore validée', () => {
+    expect(() =>
+      assertOrderTransitionAllowed(OrderStatus.pending, OrderStatus.cancelled),
+    ).not.toThrow();
+    expect(() =>
+      assertOrderTransitionAllowed(
+        OrderStatus.awaiting_payment,
+        OrderStatus.cancelled,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertOrderTransitionAllowed(OrderStatus.failed, OrderStatus.cancelled),
+    ).not.toThrow();
+  });
+
+  it('refuse d’annuler une commande déjà payée', () => {
+    expect(() =>
+      assertOrderTransitionAllowed(OrderStatus.paid, OrderStatus.cancelled),
+    ).toThrow();
+  });
+
   it('refuse toute sortie d’un statut terminal', () => {
     expect(() =>
       assertOrderTransitionAllowed(OrderStatus.cancelled, OrderStatus.pending),
