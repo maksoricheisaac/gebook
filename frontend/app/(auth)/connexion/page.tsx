@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { AuthLayout } from "@/src/components/auth/auth-layout";
 import { LoginForm } from "@/src/components/auth/login-form";
 import { getCurrentUser, resolveDestination } from "@/src/lib/auth";
+import { safeRedirectPath } from "@/src/lib/auth-shared";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,7 @@ export const metadata: Metadata = {
 
 export default async function LoginPage(props: PageProps<"/connexion">) {
   const { retour } = await props.searchParams;
-  const retourPath =
-    typeof retour === "string" && retour.startsWith("/") ? retour : undefined;
+  const retourPath = safeRedirectPath(retour);
 
   const user = await getCurrentUser();
   if (user) {

@@ -52,7 +52,7 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
-    await verifyAndLogin(agent, adminPrisma, ORIGIN, email);
+    await verifyAndLogin(agent, adminPrisma, ORIGIN, email, mail.sent);
     const user = await adminPrisma.user.findUniqueOrThrow({ where: { email } });
     return user.id;
   };
@@ -80,12 +80,14 @@ describe('Back-office Œuvres — accès par tenant (e2e)', () => {
   let authorSelfAgent: ReturnType<typeof request.agent>;
   let outsiderOwnerAgent: ReturnType<typeof request.agent>;
 
+  const mail = fakeMailService();
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(MailService)
-      .useValue(fakeMailService())
+      .useValue(mail)
       .compile();
 
     app = moduleFixture.createNestApplication();

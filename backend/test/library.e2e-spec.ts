@@ -63,7 +63,7 @@ describe('Bibliothèque (e2e)', () => {
       })
       .expect(201);
 
-    await verifyAndLogin(agent, prisma, ORIGIN, email);
+    await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent);
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
     return user.id;
   };
@@ -118,6 +118,8 @@ describe('Bibliothèque (e2e)', () => {
     return entry.id;
   };
 
+  const mail = fakeMailService();
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -125,7 +127,7 @@ describe('Bibliothèque (e2e)', () => {
       .overrideProvider(VirusScanService)
       .useValue(fakeVirusScanner())
       .overrideProvider(MailService)
-      .useValue(fakeMailService())
+      .useValue(mail)
       .compile();
 
     app = moduleFixture.createNestApplication({ rawBody: true });
@@ -167,11 +169,22 @@ describe('Bibliothèque (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: adminUser.id, roleId: adminRole.id },
     });
+
+    // Espace actif requis pour créer un auteur (`AdminAuthorsService.create`
+    // refuse désormais un platform_admin sans tenant sélectionné plutôt que
+    // de deviner un tenant à sa place — voir `prisma/seed.ts`, qui ne crée
+    // plus de tenant de démonstration). Créé en libre-service comme
+    // n'importe quel tenant réel, le créateur en devient `owner`.
     await adminAgent
-      .post('/auth/login')
+      .post('/tenants')
       .set('Origin', ORIGIN)
-      .send({ email: adminEmail, password: 'MotDePasse1' })
-      .expect(200);
+      .send({
+        name: 'Phase 9 (test)',
+        slug: 'phase9-tenant',
+        type: 'independent_author',
+        acceptTerms: true,
+      })
+      .expect(201);
 
     const author = await adminAgent
       .post('/admin/authors')
@@ -236,6 +249,12 @@ describe('Bibliothèque (e2e)', () => {
     });
     await adminPrisma.author.deleteMany({
       where: { slug: { startsWith: 'phase9-' } },
+    });
+    await adminPrisma.tenantMember.deleteMany({
+      where: { tenant: { slug: 'phase9-tenant' } },
+    });
+    await adminPrisma.tenant.deleteMany({
+      where: { slug: 'phase9-tenant' },
     });
     await prisma.user.deleteMany({
       where: { email: { endsWith: EMAIL_DOMAIN } },

@@ -7,8 +7,22 @@ const WINDOW_MS = 15 * 60 * 1000;
 
 /** `email_verify` : renvois du lien de vérification d'adresse (brief §1) —
  * même mécanisme, pour éviter qu'un compte non vérifié ne serve à bombarder
- * une boîte mail de renvois. `otp` : renvois du code de connexion (brief §2). */
-export type ThrottleScope = 'email' | 'ip' | 'setup' | 'email_verify' | 'otp';
+ * une boîte mail de renvois. `otp` : renvois du code de connexion (brief §2).
+ * `otp_verify` : tentatives de saisie de ce code — un code à 6 chiffres n'a
+ * que 10^6 valeurs possibles, une tentative sans limite le rendrait devinable
+ * par force brute avant même son expiration. `register` : inscriptions par IP
+ * (audit pré-production — anti-abus/DoS sur la création de comptes).
+ * `tenant_create` : créations d'espace par utilisateur (idem, anti-abus sur
+ * `POST /tenants`). */
+export type ThrottleScope =
+  | 'email'
+  | 'ip'
+  | 'setup'
+  | 'email_verify'
+  | 'otp'
+  | 'otp_verify'
+  | 'register'
+  | 'tenant_create';
 
 /**
  * Limitation des tentatives de connexion, à double compteur (audit §32, corrige S-05).

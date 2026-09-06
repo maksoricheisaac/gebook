@@ -4,6 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiBaseUrl } from "./api";
 import { resolveDestination } from "./auth";
+import { safeRedirectPath } from "./auth-shared";
 import { SESSION_COOKIE_NAME } from "./session-cookie";
 
 export interface AuthFormState {
@@ -18,6 +19,7 @@ interface AuthUserPayload {
 type AuthOutcome =
   | { status: "ok"; user: AuthUserPayload }
   | { status: "verification_required"; email: string }
+  | { status: "otp_required"; email: string }
   | { formState: AuthFormState };
 
 /**
@@ -79,6 +81,7 @@ export async function proxyAuthRequest(
   const payload = (await response.json().catch(() => null)) as
     | { status: "ok"; user: AuthUserPayload }
     | { status: "verification_required"; email: string }
+    | { status: "otp_required"; email: string }
     | { message?: string; errors?: Record<string, string[]> }
     | null;
 
@@ -99,14 +102,17 @@ export async function proxyAuthRequest(
     return { status: "verification_required", email: payload.email };
   }
 
+  if (payload && "status" in payload && payload.status === "otp_required") {
+    return { status: "otp_required", email: payload.email };
+  }
+
   await applySessionCookie(response);
 
   return { status: "ok", user: (payload as { user: AuthUserPayload }).user };
 }
 
 function retourFrom(formData: FormData): string | undefined {
-  const value = formData.get("retour");
-  return typeof value === "string" && value.startsWith("/") ? value : undefined;
+  return safeRedirectPath(formData.get("retour"));
 }
 
 export async function registerAction(
@@ -126,7 +132,7 @@ export async function registerAction(
     return result.formState;
   }
 
-  if (result.status === "verification_required") {
+  if (result.status === "verification_required" || result.status === "otp_required") {
     redirect(`/verifier-email?email=${encodeURIComponent(result.email)}`);
   }
 
@@ -148,6 +154,14 @@ export async function loginAction(
 
   if (result.status === "verification_required") {
     redirect(`/verifier-email?email=${encodeURIComponent(result.email)}`);
+  }
+
+  if (result.status === "otp_required") {
+    const retour = retourFrom(formData);
+    redirect(
+      `/connexion/code?email=${encodeURIComponent(result.email)}` +
+        (retour ? `&retour=${encodeURIComponent(retour)}` : ""),
+    );
   }
 
   redirect(retourFrom(formData) ?? (await resolveDestination(result.user.roles)));
@@ -201,6 +215,54 @@ export async function resendVerificationAction(email: string): Promise<void> {
   const origin = (await headers()).get("origin") ?? "";
 
   await fetch(`${apiBaseUrl()}/auth/verify-email/resend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: origin },
+    body: JSON.stringify({ email }),
+  }).catch(() => undefined);
+}
+
+/**
+ * Termine une connexion en attente de code (`loginAction` → `/connexion/code`) :
+ * seule cette action ouvre réellement une session après une connexion par mot
+ * de passe (audit pré-production).
+ */
+export async function verifyLoginOtpAction(
+  _previous: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const email = formData.get("email");
+  const code = formData.get("code");
+  const origin = (await headers()).get("origin") ?? "";
+
+  const response = await fetch(`${apiBaseUrl()}/auth/login/otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: origin },
+    body: JSON.stringify({ email, code }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    (AuthUserPayload & Record<string, unknown>) | { message?: string } | null;
+
+  if (!response.ok) {
+    const record = (payload ?? {}) as { message?: string };
+    return { error: record.message ?? "Code invalide ou expiré." };
+  }
+
+  await applySessionCookie(response);
+
+  const user = payload as AuthUserPayload;
+  redirect(retourFrom(formData) ?? (await resolveDestination(user.roles)));
+}
+
+/**
+ * Renvoi manuel du code de connexion, depuis la page « saisissez votre code ».
+ * Toujours silencieux côté API (204, que le compte existe ou non) — voir
+ * `AuthService.resendLoginOtp()` côté backend.
+ */
+export async function resendLoginOtpAction(email: string): Promise<void> {
+  const origin = (await headers()).get("origin") ?? "";
+
+  await fetch(`${apiBaseUrl()}/auth/login/otp/resend`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: origin },
     body: JSON.stringify({ email }),

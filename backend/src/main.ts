@@ -1,6 +1,7 @@
 import { ConsoleLogger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -11,7 +12,7 @@ import { NodeEnvironment } from './config/environment';
 async function bootstrap(): Promise<void> {
   const isProduction = process.env.NODE_ENV === NodeEnvironment.production;
 
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     // Conserve le corps brut des requêtes : sans lui, aucune signature de webhook
     // de paiement ne peut être recalculée (audit §33). `JSON.parse` suivi de
     // `JSON.stringify` ne redonne pas les octets signés par le prestataire.
@@ -24,6 +25,15 @@ async function bootstrap(): Promise<void> {
   });
 
   const config = app.get(ConfigService);
+
+  // Traefik est le seul reverse-proxy entre Internet et ce conteneur (voir
+  // docker-compose.yml) : lui faire confiance comme premier — et unique —
+  // relais permet à Express de lire l'IP réelle du client depuis
+  // `X-Forwarded-For` plutôt que l'IP interne de Traefik. Sans ce réglage,
+  // `request.ip` renvoie la même adresse pour tout le monde en production,
+  // ce qui rend inopérants le throttle des extraits gratuits par IP
+  // (`SampleThrottleService`) et la journalisation d'IP des téléchargements.
+  app.set('trust proxy', 1);
 
   app.use(helmet());
   // Le jeton de session vit dans un cookie httpOnly : `cookie-parser` est ce qui le

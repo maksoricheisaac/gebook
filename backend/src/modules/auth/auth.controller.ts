@@ -17,9 +17,11 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendLoginOtpDto } from './dto/resend-login-otp.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyLoginOtpDto } from './dto/verify-login-otp.dto';
 import {
   toAuthUserResponse,
   type AuthUserResponse,
@@ -39,8 +41,18 @@ export interface VerificationRequiredResponse {
   email: string;
 }
 
+/** Réponse de connexion quand un code vient d'être envoyé par e-mail (audit
+ * pré-production) — mot de passe et adresse déjà vérifiés, il ne manque que
+ * le code pour obtenir une session. */
+export interface OtpRequiredResponse {
+  status: 'otp_required';
+  email: string;
+}
+
 export type LoginResponse =
-  { status: 'ok'; user: AuthUserResponse } | VerificationRequiredResponse;
+  | { status: 'ok'; user: AuthUserResponse }
+  | VerificationRequiredResponse
+  | OtpRequiredResponse;
 
 /**
  * Authentification publique.
@@ -116,11 +128,52 @@ export class AuthController {
     await this.auth.resendVerification(dto.email, requestMeta(request));
   }
 
+  /**
+   * Termine une connexion en attente de code (`POST /auth/login` →
+   * `otp_required`) : seule cette route pose réellement le cookie de session
+   * après une connexion par mot de passe.
+   */
+  @Post('login/otp')
+  @HttpCode(HttpStatus.OK)
+  async verifyLoginOtp(
+    @Body() dto: VerifyLoginOtpDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<AuthUserResponse> {
+    const { user, session } = await this.auth.verifyLoginOtp(
+      dto.email,
+      dto.code,
+      requestMeta(request),
+    );
+    response.cookie(
+      SESSION_COOKIE_NAME,
+      session.token,
+      sessionCookieOptions(session.expiresAt),
+    );
+    return user;
+  }
+
+  /**
+   * Renvoi manuel du code, depuis la page « saisissez votre code ». Toujours
+   * `204`, que le compte existe ou non — voir `AuthService.resendLoginOtp()`.
+   */
+  @Post('login/otp/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resendLoginOtp(
+    @Body() dto: ResendLoginOtpDto,
+    @Req() request: Request,
+  ): Promise<void> {
+    await this.auth.resendLoginOtp(dto.email, requestMeta(request));
+  }
+
   private applyOutcome(
     outcome: Awaited<ReturnType<AuthService['login']>>,
     response: Response,
   ): LoginResponse {
-    if (outcome.status === 'verification_required') {
+    if (
+      outcome.status === 'verification_required' ||
+      outcome.status === 'otp_required'
+    ) {
       return outcome;
     }
     response.cookie(

@@ -59,7 +59,7 @@ describe('Commissions (e2e)', () => {
       })
       .expect(201);
 
-    await verifyAndLogin(agent, prisma, ORIGIN, email);
+    await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent);
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
     return user.id;
   };
@@ -109,12 +109,14 @@ describe('Commissions (e2e)', () => {
       where: { orderItem: { order: { orderNumber } } },
     });
 
+  const mail = fakeMailService();
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(MailService)
-      .useValue(fakeMailService())
+      .useValue(mail)
       .compile();
 
     app = moduleFixture.createNestApplication({ rawBody: true });
@@ -161,11 +163,23 @@ describe('Commissions (e2e)', () => {
     // un autre fichier (`auth.e2e-spec.ts`) peut faire échouer cette
     // connexion légitime avec un 429.
     await prisma.loginAttempt.deleteMany({});
+
+    // Espace actif requis pour créer un auteur (`AdminAuthorsService.create`
+    // refuse désormais un platform_admin sans tenant sélectionné plutôt que
+    // de deviner un tenant à sa place — voir `prisma/seed.ts`, qui ne crée
+    // plus de tenant de démonstration). Créé en libre-service comme
+    // n'importe quel tenant réel, le créateur en devient `owner` — le second
+    // auteur créé plus bas dans ce fichier partage la même session/tenant.
     await adminAgent
-      .post('/auth/login')
+      .post('/tenants')
       .set('Origin', ORIGIN)
-      .send({ email: adminEmail, password: 'MotDePasse1' })
-      .expect(200);
+      .send({
+        name: 'Phase 10 (test)',
+        slug: 'phase10-tenant',
+        type: 'independent_author',
+        acceptTerms: true,
+      })
+      .expect(201);
 
     const author = await adminAgent
       .post('/admin/authors')
@@ -248,6 +262,12 @@ describe('Commissions (e2e)', () => {
     });
     await adminPrisma.author.deleteMany({
       where: { slug: { startsWith: 'phase10-' } },
+    });
+    await adminPrisma.tenantMember.deleteMany({
+      where: { tenant: { slug: 'phase10-tenant' } },
+    });
+    await adminPrisma.tenant.deleteMany({
+      where: { slug: 'phase10-tenant' },
     });
     await prisma.user.deleteMany({
       where: { email: { endsWith: EMAIL_DOMAIN } },
@@ -680,12 +700,6 @@ describe('Commissions (e2e)', () => {
     });
 
     it('ne montre à l’auteur que ses propres ventes, avec de vrais totaux', async () => {
-      await authorAgent
-        .post('/auth/login')
-        .set('Origin', ORIGIN)
-        .send({ email: `auteur${EMAIL_DOMAIN}`, password: 'MotDePasse1' })
-        .expect(200);
-
       const revenue = await authorAgent.get('/authors/me/revenue').expect(200);
       const body = revenue.body as Record<string, unknown>;
 

@@ -11,7 +11,11 @@ import { PrismaService } from './../src/prisma/prisma.service';
 import { UserStatus } from './../src/generated/prisma/enums';
 import type { AuthUserResponse } from './../src/modules/auth/dto/auth-user.response';
 import type { ErrorResponseBody } from './../src/common/filters/http-exception.filter';
-import { extractVerificationToken, fakeMailService } from './support/fake-mail';
+import {
+  extractLoginOtp,
+  extractVerificationToken,
+  fakeMailService,
+} from './support/fake-mail';
 import { verifyAndLogin } from './support/verify-and-login';
 
 const ORIGIN = 'http://localhost:3000';
@@ -37,6 +41,15 @@ describe('Authentification (e2e)', () => {
       throw new Error(`Aucun e-mail de vérification envoyé à ${email}.`);
     }
     return extractVerificationToken(message.html);
+  };
+
+  /** Dernier code de connexion envoyé à cette adresse (voir `mail.sent`). */
+  const lastLoginOtp = (email: string): string => {
+    const message = [...mail.sent].reverse().find((sent) => sent.to === email);
+    if (!message) {
+      throw new Error(`Aucun code de connexion envoyé à ${email}.`);
+    }
+    return extractLoginOtp(message.html);
   };
 
   const registerPayload = (
@@ -322,18 +335,16 @@ describe('Authentification (e2e)', () => {
       });
     });
 
-    it('connecte un lecteur avec les bons identifiants', async () => {
+    it('accepte les bons identifiants mais n’ouvre pas encore de session — un code de connexion est requis', async () => {
       const response = await request(app.getHttpServer())
         .post('/auth/login')
         .set('Origin', ORIGIN)
         .send({ email, password })
         .expect(200);
 
-      const body = response.body as { status: string; user: AuthUserResponse };
-      expect(body.status).toBe('ok');
-      expect(body.user.email).toBe(email);
-      const setCookie = response.headers['set-cookie'];
-      expect(setCookie?.[0]).toMatch(/gebook_session=.+HttpOnly/);
+      expect(response.body).toEqual({ status: 'otp_required', email });
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(mail.sent.some((sent) => sent.to === email)).toBe(true);
     });
 
     it('renvoie « verification_required » et ne pose pas de cookie pour un compte non vérifié', async () => {
@@ -452,6 +463,195 @@ describe('Authentification (e2e)', () => {
       expect((response.body as ErrorResponseBody).message).toContain(
         'Trop de tentatives',
       );
+
+      // Ce test bloque délibérément l'IP partagée par tout le fichier (voir
+      // le commentaire en tête de test) : sans ce nettoyage, ce blocage
+      // survit jusqu'au prochain `deleteMany` explicite et fait échouer par
+      // 429 tous les appels `/auth/login` (y compris via `verifyAndLogin`)
+      // des tests suivants, qui n'ont rien à voir avec le throttle.
+      await prisma.loginAttempt.deleteMany({});
+    });
+  });
+
+  describe('POST /auth/login/otp', () => {
+    const email = `otp${EMAIL_DOMAIN}`;
+    const password = 'MotDePasse1';
+
+    beforeAll(async () => {
+      await request(app.getHttpServer())
+        .post('/auth/register')
+        .set('Origin', ORIGIN)
+        .send(
+          registerPayload({ email, password, passwordConfirmation: password }),
+        );
+      await prisma.user.update({
+        where: { email },
+        data: { emailVerifiedAt: new Date() },
+      });
+    });
+
+    beforeEach(async () => {
+      await prisma.loginAttempt.deleteMany({});
+    });
+
+    it('ouvre une session avec le bon code, et le code n’est plus utilisable ensuite', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .set('Origin', ORIGIN)
+        .send({ email, password })
+        .expect(200);
+      const code = lastLoginOtp(email);
+
+      const response = await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email, code })
+        .expect(200);
+
+      expect((response.body as AuthUserResponse).email).toBe(email);
+      const setCookie = response.headers['set-cookie'];
+      expect(setCookie?.[0]).toMatch(/gebook_session=.+HttpOnly/);
+
+      // À usage unique : le même code ne fonctionne pas deux fois.
+      await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email, code })
+        .expect(401);
+    });
+
+    it('accepte le code même recopié avec l’espacement affiché dans l’e-mail ("123 456")', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .set('Origin', ORIGIN)
+        .send({ email, password })
+        .expect(200);
+      const code = lastLoginOtp(email);
+      const spaced = `${code.slice(0, 3)} ${code.slice(3)}`;
+
+      await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email, code: spaced })
+        .expect(200);
+    });
+
+    it('refuse un code incorrect, avec un message générique', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .set('Origin', ORIGIN)
+        .send({ email, password })
+        .expect(200);
+
+      const response = await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email, code: '000000' })
+        .expect(401);
+
+      expect((response.body as ErrorResponseBody).message).toBe(
+        'Code invalide ou expiré.',
+      );
+    });
+
+    it('refuse un compte inexistant avec le même message générique', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email: `personne${EMAIL_DOMAIN}`, code: '123456' })
+        .expect(401);
+
+      expect((response.body as ErrorResponseBody).message).toBe(
+        'Code invalide ou expiré.',
+      );
+    });
+
+    it('limite les tentatives de saisie après 5 échecs', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .set('Origin', ORIGIN)
+        .send({ email, password })
+        .expect(200);
+      const code = lastLoginOtp(email);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await request(app.getHttpServer())
+          .post('/auth/login/otp')
+          .set('Origin', ORIGIN)
+          .send({ email, code: '000000' })
+          .expect(401);
+      }
+
+      // Le 6e essai est bloqué même avec le bon code.
+      const response = await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email, code })
+        .expect(429);
+
+      expect((response.body as ErrorResponseBody).message).toContain(
+        'Trop de tentatives',
+      );
+    });
+  });
+
+  describe('POST /auth/login/otp/resend', () => {
+    const email = `otp-renvoi${EMAIL_DOMAIN}`;
+    const password = 'MotDePasse1';
+
+    beforeAll(async () => {
+      await request(app.getHttpServer())
+        .post('/auth/register')
+        .set('Origin', ORIGIN)
+        .send(
+          registerPayload({ email, password, passwordConfirmation: password }),
+        );
+      await prisma.user.update({
+        where: { email },
+        data: { emailVerifiedAt: new Date() },
+      });
+    });
+
+    it('renvoie un nouveau code, qui remplace le précédent', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .set('Origin', ORIGIN)
+        .send({ email, password })
+        .expect(200);
+      const firstCode = lastLoginOtp(email);
+
+      await request(app.getHttpServer())
+        .post('/auth/login/otp/resend')
+        .set('Origin', ORIGIN)
+        .send({ email })
+        .expect(204);
+      const secondCode = lastLoginOtp(email);
+
+      expect(secondCode).not.toBe(firstCode);
+
+      // L'ancien code, invalidé par le renvoi, ne fonctionne plus.
+      await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email, code: firstCode })
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .post('/auth/login/otp')
+        .set('Origin', ORIGIN)
+        .send({ email, code: secondCode })
+        .expect(200);
+    });
+
+    it('répond 204 de façon identique pour un compte inexistant, sans rien envoyer', async () => {
+      const unknownEmail = `otp-inexistant${EMAIL_DOMAIN}`;
+      await request(app.getHttpServer())
+        .post('/auth/login/otp/resend')
+        .set('Origin', ORIGIN)
+        .send({ email: unknownEmail })
+        .expect(204);
+
+      expect(mail.sent.some((sent) => sent.to === unknownEmail)).toBe(false);
     });
   });
 
@@ -472,7 +672,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const response = await agent.get('/auth/me').expect(200);
       expect((response.body as AuthUserResponse).email).toBe(email);
@@ -491,7 +691,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       await agent.get('/auth/me').expect(200);
 
@@ -517,7 +717,7 @@ describe('Authentification (e2e)', () => {
         .send(
           registerPayload({ email, password, passwordConfirmation: password }),
         );
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       await agent.post('/auth/logout').set('Origin', ORIGIN).expect(204);
       await agent.get('/auth/me').expect(401);
@@ -552,7 +752,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const newEmail = `profil-modifie${EMAIL_DOMAIN}`;
       const response = await agent
@@ -589,7 +789,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const response = await agent
         .patch('/auth/me')
@@ -613,7 +813,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const response = await agent
         .patch('/auth/me')
@@ -659,7 +859,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       await agent
         .post('/auth/me/password')
@@ -705,15 +905,25 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(registerAgent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(
+        registerAgent,
+        prisma,
+        ORIGIN,
+        email,
+        mail.sent,
+        password,
+      );
 
       // Une deuxième session, ouverte séparément (agent distinct = cookie distinct).
       const otherAgent = request.agent(app.getHttpServer());
-      await otherAgent
-        .post('/auth/login')
-        .set('Origin', ORIGIN)
-        .send({ email, password })
-        .expect(200);
+      await verifyAndLogin(
+        otherAgent,
+        prisma,
+        ORIGIN,
+        email,
+        mail.sent,
+        password,
+      );
       await otherAgent.get('/auth/me').expect(200);
 
       await registerAgent
@@ -743,7 +953,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const response = await agent
         .post('/auth/me/password')
@@ -771,7 +981,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const response = await agent
         .post('/auth/me/password')
@@ -799,7 +1009,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const response = await agent
         .post('/auth/me/password')
@@ -830,7 +1040,7 @@ describe('Authentification (e2e)', () => {
           registerPayload({ email, password, passwordConfirmation: password }),
         )
         .expect(201);
-      await verifyAndLogin(agent, prisma, ORIGIN, email, password);
+      await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent, password);
 
       const user = await prisma.user.findUniqueOrThrow({ where: { email } });
       const authorRole = await prisma.role.findUniqueOrThrow({

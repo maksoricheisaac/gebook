@@ -48,15 +48,17 @@ describe('Commandes (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
-    await verifyAndLogin(agent, prisma, ORIGIN, email);
+    await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent);
   };
+
+  const mail = fakeMailService();
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(MailService)
-      .useValue(fakeMailService())
+      .useValue(mail)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -97,11 +99,22 @@ describe('Commandes (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: adminUser.id, roleId: adminRole.id },
     });
+
+    // Espace actif requis pour créer un auteur (`AdminAuthorsService.create`
+    // refuse désormais un platform_admin sans tenant sélectionné plutôt que
+    // de deviner un tenant à sa place — voir `prisma/seed.ts`, qui ne crée
+    // plus de tenant de démonstration). Créé en libre-service comme
+    // n'importe quel tenant réel, le créateur en devient `owner`.
     await adminAgent
-      .post('/auth/login')
+      .post('/tenants')
       .set('Origin', ORIGIN)
-      .send({ email: adminEmail, password: 'MotDePasse1' })
-      .expect(200);
+      .send({
+        name: 'Phase 7 (test)',
+        slug: 'phase7-tenant',
+        type: 'independent_author',
+        acceptTerms: true,
+      })
+      .expect(201);
 
     // Œuvre publiée d'un auteur actif : seule condition sous laquelle un format est
     // achetable (le filtre de visibilité publique s'applique aussi aux commandes).
@@ -151,6 +164,14 @@ describe('Commandes (e2e)', () => {
     );
     await adminDb(prisma, (tx) =>
       tx.author.deleteMany({ where: { slug: { startsWith: 'phase7-' } } }),
+    );
+    await adminDb(prisma, (tx) =>
+      tx.tenantMember.deleteMany({
+        where: { tenant: { slug: 'phase7-tenant' } },
+      }),
+    );
+    await adminDb(prisma, (tx) =>
+      tx.tenant.deleteMany({ where: { slug: 'phase7-tenant' } }),
     );
     await prisma.user.deleteMany({
       where: { email: { endsWith: EMAIL_DOMAIN } },

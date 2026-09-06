@@ -32,3 +32,15 @@ export function extractVerificationToken(html: string): string {
   }
   return decodeURIComponent(match[1]);
 }
+
+/**
+ * Extrait le code de connexion (6 chiffres, éventuellement espacés
+ * "123 456" — voir `LoginOtpService.send()`) d'un e-mail capturé.
+ */
+export function extractLoginOtp(html: string): string {
+  const match = />(\d{3})\s(\d{3})</.exec(html);
+  if (!match) {
+    throw new Error("Aucun code de connexion trouvé dans l'e-mail.");
+  }
+  return `${match[1]}${match[2]}`;
+}

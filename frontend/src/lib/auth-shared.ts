@@ -20,6 +20,25 @@ interface MembershipStatus {
   status: "active" | "invited" | "suspended";
 }
 
+/**
+ * Valide le paramètre `retour` (destination post-connexion/inscription)
+ * comme un chemin interne, jamais une redirection ouverte vers un autre
+ * site (audit pré-production). `startsWith("/")` seul laisse passer les
+ * URL protocol-relative (`//evil.com`, que le navigateur résout comme
+ * `https://evil.com`) et les variantes antislash (`/\evil.com`, traitée de
+ * la même façon par certains navigateurs) : les deux sont explicitement
+ * rejetées ici, en plus d'exiger un chemin absolu du site.
+ */
+export function safeRedirectPath(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.startsWith("/")) {
+    return undefined;
+  }
+  if (value.startsWith("//") || value.startsWith("/\\")) {
+    return undefined;
+  }
+  return value;
+}
+
 /** Destination après connexion ou inscription, comme dans la version PHP. */
 export function destinationFor(roles: string[]): string {
   if (roles.includes("admin")) {

@@ -31,12 +31,14 @@ describe('Tenants — support TenantContext (e2e)', () => {
   let tenantAId: string;
   let tenantBId: string;
 
+  const mail = fakeMailService();
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(MailService)
-      .useValue(fakeMailService())
+      .useValue(mail)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -73,7 +75,7 @@ describe('Tenants — support TenantContext (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
-    await verifyAndLogin(agent, adminPrisma, ORIGIN, email);
+    await verifyAndLogin(agent, adminPrisma, ORIGIN, email, mail.sent);
     const user = await adminPrisma.user.findUniqueOrThrow({ where: { email } });
 
     const tenantA = await adminPrisma.tenant.create({

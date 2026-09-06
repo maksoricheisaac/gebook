@@ -41,15 +41,17 @@ describe('Superadmin — Prestataires de paiement (e2e)', () => {
         acceptTerms: true,
       })
       .expect(201);
-    await verifyAndLogin(agent, prisma, ORIGIN, email);
+    await verifyAndLogin(agent, prisma, ORIGIN, email, mail.sent);
   };
+
+  const mail = fakeMailService();
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(MailService)
-      .useValue(fakeMailService())
+      .useValue(mail)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -87,12 +89,6 @@ describe('Superadmin — Prestataires de paiement (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: adminUser.id, roleId: adminRole.id },
     });
-
-    await adminAgent
-      .post('/auth/login')
-      .set('Origin', ORIGIN)
-      .send({ email: adminEmail, password: 'MotDePasse1' })
-      .expect(200);
   });
 
   afterAll(async () => {

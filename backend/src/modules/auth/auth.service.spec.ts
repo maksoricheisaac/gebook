@@ -1,10 +1,19 @@
 import { InternalServerErrorException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { EmailVerificationService } from './email-verification.service';
+import type { LoginOtpService } from './login-otp.service';
 import type { SessionService } from './session.service';
 import type { LoginThrottleService } from './login-throttle.service';
 import type { RegisterDto } from './dto/register.dto';
+
+// `NODE_ENV=test` désactive le throttle anti-abus de `register()` (voir son
+// commentaire) — évite d'avoir à simuler `isBlocked`/`hit` dans ces tests
+// unitaires, qui portent sur l'atomicité de la transaction, pas le throttle.
+const testConfig = {
+  getOrThrow: jest.fn().mockReturnValue('test'),
+} as unknown as ConfigService;
 
 jest.mock('argon2', () => ({
   hash: jest.fn().mockResolvedValue('hachage-simule'),
@@ -54,8 +63,16 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
     const emailVerification = {
       send: jest.fn(),
     } as unknown as EmailVerificationService;
+    const loginOtp = { send: jest.fn() } as unknown as LoginOtpService;
 
-    const auth = new AuthService(prisma, sessions, throttle, emailVerification);
+    const auth = new AuthService(
+      prisma,
+      sessions,
+      throttle,
+      emailVerification,
+      loginOtp,
+      testConfig,
+    );
 
     await expect(
       auth.register(registerDto, { ip: '127.0.0.1' }),
@@ -80,8 +97,16 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
     const emailVerification = {
       send: jest.fn(),
     } as unknown as EmailVerificationService;
+    const loginOtp = { send: jest.fn() } as unknown as LoginOtpService;
 
-    const auth = new AuthService(prisma, sessions, throttle, emailVerification);
+    const auth = new AuthService(
+      prisma,
+      sessions,
+      throttle,
+      emailVerification,
+      loginOtp,
+      testConfig,
+    );
 
     await expect(
       auth.register(registerDto, { ip: '127.0.0.1' }),

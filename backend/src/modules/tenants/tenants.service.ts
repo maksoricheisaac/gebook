@@ -1,13 +1,18 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '../../generated/prisma/client';
+import { NodeEnvironment } from '../../config/environment';
 import type { TenantType } from '../../generated/prisma/enums';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buildRlsContext, SYSTEM_CONTEXT } from '../../prisma/rls-context';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { LoginThrottleService } from '../auth/login-throttle.service';
 import type { CreateTenantDto } from './dto/create-tenant.dto';
 import {
   toTenantMembershipResponse,
@@ -22,7 +27,11 @@ import {
 
 @Injectable()
 export class TenantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly throttle: LoginThrottleService,
+    private readonly config: ConfigService,
+  ) {}
 
   /**
    * Création d'un espace en libre-service (onboarding, brief §6) : n'importe
@@ -36,6 +45,24 @@ export class TenantsService {
     user: AuthenticatedUser,
     ipAddress?: string,
   ): Promise<TenantMembershipResponse> {
+    // Anti-abus (audit pré-production) : sans cette limite, un compte
+    // authentifié pouvait boucler `POST /tenants` pour créer un nombre
+    // arbitraire d'espaces (pollution de l'annuaire public, épuisement de
+    // ressources) — chaque tentative comptée, réussie ou non. Désactivé en
+    // `NODE_ENV=test`, même raison que `AuthService.register()`.
+    if (
+      this.config.getOrThrow<NodeEnvironment>('NODE_ENV') !==
+      NodeEnvironment.test
+    ) {
+      if (await this.throttle.isBlocked('tenant_create', user.id)) {
+        throw new HttpException(
+          'Trop de tentatives. Réessayez dans 15 minutes.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      await this.throttle.hit('tenant_create', user.id);
+    }
+
     const member = await this.prisma
       .withRlsContext(buildRlsContext(user), async (tx) => {
         const tenant = await tx.tenant.create({

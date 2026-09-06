@@ -385,6 +385,7 @@ model User {
   payoutsApproved         Payout[]                 @relation("PayoutApprover")
   termsAcceptances        TenantTermsAcceptance[]
   emailVerificationTokens EmailVerificationToken[]
+  loginOtps               LoginOtp[]
 
   @@index([status], map: "idx_users_status")
   @@index([phone], map: "idx_users_phone")
@@ -469,6 +470,31 @@ model EmailVerificationToken {
 
   @@index([userId], map: "idx_email_verification_tokens_user")
   @@map("email_verification_tokens")
+}
+
+/**
+ * Code de connexion à usage unique (OTP), envoyé par e-mail à chaque
+ * connexion réussie (mot de passe correct, adresse déjà vérifiée) — une
+ * seconde preuve de possession de la boîte mail, distincte de la
+ * vérification d'adresse à l'inscription. Même principe que
+ * `EmailVerificationToken` : seul le hachage SHA-256 du code est stocké,
+ * jamais le code lui-même. Pas d'unicité sur `codeHash` (contrairement au
+ * jeton de vérification) : un code à 6 chiffres n'a que 10^6 valeurs
+ * possibles, une collision entre deux comptes différents est plausible et
+ * sans conséquence — la vérification est toujours scopée par `userId`
+ * d'abord.
+ */
+model LoginOtp {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  codeHash  String   @map("code_hash") @db.VarChar(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_login_otps_user")
+
+  @@index([userId], map: "idx_login_otps_user")
+  @@map("login_otps")
 }
 
 // ---------------------------------------------------------------------------

@@ -318,12 +318,16 @@ export class Environment {
   MAIL_FROM?: string;
 
   // ---------------------------------------------------------------------
-  // CAPTCHA (Cloudflare Turnstile) — inscription et connexion. Le jeton est
-  // systématiquement revérifié côté serveur auprès de Cloudflare : un contrôle
-  // uniquement frontend serait contourné par un simple appel direct à l'API.
-  // Optionnelles au niveau de la validation, mais sans `TURNSTILE_SECRET_KEY`
-  // ces deux routes refusent toute tentative (503) plutôt que de laisser
-  // passer sans vérification.
+  // CAPTCHA (Cloudflare Turnstile) — préparé pour l'inscription et la
+  // connexion, PAS ENCORE CÂBLÉ (audit pré-production, confirmé par lecture
+  // du code le 2026-09-06) : ces variables ne sont lues nulle part ailleurs
+  // dans le backend, il n'existe aucun widget côté frontend, et aucune des
+  // deux routes ne vérifie de jeton. La friction anti-bot actuelle sur
+  // `/auth/register`/`/auth/login` repose uniquement sur `LoginThrottleService`
+  // (5 tentatives/15 min par IP/e-mail) et la vérification d'adresse e-mail —
+  // pas sur un CAPTCHA. À wirer avant l'ouverture au trafic public réel :
+  // service de vérification côté serveur (appel à l'API Cloudflare
+  // siteverify) + widget Turnstile côté frontend, jamais l'un sans l'autre.
   // ---------------------------------------------------------------------
 
   @IsOptional()

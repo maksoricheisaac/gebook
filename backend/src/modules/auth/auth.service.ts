@@ -8,11 +8,14 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NodeEnvironment } from '../../config/environment';
 import { UserStatus } from '../../generated/prisma/enums';
 import { EmailVerificationService } from './email-verification.service';
+import { LoginOtpService } from './login-otp.service';
 import { LoginThrottleService } from './login-throttle.service';
 import { SessionService, type CreatedSession } from './session.service';
 import {
@@ -31,14 +34,17 @@ export interface AuthResult {
 }
 
 /**
- * Issue possible de `register()`/`login()` : soit une session est créée
- * (`ok`), soit l'adresse e-mail du compte reste à confirmer (brief §1) et
- * aucune session n'est créée tant que ce n'est pas fait — jamais un compte
- * « à moitié connecté ».
+ * Issue possible de `register()`/`login()` : une session n'est jamais créée
+ * directement par `login()` — soit l'adresse e-mail du compte reste à
+ * confirmer (`verification_required`, brief §1), soit un code de connexion
+ * vient d'être envoyé et reste à saisir (`otp_required`, audit
+ * pré-production) — jamais un compte « à moitié connecté ». Seuls
+ * `verifyEmail()` et `verifyLoginOtp()` produisent réellement `ok`.
  */
 export type AuthOutcome =
   | ({ status: 'ok' } & AuthResult)
-  | { status: 'verification_required'; email: string };
+  | { status: 'verification_required'; email: string }
+  | { status: 'otp_required'; email: string };
 
 /** Rôle attribué à toute inscription publique — inchangé depuis la version PHP. */
 const READER_ROLE = 'reader';
@@ -50,9 +56,33 @@ export class AuthService {
     private readonly sessions: SessionService,
     private readonly throttle: LoginThrottleService,
     private readonly emailVerification: EmailVerificationService,
+    private readonly loginOtp: LoginOtpService,
+    private readonly config: ConfigService,
   ) {}
 
   async register(dto: RegisterDto, meta: RequestMeta): Promise<AuthOutcome> {
+    // Anti-abus (audit pré-production) : sans cette limite, un script pouvait
+    // boucler `POST /auth/register` avec des adresses jetables sans aucune
+    // friction, chaque tentative coûtant un hachage argon2 (CPU) et un envoi
+    // d'e-mail de vérification. Compte chaque tentative, réussie ou non — une
+    // adresse déjà prise ne doit pas être un moyen de contourner la limite.
+    // Désactivé en `NODE_ENV=test` : la suite e2e crée délibérément des
+    // dizaines de comptes depuis un seul client HTTP (donc une seule IP),
+    // un volume qui ne représente aucun trafic d'abus réel (même principe
+    // que `PaymentsService.simulate()`, gardé hors production).
+    if (
+      this.config.getOrThrow<NodeEnvironment>('NODE_ENV') !==
+      NodeEnvironment.test
+    ) {
+      if (await this.throttle.isBlocked('register', meta.ip)) {
+        throw new HttpException(
+          'Trop de tentatives. Réessayez dans 15 minutes.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      await this.throttle.hit('register', meta.ip);
+    }
+
     if (dto.password !== dto.passwordConfirmation) {
       throw new BadRequestException({
         message: 'Les données envoyées sont invalides.',
@@ -183,6 +213,55 @@ export class AuthService {
       return { status: 'verification_required', email: user.email };
     }
 
+    // Mot de passe correct et adresse déjà confirmée : une seconde preuve de
+    // possession de la boîte mail reste exigée avant toute session (audit
+    // pré-production) — même raisonnement anti-frustration que la
+    // vérification d'adresse ci-dessus, un code déjà envoyé et encore valide
+    // n'est jamais recréé pour rien.
+    const hasPendingOtp = await this.loginOtp.hasPendingCode(user.id);
+    if (!hasPendingOtp && !(await this.throttle.isBlocked('otp', user.email))) {
+      await this.throttle.hit('otp', user.email);
+      await this.loginOtp.send({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+      });
+    }
+    await this.logActivity(user.id, 'auth.login.otp_sent', meta);
+
+    return { status: 'otp_required', email: user.email };
+  }
+
+  /**
+   * Termine une connexion en attente de code (`login()` → `otp_required`) :
+   * seul ce point crée réellement la session, jamais `login()` directement.
+   */
+  async verifyLoginOtp(
+    email: string,
+    code: string,
+    meta: RequestMeta,
+  ): Promise<AuthResult> {
+    if (await this.throttle.isBlocked('otp_verify', email)) {
+      throw new HttpException(
+        'Trop de tentatives. Réessayez dans 15 minutes.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    // Même message qu'un code invalide, que le compte existe ou non — pas de
+    // canal d'énumération supplémentaire sur cette route.
+    const valid = user ? await this.loginOtp.verify(user.id, code) : false;
+
+    if (!user || user.status !== UserStatus.active || !valid) {
+      await this.throttle.hit('otp_verify', email);
+      await this.logActivity(user?.id ?? null, 'auth.login.otp_failed', meta);
+      throw new UnauthorizedException('Code invalide ou expiré.');
+    }
+
+    await this.throttle.clear('otp_verify', email);
+    await this.throttle.clear('otp', email);
+
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
@@ -192,11 +271,31 @@ export class AuthService {
     const roles = await this.rolesFor(user.id);
     const session = await this.sessions.create(user.id, meta);
 
-    return {
-      status: 'ok',
-      user: toAuthUserResponse({ ...user, roles }),
-      session,
-    };
+    return { user: toAuthUserResponse({ ...user, roles }), session };
+  }
+
+  /**
+   * Renvoi manuel du code de connexion (page « saisissez votre code », si le
+   * premier e-mail n'arrive jamais). Même principe anti-énumération que
+   * `resendVerification()` : réponse silencieuse que le compte existe ou non.
+   */
+  async resendLoginOtp(email: string, meta: RequestMeta): Promise<void> {
+    if (await this.throttle.isBlocked('otp', email)) {
+      return;
+    }
+    await this.throttle.hit('otp', email);
+
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !user.emailVerifiedAt || user.status !== UserStatus.active) {
+      return;
+    }
+
+    await this.loginOtp.send({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+    });
+    await this.logActivity(user.id, 'auth.login.otp_resend', meta);
   }
 
   /**

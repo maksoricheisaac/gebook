@@ -7,6 +7,7 @@ import { EmailVerificationService } from './email-verification.service';
 import { AuthGuard } from './guards/auth.guard';
 import { OriginGuard } from './guards/origin.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { LoginOtpService } from './login-otp.service';
 import { LoginThrottleService } from './login-throttle.service';
 import { SessionService } from './session.service';
 
@@ -18,6 +19,7 @@ import { SessionService } from './session.service';
     SessionService,
     LoginThrottleService,
     EmailVerificationService,
+    LoginOtpService,
     AuthGuard,
     RolesGuard,
     // Global : toute méthode d'écriture, présente ou future, est vérifiée sans
