@@ -88,6 +88,24 @@ export class EmailVerificationService {
   }
 
   /**
+   * Un lien déjà envoyé et encore valide existe-t-il pour ce compte ?
+   *
+   * Sert à éviter qu'une simple nouvelle tentative de connexion sur un compte
+   * non vérifié n'invalide, en silence, le lien que la personne vient de
+   * recevoir et n'a pas encore eu le temps de cliquer — `send()` supprime les
+   * jetons précédents à chaque appel (un seul lien valide à la fois), ce qui
+   * rendrait sinon le lien du premier e-mail caduc dès la deuxième tentative
+   * de connexion, avant même que la boîte mail ait pu être consultée.
+   */
+  async hasPendingToken(userId: string): Promise<boolean> {
+    const record = await this.prisma.emailVerificationToken.findFirst({
+      where: { userId, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    });
+    return record !== null;
+  }
+
+  /**
    * Consomme un jeton de vérification : marque le compte comme vérifié et
    * supprime le jeton (usage unique). Renvoie l'identifiant utilisateur, ou
    * `null` si le jeton est inconnu ou expiré.

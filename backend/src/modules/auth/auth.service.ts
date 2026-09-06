@@ -157,11 +157,21 @@ export class AuthService {
     // Identifiants corrects mais adresse jamais confirmée (brief §1) : aucune
     // exception, y compris pour un compte administrateur créé avant
     // l'introduction de cette exigence — `emailVerifiedAt` est `null` pour
-    // tout compte existant, quel que soit son rôle. Le renvoi du lien reste
-    // limité en fréquence (`email_verify`) : redemander une connexion en boucle
-    // ne doit pas bombarder la boîte mail de renvois.
+    // tout compte existant, quel que soit son rôle.
     if (!user.emailVerifiedAt) {
-      if (!(await this.throttle.isBlocked('email_verify', user.email))) {
+      // Un lien encore valide est déjà en attente : ne pas en émettre un
+      // second. `send()` invaliderait le premier au passage (un seul lien
+      // valide à la fois), ce qui casserait celui que la personne vient de
+      // recevoir si elle retente une connexion avant même d'avoir ouvert sa
+      // boîte mail — exactement le scénario qui rend un lien fraîchement
+      // reçu « invalide » sans qu'aucun clic n'y soit pour quelque chose. Le
+      // bouton « Renvoyer » de la page d'attente reste le moyen explicite
+      // d'en forcer un nouveau si celui-ci est réellement perdu.
+      const hasPending = await this.emailVerification.hasPendingToken(user.id);
+      if (
+        !hasPending &&
+        !(await this.throttle.isBlocked('email_verify', user.email))
+      ) {
         await this.throttle.hit('email_verify', user.email);
         await this.emailVerification.send({
           id: user.id,
