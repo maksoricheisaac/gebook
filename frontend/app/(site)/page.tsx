@@ -299,7 +299,7 @@ function Hero({
           <p className="type-subtitle mt-6 max-w-xl">
             GeBook réunit les éditeurs, collectifs et auteurs indépendants d’Afrique sur
             une seule librairie numérique. Romans, essais et manuels congolais et
-            africains — en PDF ou en papier.
+            africains en PDF ou en papier.
           </p>
 
           <div className="mt-9 flex flex-wrap gap-3">

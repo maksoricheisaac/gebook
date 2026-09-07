@@ -7,7 +7,7 @@ import { Reveal } from "@/src/components/motion/reveal";
 import { Button } from "@/src/components/ui/button";
 
 export const metadata: Metadata = {
-  title: "La plateforme",
+  title: "À propos",
   description:
     "GeBook : la plateforme qui réunit éditeurs, collectifs et auteurs indépendants africains sur une seule librairie numérique.",
   alternates: { canonical: "/a-propos" },
@@ -45,7 +45,7 @@ export default function AboutPage() {
     <>
       <Container size="wide">
         <PageHeader
-          eyebrow="La plateforme"
+          eyebrow="À propos"
           title="Publier, vendre et faire rayonner les voix africaines."
           description="GeBook réunit éditeurs, collectifs et auteurs indépendants d’Afrique sur une seule plateforme. Elle rapproche les auteurs de leurs lecteurs, dans tous les formats de lecture."
         />
