@@ -109,6 +109,7 @@ export class AdminPaymentProvidersService {
     const capabilityFields: Array<
       keyof Pick<
         UpdateProviderConfigurationDto,
+        | 'environment'
         | 'supportsMobileMoney'
         | 'supportsCard'
         | 'supportsRefund'
@@ -116,6 +117,7 @@ export class AdminPaymentProvidersService {
         | 'priority'
       >
     > = [
+      'environment',
       'supportsMobileMoney',
       'supportsCard',
       'supportsRefund',

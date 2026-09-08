@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
+  AlertCircle,
   ArrowDownToLine,
   ArrowUpFromLine,
   CheckCircle2,
@@ -34,7 +35,7 @@ import {
   DialogTitle,
 } from "@/src/components/ui/dialog";
 import { Field, FormError } from "@/src/components/ui/field";
-import { Input } from "@/src/components/ui/input";
+import { Input, Select } from "@/src/components/ui/input";
 import { RetryRow, TableSkeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
 
@@ -76,6 +77,7 @@ interface ConnectionTestResponse {
 }
 
 interface CapabilitiesState {
+  environment: "sandbox" | "production";
   supportsMobileMoney: boolean;
   supportsCard: boolean;
   supportsRefund: boolean;
@@ -85,6 +87,7 @@ interface CapabilitiesState {
 
 function capabilitiesOf(provider: AdminPaymentProvider): CapabilitiesState {
   return {
+    environment: provider.environment,
     supportsMobileMoney: provider.supportsMobileMoney,
     supportsCard: provider.supportsCard,
     supportsRefund: provider.supportsRefund,
@@ -322,14 +325,7 @@ export function PaymentProvidersManager() {
                       {provider.configured ? (
                         <Badge variant="success">Configuré</Badge>
                       ) : (
-                        <div>
-                          <Badge variant="warning">Incomplet</Badge>
-                          {provider.missingFields.length > 0 && (
-                            <span className="type-caption mt-1 block max-w-48">
-                              Manque : {provider.missingFields.join(", ")}
-                            </span>
-                          )}
-                        </div>
+                        <Badge variant="warning">Incomplet</Badge>
                       )}
                       {result && (
                         <div className="mt-1.5 max-w-48">
@@ -365,6 +361,15 @@ export function PaymentProvidersManager() {
                               label: "Configurer",
                               icon: Settings,
                               onSelect: () => openConfigure(provider),
+                            },
+                            {
+                              label: "Voir ce qui manque",
+                              icon: AlertCircle,
+                              hidden: provider.configured,
+                              onSelect: () =>
+                                toast.warning(
+                                  `${provider.name} — identifiants manquants : ${provider.missingFields.join(", ")}.`,
+                                ),
                             },
                             {
                               label:
@@ -465,6 +470,29 @@ export function PaymentProvidersManager() {
                     ))}
                   </div>
                 )}
+
+                <Field
+                  id="cfg-environment"
+                  label="Environnement"
+                  hint="Basculez en production une fois de vrais identifiants renseignés — jamais avant."
+                >
+                  <Select
+                    value={capabilities.environment}
+                    onChange={(event) =>
+                      setCapabilities((current) =>
+                        current
+                          ? {
+                              ...current,
+                              environment: event.target.value as "sandbox" | "production",
+                            }
+                          : current,
+                      )
+                    }
+                  >
+                    <option value="sandbox">Sandbox</option>
+                    <option value="production">Production</option>
+                  </Select>
+                </Field>
 
                 <div className="grid gap-3">
                   <h3 className="text-secondary text-sm font-semibold">Disponibilité</h3>

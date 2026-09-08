@@ -237,26 +237,47 @@ describe('Superadmin — Prestataires de paiement (e2e)', () => {
     const first = await adminAgent
       .put('/admin/payment-providers/pawapay/configuration')
       .set('Origin', ORIGIN)
-      .send({ credentials: { apiToken: 'jeton-de-test-e2e' }, priority: 9 })
+      .send({
+        credentials: { apiToken: 'jeton-de-test-e2e' },
+        priority: 9,
+        environment: 'production',
+      })
       .expect(200);
 
     expect(JSON.stringify(first.body)).not.toContain('jeton-de-test-e2e');
-    expect(first.body).toMatchObject({ configured: true, priority: 9 });
+    expect(first.body).toMatchObject({
+      configured: true,
+      priority: 9,
+      environment: 'production',
+    });
 
     const stored = await prisma.paymentProviderCredential.findFirstOrThrow({
       where: { provider: { code: 'pawapay' }, key: 'apiToken' },
     });
     expect(stored.valueEncrypted).not.toContain('jeton-de-test-e2e');
 
-    // Un champ absent de la requête suivante doit laisser l'identifiant
-    // existant intact — jamais réinitialisé faute d'être jamais réaffiché.
+    // Un champ absent de la requête suivante doit laisser l'identifiant et
+    // l'environnement existants intacts — jamais réinitialisés faute d'être
+    // jamais réaffichés/renvoyés dans le corps de cette seconde requête.
     const second = await adminAgent
       .put('/admin/payment-providers/pawapay/configuration')
       .set('Origin', ORIGIN)
       .send({ priority: 4 })
       .expect(200);
 
-    expect(second.body).toMatchObject({ configured: true, priority: 4 });
+    expect(second.body).toMatchObject({
+      configured: true,
+      priority: 4,
+      environment: 'production',
+    });
+
+    // Repli explicite sur sandbox pour laisser la base de développement
+    // partagée dans le même état qu'avant ce test (voir afterAll).
+    await adminAgent
+      .put('/admin/payment-providers/pawapay/configuration')
+      .set('Origin', ORIGIN)
+      .send({ environment: 'sandbox' })
+      .expect(200);
   });
 
   it('désigne un prestataire configuré par défaut, et refuse celui qui ne l’est pas', async () => {

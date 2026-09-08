@@ -1,5 +1,12 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsObject, IsOptional, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  Min,
+} from 'class-validator';
 
 /**
  * Corps de `PUT /admin/payment-providers/:code/configuration` — identifiants
@@ -14,6 +21,12 @@ export class UpdateProviderConfigurationDto {
   @IsOptional()
   @IsObject()
   credentials?: Record<string, string>;
+
+  /** `sandbox` par défaut au seed (voir `schema.prisma`, `ProviderEnvironment`) ;
+   * bascule vers `production` une fois de vrais identifiants renseignés. */
+  @IsOptional()
+  @IsIn(['sandbox', 'production'])
+  environment?: 'sandbox' | 'production';
 
   @IsOptional()
   @Transform(
