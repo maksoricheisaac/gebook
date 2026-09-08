@@ -317,6 +317,14 @@ export class Environment {
   @IsString()
   MAIL_FROM?: string;
 
+  /**
+   * Boîte qui reçoit les messages du formulaire de contact public. Optionnelle :
+   * à défaut, `MAIL_FROM` sert de repli (même boîte qui envoie et qui reçoit).
+   */
+  @IsOptional()
+  @IsString()
+  CONTACT_RECIPIENT_EMAIL?: string;
+
   // ---------------------------------------------------------------------
   // CAPTCHA (Cloudflare Turnstile) — préparé pour l'inscription et la
   // connexion, PAS ENCORE CÂBLÉ (audit pré-production, confirmé par lecture

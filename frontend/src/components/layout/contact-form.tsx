@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Mail, Send } from "lucide-react";
+import { useActionState, useEffect, useRef } from "react";
+import { Send } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/src/components/ui/button";
-import { Field } from "@/src/components/ui/field";
+import { Field, FormError } from "@/src/components/ui/field";
 import { Input, Select, Textarea } from "@/src/components/ui/input";
+import { submitContactAction, type ContactFormState } from "@/src/lib/contact-actions";
 
 const SUBJECTS = [
   "Question générale",
@@ -14,63 +16,61 @@ const SUBJECTS = [
   "Autre demande",
 ];
 
+const initialState: ContactFormState = {};
+
 /**
  * Formulaire de contact.
  *
- * Aucun service de notification n'existe encore côté backend. Le formulaire ne
- * fait donc rien partir, et il le dit — plutôt que d'afficher un « message
- * envoyé » qui serait un mensonge.
+ * Passe par `submitContactAction` (Server Action) plutôt que par un `fetch`
+ * client direct — même raisonnement que les formulaires d'authentification :
+ * `OriginGuard` (backend) exige un en-tête `Origin` sur toute écriture, et un
+ * appel serveur à serveur le garantit toujours.
  *
- * L'écran de confirmation propose l'adresse et le téléphone : c'est le vrai
- * chemin, et il doit être à un clic quand le formulaire ne peut pas aboutir.
+ * La confirmation est double, comme demandé : un toast immédiat côté client
+ * (`sonner`, déjà monté dans `(site)/layout.tsx`), et un accusé de réception
+ * envoyé par e-mail par l'API (`ContactService`, backend).
  */
 export function ContactForm() {
-  const [submitted, setSubmitted] = useState(false);
+  const [state, formAction, pending] = useActionState(submitContactAction, initialState);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  if (submitted) {
-    return (
-      <div className="border-border bg-card rounded-xl border p-8 text-center">
-        <Mail aria-hidden className="text-primary mx-auto size-8" />
-        <h2 className="type-h3 text-secondary mt-4">
-          L’envoi automatique n’est pas encore actif
-        </h2>
-        <p className="text-muted-foreground mx-auto mt-2 max-w-sm text-sm leading-relaxed text-pretty">
-          Votre message n’a pas été transmis. Le service d’envoi arrivera avec les
-          notifications — en attendant, écrivez-nous directement, nous répondons sous deux
-          jours ouvrés.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Button asChild>
-            <a href="mailto:contact@gebook.com">Écrire à contact@gebook.com</a>
-          </Button>
-          <Button variant="outline" onClick={() => setSubmitted(false)}>
-            Revenir au formulaire
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (state.submittedAt) {
+      toast.success("Message envoyé. Un e-mail de confirmation vous a été envoyé.");
+      formRef.current?.reset();
+    }
+  }, [state.submittedAt]);
 
   return (
     <form
+      ref={formRef}
+      action={formAction}
       className="border-border bg-card grid gap-5 rounded-xl border p-6 sm:p-8"
-      onSubmit={(event) => {
-        event.preventDefault();
-        setSubmitted(true);
-      }}
     >
+      <FormError message={state.error} />
+
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field id="contact_name" label="Nom complet" required>
+        <Field
+          id="contact_name"
+          label="Nom complet"
+          required
+          error={state.fieldErrors?.name?.[0]}
+        >
           <Input name="name" autoComplete="name" />
         </Field>
 
-        <Field id="contact_email" label="Adresse e-mail" required>
+        <Field
+          id="contact_email"
+          label="Adresse e-mail"
+          required
+          error={state.fieldErrors?.email?.[0]}
+        >
           <Input name="email" type="email" autoComplete="email" />
         </Field>
       </div>
 
-      <Field id="subject" label="Sujet">
-        <Select name="subject">
+      <Field id="subject" label="Sujet" error={state.fieldErrors?.subject?.[0]}>
+        <Select name="subject" defaultValue={SUBJECTS[0]}>
           {SUBJECTS.map((subject) => (
             <option key={subject}>{subject}</option>
           ))}
@@ -82,18 +82,18 @@ export function ContactForm() {
         label="Votre message"
         hint="Indiquez votre numéro de commande si votre demande la concerne."
         required
+        error={state.fieldErrors?.message?.[0]}
       >
         <Textarea name="message" rows={6} />
       </Field>
 
       <div className="flex flex-wrap items-center gap-4">
-        <Button type="submit" size="lg">
-          <Send aria-hidden />
-          Envoyer le message
+        <Button type="submit" size="lg" isLoading={pending}>
+          {!pending && <Send aria-hidden />}
+          {pending ? "Envoi en cours…" : "Envoyer le message"}
         </Button>
         <p className="type-caption max-w-xs">
-          Formulaire de démonstration : l’envoi sera activé avec le service de
-          notification.
+          Nous répondons habituellement sous deux jours ouvrés.
         </p>
       </div>
     </form>

@@ -5,6 +5,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CommissionsModule } from './modules/commissions/commissions.module';
+import { ContactModule } from './modules/contact/contact.module';
 import { FilesModule } from './modules/files/files.module';
 import { HealthModule } from './modules/health/health.module';
 import { LibraryModule } from './modules/library/library.module';
@@ -35,6 +36,7 @@ import { SystemModule } from './modules/system/system.module';
     CommissionsModule,
     TenantsModule,
     SystemModule,
+    ContactModule,
   ],
 })
 export class AppModule {}
