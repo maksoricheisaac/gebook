@@ -72,7 +72,10 @@ export class AdminPaymentProvidersService {
   async list(): Promise<AdminPaymentProviderResponse[]> {
     const [providers, defaultCode] = await Promise.all([
       this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
-        tx.paymentProvider.findMany({ orderBy: { priority: 'asc' } }),
+        tx.paymentProvider.findMany({
+          where: { deletedAt: null },
+          orderBy: { priority: 'asc' },
+        }),
       ),
       this.defaultProviderCode(),
     ]);
@@ -93,7 +96,7 @@ export class AdminPaymentProvidersService {
     dto: UpdateProviderConfigurationDto,
   ): Promise<AdminPaymentProviderResponse> {
     const existing = await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
-      tx.paymentProvider.findUnique({ where: { code } }),
+      tx.paymentProvider.findFirst({ where: { code, deletedAt: null } }),
     );
     if (!existing) {
       throw new NotFoundException(
@@ -150,7 +153,7 @@ export class AdminPaymentProvidersService {
    */
   async setDefault(code: string): Promise<AdminPaymentProviderResponse> {
     const provider = await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
-      tx.paymentProvider.findUnique({ where: { code } }),
+      tx.paymentProvider.findFirst({ where: { code, deletedAt: null } }),
     );
     if (!provider) {
       throw new NotFoundException(
@@ -199,8 +202,8 @@ export class AdminPaymentProvidersService {
     const provider = await this.prisma.withRlsContext(
       SYSTEM_CONTEXT,
       async (tx) => {
-        const existing = await tx.paymentProvider.findUnique({
-          where: { code },
+        const existing = await tx.paymentProvider.findFirst({
+          where: { code, deletedAt: null },
         });
         if (!existing) {
           throw new NotFoundException(
@@ -214,11 +217,44 @@ export class AdminPaymentProvidersService {
     return this.toResponse(provider, await this.defaultProviderCode());
   }
 
+  /**
+   * Suppression douce (même principe que `AdminWorksService.remove()`) : les
+   * paiements/reversements déjà enregistrés référencent ce prestataire par
+   * clé étrangère, un vrai `DELETE` échouerait ou perdrait leur historique.
+   * Refuse le prestataire actuellement par défaut — le supprimer rendrait
+   * sinon tout paiement sans `providerCode` explicite immédiatement
+   * indisponible, sans qu'aucun message n'explique pourquoi.
+   */
+  async remove(code: string): Promise<void> {
+    const existing = await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
+      tx.paymentProvider.findFirst({ where: { code, deletedAt: null } }),
+    );
+    if (!existing) {
+      throw new NotFoundException(
+        'Ce prestataire de paiement est introuvable.',
+      );
+    }
+
+    const defaultCode = await this.defaultProviderCode();
+    if (defaultCode === code) {
+      throw new BadRequestException(
+        'Ce prestataire est actuellement le prestataire par défaut : désignez-en un autre avant de le supprimer.',
+      );
+    }
+
+    await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
+      tx.paymentProvider.update({
+        where: { code },
+        data: { deletedAt: new Date(), status: 'inactive' },
+      }),
+    );
+  }
+
   async testConnection(
     code: string,
   ): Promise<AdminProviderConnectionTestResponse> {
     const provider = await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
-      tx.paymentProvider.findUnique({ where: { code } }),
+      tx.paymentProvider.findFirst({ where: { code, deletedAt: null } }),
     );
 
     if (!provider) {

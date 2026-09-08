@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -62,6 +63,12 @@ export class AdminPaymentProvidersController {
     @Param('code') code: string,
   ): Promise<AdminPaymentProviderResponse> {
     return this.providers.setDefault(code);
+  }
+
+  @Delete(':code')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('code') code: string): Promise<void> {
+    return this.providers.remove(code);
   }
 
   @Post(':code/test-connection')

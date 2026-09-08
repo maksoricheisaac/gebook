@@ -858,6 +858,14 @@ model PaymentProvider {
   /// documentation du prestataire (brief §1).
   supportsPayout      Boolean             @default(false) @map("supports_payout")
   priority            Int                 @default(1)
+  /// Suppression douce (même principe que `Work.deletedAt`) : les paiements,
+  /// reversements et événements déjà enregistrés référencent ce prestataire
+  /// par clé étrangère — un vrai `DELETE` échouerait ou perdrait l'historique.
+  /// `null` tant que le prestataire est actif ; posé à la place d'un `DELETE`,
+  /// `list()` et `resolveProvider()` excluent déjà `deletedAt: null`. Aucun
+  /// retour en arrière depuis l'administration pour l'instant (pas demandé) :
+  /// la ligne reste en base, restaurable à la main si nécessaire.
+  deletedAt           DateTime?           @map("deleted_at") @db.Timestamptz(6)
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -869,6 +877,7 @@ model PaymentProvider {
   credentials  PaymentProviderCredential[]
 
   @@index([status, priority], map: "idx_payment_providers_status_priority")
+  @@index([deletedAt], map: "idx_payment_providers_deleted_at")
   @@map("payment_providers")
 }
 

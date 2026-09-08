@@ -108,6 +108,9 @@ describe('Superadmin — Prestataires de paiement (e2e)', () => {
         data: { settingValue: 'fake' },
       })
       .catch(() => undefined);
+    await prisma.paymentProvider
+      .update({ where: { code: 'chariow' }, data: { deletedAt: null } })
+      .catch(() => undefined);
     await app.close();
   });
 
@@ -300,5 +303,52 @@ describe('Superadmin — Prestataires de paiement (e2e)', () => {
     const providers = list.body as Array<{ code: string; isDefault: boolean }>;
     expect(providers.find((p) => p.code === 'fake')?.isDefault).toBe(false);
     expect(providers.find((p) => p.code === 'pawapay')?.isDefault).toBe(true);
+  });
+
+  it('refuse de supprimer le prestataire actuellement par défaut', async () => {
+    // « pawapay » est devenu le prestataire par défaut au test précédent.
+    await adminAgent
+      .delete('/admin/payment-providers/pawapay')
+      .set('Origin', ORIGIN)
+      .expect(400);
+  });
+
+  it('supprime un prestataire en douceur : retiré de la liste, jamais un vrai DELETE', async () => {
+    await adminAgent
+      .delete('/admin/payment-providers/chariow')
+      .set('Origin', ORIGIN)
+      .expect(204);
+
+    const stored = await prisma.paymentProvider.findUniqueOrThrow({
+      where: { code: 'chariow' },
+    });
+    expect(stored.deletedAt).not.toBeNull();
+
+    const list = await adminAgent
+      .get('/admin/payment-providers')
+      .set('Origin', ORIGIN)
+      .expect(200);
+    const providers = list.body as Array<{ code: string }>;
+    expect(providers.some((p) => p.code === 'chariow')).toBe(false);
+
+    // Toute action admin sur un prestataire supprimé se comporte comme s'il
+    // n'existait plus — même filtre `deletedAt: null` que `list()`.
+    await adminAgent
+      .patch('/admin/payment-providers/chariow/status')
+      .set('Origin', ORIGIN)
+      .send({ status: 'active' })
+      .expect(404);
+  });
+
+  it('renvoie 404 en supprimant un prestataire déjà supprimé ou inconnu', async () => {
+    await adminAgent
+      .delete('/admin/payment-providers/chariow')
+      .set('Origin', ORIGIN)
+      .expect(404);
+
+    await adminAgent
+      .delete('/admin/payment-providers/does-not-exist')
+      .set('Origin', ORIGIN)
+      .expect(404);
   });
 });

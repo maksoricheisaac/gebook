@@ -736,8 +736,12 @@ export class PaymentsService {
   ): Promise<{ id: string; code: string }> {
     const code = requestedCode ?? (await this.defaultProviderCode());
 
-    const provider = await this.prisma.paymentProvider.findUnique({
-      where: { code },
+    // `findFirst`, pas `findUnique` : il faut pouvoir combiner `code` (unique)
+    // avec `deletedAt: null` — un prestataire supprimé (suppression douce,
+    // voir `AdminPaymentProvidersService.remove()`) ne doit plus jamais être
+    // résolu, même redevenu `active` par erreur.
+    const provider = await this.prisma.paymentProvider.findFirst({
+      where: { code, deletedAt: null },
       select: { id: true, code: true, status: true },
     });
 

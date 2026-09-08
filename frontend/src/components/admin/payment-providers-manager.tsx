@@ -13,6 +13,7 @@ import {
   PowerOff,
   Settings,
   Star,
+  Trash2,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ import {
 import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
+import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
 import {
   Dialog,
@@ -125,6 +127,7 @@ export function PaymentProvidersManager() {
   const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
   const [capabilities, setCapabilities] = useState<CapabilitiesState | null>(null);
   const [configError, setConfigError] = useState<string | undefined>();
+  const [toDelete, setToDelete] = useState<AdminPaymentProvider | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin", "payment-providers"],
@@ -191,6 +194,21 @@ export function PaymentProvidersManager() {
       await invalidate();
     },
     onError: (error: unknown) => toast.error(errorMessage(error)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (code: string) =>
+      adminFetch<void>(`/payment-providers/${code}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      const name = toDelete?.name;
+      setToDelete(null);
+      toast.success(name ? `${name} : supprimé.` : "Prestataire supprimé.");
+      await invalidate();
+    },
+    onError: (error: unknown) => {
+      setToDelete(null);
+      toast.error(errorMessage(error));
+    },
   });
 
   const openConfigure = (provider: AdminPaymentProvider): void => {
@@ -388,11 +406,18 @@ export function PaymentProvidersManager() {
                               disabled: provider.isDefault,
                               onSelect: () => defaultMutation.mutate(provider.code),
                             },
-                            { type: "separator" },
                             {
                               label: "Tester la connexion",
                               icon: PlugZap,
                               onSelect: () => testMutation.mutate(provider.code),
+                            },
+                            { type: "separator" },
+                            {
+                              label: "Supprimer",
+                              icon: Trash2,
+                              destructive: true,
+                              disabled: provider.isDefault,
+                              onSelect: () => setToDelete(provider),
                             },
                           ]}
                         />
@@ -574,6 +599,20 @@ export function PaymentProvidersManager() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Supprimer ce prestataire ?"
+        description={
+          toDelete
+            ? `« ${toDelete.name} » disparaîtra de cette liste et ne pourra plus être sélectionné pour un nouveau paiement. Les paiements et reversements déjà passés par ce prestataire restent intacts, avec tout leur historique — rien n'est perdu.`
+            : ""
+        }
+        confirmLabel="Supprimer le prestataire"
+        isPending={deleteMutation.isPending}
+        onCancel={() => setToDelete(null)}
+        onConfirm={() => toDelete && deleteMutation.mutate(toDelete.code)}
+      />
     </div>
   );
 }
