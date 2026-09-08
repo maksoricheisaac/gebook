@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   CircleAlert,
   PlugZap,
+  Power,
+  PowerOff,
   Settings,
   Star,
   Wallet,
@@ -19,6 +21,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
@@ -291,28 +294,11 @@ export function PaymentProvidersManager() {
                       </Badge>
                     </td>
                     <td>
-                      <label className="flex cursor-pointer items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={provider.status === "active"}
-                          disabled={
-                            statusMutation.isPending &&
-                            statusMutation.variables?.code === provider.code
-                          }
-                          onChange={(event) =>
-                            statusMutation.mutate({
-                              code: provider.code,
-                              status: event.target.checked ? "active" : "inactive",
-                            })
-                          }
-                          className="accent-primary size-4 cursor-pointer"
-                        />
-                        <Badge
-                          variant={provider.status === "active" ? "success" : "neutral"}
-                        >
-                          {provider.status === "active" ? "Actif" : "Inactif"}
-                        </Badge>
-                      </label>
+                      <Badge
+                        variant={provider.status === "active" ? "success" : "neutral"}
+                      >
+                        {provider.status === "active" ? "Actif" : "Inactif"}
+                      </Badge>
                     </td>
                     <td>
                       <DriverBadge
@@ -345,70 +331,66 @@ export function PaymentProvidersManager() {
                           )}
                         </div>
                       )}
-                    </td>
-                    <td>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex flex-wrap justify-end gap-1.5">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openConfigure(provider)}
-                          >
-                            <Settings aria-hidden />
-                            Configurer
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={provider.isDefault}
-                            isLoading={
-                              defaultMutation.isPending &&
-                              defaultMutation.variables === provider.code
+                      {result && (
+                        <div className="mt-1.5 max-w-48">
+                          <p
+                            className={
+                              result.payin?.ok
+                                ? "text-success text-xs"
+                                : "text-destructive text-xs"
                             }
-                            onClick={() => defaultMutation.mutate(provider.code)}
                           >
-                            {provider.isDefault ? "Par défaut" : "Définir par défaut"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            isLoading={
-                              testMutation.isPending &&
-                              testMutation.variables === provider.code
-                            }
-                            onClick={() => testMutation.mutate(provider.code)}
-                          >
-                            <PlugZap aria-hidden />
-                            Tester
-                          </Button>
-                        </div>
-                        {result && (
-                          <div className="max-w-56 text-right">
+                            Pay-in : {result.payin?.detail}
+                          </p>
+                          {result.payout && (
                             <p
                               className={
-                                result.payin?.ok
+                                result.payout.ok
                                   ? "text-success text-xs"
                                   : "text-destructive text-xs"
                               }
                             >
-                              Pay-in : {result.payin?.detail}
+                              Payout : {result.payout.detail}
                             </p>
-                            {result.payout && (
-                              <p
-                                className={
-                                  result.payout.ok
-                                    ? "text-success text-xs"
-                                    : "text-destructive text-xs"
-                                }
-                              >
-                                Payout : {result.payout.detail}
-                              </p>
-                            )}
-                          </div>
-                        )}
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div className="flex justify-end">
+                        <DataTableActionMenu
+                          triggerLabel={`Actions — ${provider.name}`}
+                          actions={[
+                            {
+                              label: "Configurer",
+                              icon: Settings,
+                              onSelect: () => openConfigure(provider),
+                            },
+                            {
+                              label:
+                                provider.status === "active" ? "Désactiver" : "Activer",
+                              icon: provider.status === "active" ? PowerOff : Power,
+                              onSelect: () =>
+                                statusMutation.mutate({
+                                  code: provider.code,
+                                  status:
+                                    provider.status === "active" ? "inactive" : "active",
+                                }),
+                            },
+                            {
+                              label: "Définir par défaut",
+                              icon: Star,
+                              disabled: provider.isDefault,
+                              onSelect: () => defaultMutation.mutate(provider.code),
+                            },
+                            { type: "separator" },
+                            {
+                              label: "Tester la connexion",
+                              icon: PlugZap,
+                              onSelect: () => testMutation.mutate(provider.code),
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </DataRow>

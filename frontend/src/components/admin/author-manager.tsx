@@ -2,12 +2,19 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { BookText, CheckCircle2, Plus, Search, Trash2, UserSquare2 } from "lucide-react";
+import {
+  BookText,
+  CheckCircle2,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  UserSquare2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPagination } from "@/src/components/admin/admin-pagination";
@@ -16,6 +23,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
 import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { IdCell } from "@/src/components/admin/id-cell";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
@@ -347,23 +355,24 @@ export function AuthorManager() {
                     </td>
                     <td className="tabular-nums">{author._count.works}</td>
                     <td>
-                      <div className="flex justify-end gap-1.5">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/admin/auteurs/${author.id}`}>
-                            Gérer
-                            <span className="sr-only"> — {author.penName}</span>
-                          </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive-muted"
-                          onClick={() => setToDelete(author)}
-                        >
-                          <Trash2 aria-hidden />
-                          <span className="sr-only">Supprimer {author.penName}</span>
-                        </Button>
+                      <div className="flex justify-end">
+                        <DataTableActionMenu
+                          triggerLabel={`Actions — ${author.penName}`}
+                          actions={[
+                            {
+                              label: "Gérer",
+                              icon: Pencil,
+                              href: `/admin/auteurs/${author.id}`,
+                            },
+                            { type: "separator" },
+                            {
+                              label: "Supprimer",
+                              icon: Trash2,
+                              destructive: true,
+                              onSelect: () => setToDelete(author),
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </DataRow>

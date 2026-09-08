@@ -22,6 +22,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
 import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { IdCell } from "@/src/components/admin/id-cell";
 import { Badge } from "@/src/components/ui/badge";
@@ -402,6 +403,7 @@ export function CommissionRuleManager() {
                 <th scope="col">Taux</th>
                 <th scope="col">Base de calcul</th>
                 <th scope="col">En vigueur</th>
+                <th scope="col">Statut</th>
                 <th scope="col" className="text-right!">
                   Actions
                 </th>
@@ -409,7 +411,7 @@ export function CommissionRuleManager() {
             }
           >
             {filtered.length === 0 ? (
-              <DataRowFull colSpan={6}>
+              <DataRowFull colSpan={7}>
                 {search
                   ? "Aucune règle ne correspond à cette recherche."
                   : "Aucune règle de commission pour le moment."}
@@ -436,28 +438,29 @@ export function CommissionRuleManager() {
                     {formatDate(rule.effectiveFrom)}
                   </td>
                   <td>
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Badge variant={rule.status === "active" ? "success" : "neutral"}>
-                        {rule.status === "active" ? "Active" : "Inactive"}
-                      </Badge>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => startEdit(rule)}
-                        aria-label={`Modifier la règle ${rule.name}`}
-                      >
-                        <Pencil aria-hidden />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setToDelete(rule)}
-                        aria-label={`Supprimer la règle ${rule.name}`}
-                      >
-                        <Trash2 aria-hidden />
-                      </Button>
+                    <Badge variant={rule.status === "active" ? "success" : "neutral"}>
+                      {rule.status === "active" ? "Active" : "Inactive"}
+                    </Badge>
+                  </td>
+                  <td>
+                    <div className="flex justify-end">
+                      <DataTableActionMenu
+                        triggerLabel={`Actions — règle ${rule.name}`}
+                        actions={[
+                          {
+                            label: "Modifier",
+                            icon: Pencil,
+                            onSelect: () => startEdit(rule),
+                          },
+                          { type: "separator" },
+                          {
+                            label: "Supprimer",
+                            icon: Trash2,
+                            destructive: true,
+                            onSelect: () => setToDelete(rule),
+                          },
+                        ]}
+                      />
                     </div>
                   </td>
                 </DataRow>

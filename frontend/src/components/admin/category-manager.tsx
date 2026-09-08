@@ -2,7 +2,6 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -25,6 +24,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
 import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { IdCell } from "@/src/components/admin/id-cell";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
@@ -387,33 +387,29 @@ export function CategoryManager() {
                     </td>
                     <td className="tabular-nums">{category._count.works}</td>
                     <td>
-                      <div className="flex justify-end gap-1.5">
-                        <Button asChild variant="ghost" size="sm">
-                          <Link href={`/admin/categories/${category.id}`}>
-                            <Eye aria-hidden />
-                            <span className="sr-only"> — {category.name}</span>
-                          </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => startEdit(category)}
-                        >
-                          <Pencil aria-hidden />
-                          Modifier
-                          <span className="sr-only"> — {category.name}</span>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive-muted"
-                          onClick={() => setToDelete(category)}
-                        >
-                          <Trash2 aria-hidden />
-                          <span className="sr-only">Supprimer {category.name}</span>
-                        </Button>
+                      <div className="flex justify-end">
+                        <DataTableActionMenu
+                          triggerLabel={`Actions — ${category.name}`}
+                          actions={[
+                            {
+                              label: "Voir",
+                              icon: Eye,
+                              href: `/admin/categories/${category.id}`,
+                            },
+                            {
+                              label: "Modifier",
+                              icon: Pencil,
+                              onSelect: () => startEdit(category),
+                            },
+                            { type: "separator" },
+                            {
+                              label: "Supprimer",
+                              icon: Trash2,
+                              destructive: true,
+                              onSelect: () => setToDelete(category),
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </DataRow>

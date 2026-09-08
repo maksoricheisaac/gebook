@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   Clock3,
   PackageCheck,
+  Pencil,
   ReceiptText,
   Search,
   XCircle,
@@ -21,8 +21,8 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
 import { IdCell } from "@/src/components/admin/id-cell";
-import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
 import { FormError } from "@/src/components/ui/field";
 import { Input, Select } from "@/src/components/ui/input";
@@ -292,36 +292,31 @@ export function OrderList() {
                       <OrderStatusBadge status={order.status} />
                     </td>
                     <td>
-                      <div className="flex flex-wrap items-center justify-end gap-1.5">
-                        {allowedTransitions(order.status).length > 0 && (
-                          <Select
-                            aria-label={`Changer le statut de la commande ${order.orderNumber}`}
-                            value=""
-                            disabled={statusMutation.isPending}
-                            onChange={(event) => {
-                              const status = event.target.value;
-                              if (status) {
-                                setPendingId(order.id);
-                                statusMutation.mutate({ id: order.id, status });
-                              }
-                              event.target.value = "";
-                            }}
-                            className="h-9 w-40 text-xs"
-                          >
-                            <option value="">Faire évoluer…</option>
-                            {allowedTransitions(order.status).map((status) => (
-                              <option key={status} value={status}>
-                                {orderStatusLabel(status)}
-                              </option>
-                            ))}
-                          </Select>
-                        )}
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/admin/commandes/${order.id}`}>
-                            Gérer
-                            <span className="sr-only"> — {order.orderNumber}</span>
-                          </Link>
-                        </Button>
+                      <div className="flex justify-end">
+                        <DataTableActionMenu
+                          triggerLabel={`Actions — commande ${order.orderNumber}`}
+                          actions={[
+                            ...(allowedTransitions(order.status).length > 0
+                              ? [
+                                  { type: "label" as const, label: "Faire évoluer" },
+                                  ...allowedTransitions(order.status).map((status) => ({
+                                    label: orderStatusLabel(status),
+                                    disabled: statusMutation.isPending,
+                                    onSelect: () => {
+                                      setPendingId(order.id);
+                                      statusMutation.mutate({ id: order.id, status });
+                                    },
+                                  })),
+                                  { type: "separator" as const },
+                                ]
+                              : []),
+                            {
+                              label: "Gérer",
+                              icon: Pencil,
+                              href: `/admin/commandes/${order.id}`,
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </DataRow>

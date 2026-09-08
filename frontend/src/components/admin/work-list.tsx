@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Eye,
   FileEdit,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -24,6 +25,7 @@ import {
   AdminStatGrid,
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
+import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
 import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { IdCell } from "@/src/components/admin/id-cell";
 import { Badge } from "@/src/components/ui/badge";
@@ -313,32 +315,29 @@ export function WorkList() {
                       </Badge>
                     </td>
                     <td className="text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setToView(work)}
-                        >
-                          <Eye aria-hidden />
-                          <span className="sr-only">Consulter {work.title}</span>
-                        </Button>
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/admin/oeuvres/${work.id}`}>
-                            Gérer
-                            <span className="sr-only"> — {work.title}</span>
-                          </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive-muted"
-                          onClick={() => setToDelete(work)}
-                        >
-                          <Trash2 aria-hidden />
-                          <span className="sr-only">Supprimer {work.title}</span>
-                        </Button>
+                      <div className="flex justify-end">
+                        <DataTableActionMenu
+                          triggerLabel={`Actions — ${work.title}`}
+                          actions={[
+                            {
+                              label: "Consulter",
+                              icon: Eye,
+                              onSelect: () => setToView(work),
+                            },
+                            {
+                              label: "Gérer",
+                              icon: Pencil,
+                              href: `/admin/oeuvres/${work.id}`,
+                            },
+                            { type: "separator" },
+                            {
+                              label: "Supprimer",
+                              icon: Trash2,
+                              destructive: true,
+                              onSelect: () => setToDelete(work),
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </DataRow>
