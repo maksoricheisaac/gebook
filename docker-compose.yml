@@ -184,6 +184,11 @@ services:
       APP_DEBUG: "false"
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET est obligatoire (32 caracteres minimum)}
       SETUP_TOKEN: ${SETUP_TOKEN:?SETUP_TOKEN est obligatoire (32 caracteres minimum)}
+      # Chiffre les identifiants de prestataire de paiement enregistrés depuis
+      # Superadmin → Paiements → Configurer (payment_provider_credentials).
+      # Même traitement que les deux secrets ci-dessus : générer avec
+      # `openssl rand -hex 32`, jamais la valeur de développement du dépôt.
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?CREDENTIALS_ENCRYPTION_KEY est obligatoire (32 octets hexadecimaux — openssl rand -hex 32)}
       # --- Plateforme de paiement --------------------------------------------
       # sandbox | production, indépendant de NODE_ENV : rester en sandbox tant
       # que les identifiants réels d'un prestataire ne sont pas fournis
