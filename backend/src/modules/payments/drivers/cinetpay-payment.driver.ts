@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '../../../generated/prisma/client';
 import { fromMinorUnits, toMinorUnits } from '../money';
+import { ProviderConfigService } from '../provider-config.service';
 import type {
   ConnectionTestResult,
   DriverCapabilities,
@@ -78,12 +79,15 @@ export class CinetPayPaymentDriver implements PaymentDriver {
 
   private readonly logger = new Logger(CinetPayPaymentDriver.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly providerConfig: ProviderConfigService,
+  ) {}
 
   async initialize(request: PaymentInitRequest): Promise<PaymentInitResult> {
     const response = await this.post<CinetPayInitResponse>('/payment', {
-      apikey: this.apiKey(),
-      site_id: this.siteId(),
+      apikey: await this.apiKey(),
+      site_id: await this.siteId(),
       // Généré par GeBook (brief §22), garanti unique par la contrainte DB
       // sur `payments.idempotency_key` — satisfait l'exigence CinetPay d'un
       // `transaction_id` neuf à chaque tentative.
@@ -170,10 +174,10 @@ export class CinetPayPaymentDriver implements PaymentDriver {
 
     let secret: string;
     try {
-      secret = this.config.getOrThrow<string>('CINETPAY_SECRET_KEY');
+      secret = await this.providerConfig.get(this.code, 'secretKey');
     } catch {
       return rejected(
-        'CINETPAY_SECRET_KEY non configurée côté serveur.',
+        'Clé secrète CinetPay non configurée côté serveur.',
         transactionId,
       );
     }
@@ -283,8 +287,8 @@ export class CinetPayPaymentDriver implements PaymentDriver {
     transactionId: string,
   ): Promise<CinetPayCheckResponse> {
     return this.post<CinetPayCheckResponse>('/payment/check', {
-      apikey: this.apiKey(),
-      site_id: this.siteId(),
+      apikey: await this.apiKey(),
+      site_id: await this.siteId(),
       transaction_id: transactionId,
     });
   }
@@ -306,16 +310,19 @@ export class CinetPayPaymentDriver implements PaymentDriver {
     return toMinorUnits(new Prisma.Decimal(amount));
   }
 
-  private apiUrl(): string {
-    return this.config.get<string>('CINETPAY_API_URL') || DEFAULT_API_URL;
+  private async apiUrl(): Promise<string> {
+    return (
+      (await this.providerConfig.getOptional(this.code, 'apiUrl')) ??
+      DEFAULT_API_URL
+    );
   }
 
-  private apiKey(): string {
-    return this.config.getOrThrow<string>('CINETPAY_API_KEY');
+  private async apiKey(): Promise<string> {
+    return this.providerConfig.get(this.code, 'apiKey');
   }
 
-  private siteId(): string {
-    return this.config.getOrThrow<string>('CINETPAY_SITE_ID');
+  private async siteId(): Promise<string> {
+    return this.providerConfig.get(this.code, 'siteId');
   }
 
   private notifyUrl(): string {
@@ -332,7 +339,7 @@ export class CinetPayPaymentDriver implements PaymentDriver {
 
     let response: Response;
     try {
-      response = await fetch(`${this.apiUrl()}${path}`, {
+      response = await fetch(`${await this.apiUrl()}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

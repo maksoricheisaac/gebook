@@ -14,6 +14,8 @@ const PRODUCTION_WEBHOOK_SECRET =
 const PRODUCTION_SETUP_TOKEN =
   'un-jeton-de-configuration-suffisamment-long-pour-etre-accepte';
 
+const PRODUCTION_ENCRYPTION_KEY = 'b'.repeat(64);
+
 describe('validateEnvironment', () => {
   it('accepte une configuration complète et convertit les types', () => {
     const environment = validateEnvironment(baseEnvironment);
@@ -74,6 +76,7 @@ describe('validateEnvironment', () => {
       APP_DEBUG: 'false',
       PAYMENT_WEBHOOK_SECRET: PRODUCTION_WEBHOOK_SECRET,
       SETUP_TOKEN: PRODUCTION_SETUP_TOKEN,
+      CREDENTIALS_ENCRYPTION_KEY: PRODUCTION_ENCRYPTION_KEY,
     });
 
     expect(environment.NODE_ENV).toBe(NodeEnvironment.production);
@@ -129,5 +132,32 @@ describe('validateEnvironment', () => {
         PAYMENT_WEBHOOK_SECRET: PRODUCTION_WEBHOOK_SECRET,
       }),
     ).toThrow(/SETUP_TOKEN/);
+  });
+
+  it('fournit une clé de chiffrement des identifiants par défaut hors production', () => {
+    expect(
+      validateEnvironment(baseEnvironment).CREDENTIALS_ENCRYPTION_KEY.length,
+    ).toBe(64);
+  });
+
+  it('refuse une clé de chiffrement qui ne représente pas 32 octets', () => {
+    expect(() =>
+      validateEnvironment({
+        ...baseEnvironment,
+        CREDENTIALS_ENCRYPTION_KEY: 'trop-court',
+      }),
+    ).toThrow(/CREDENTIALS_ENCRYPTION_KEY/);
+  });
+
+  it('refuse la production tant que la clé de chiffrement par défaut n’a pas été remplacée', () => {
+    expect(() =>
+      validateEnvironment({
+        ...baseEnvironment,
+        NODE_ENV: 'production',
+        APP_DEBUG: 'false',
+        PAYMENT_WEBHOOK_SECRET: PRODUCTION_WEBHOOK_SECRET,
+        SETUP_TOKEN: PRODUCTION_SETUP_TOKEN,
+      }),
+    ).toThrow(/CREDENTIALS_ENCRYPTION_KEY/);
   });
 });

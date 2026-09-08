@@ -52,6 +52,16 @@ const DEVELOPMENT_WEBHOOK_SECRET = 'secret-de-developpement-gebook-a-remplacer';
 const DEVELOPMENT_SETUP_TOKEN = 'jeton-de-developpement-gebook-a-remplacer';
 
 /**
+ * Même logique que `DEVELOPMENT_WEBHOOK_SECRET`, pour la clé de chiffrement des
+ * identifiants de prestataire de paiement (`EncryptionService`). Doit rester une
+ * clé AES-256 valide (32 octets hex) même en développement, faute de quoi le
+ * chiffrement échouerait dès le premier enregistrement d'identifiants —
+ * reconnaissable (`dead` répété) pour qu'elle ne soit jamais confondue avec une
+ * vraie clé.
+ */
+const DEVELOPMENT_ENCRYPTION_KEY = 'dead'.repeat(16);
+
+/**
  * Variables d'environnement attendues par l'API.
  *
  * Le démarrage échoue si l'une d'elles manque ou est invalide : mieux vaut un refus
@@ -131,6 +141,22 @@ export class Environment {
       'SETUP_TOKEN doit compter au moins 32 caractères pour protéger la création du superadmin.',
   })
   SETUP_TOKEN: string = DEVELOPMENT_SETUP_TOKEN;
+
+  /**
+   * Clé de chiffrement des identifiants de prestataire de paiement stockés en
+   * base (`payment_provider_credentials`) — voir `EncryptionService`. Même
+   * traitement que `PAYMENT_WEBHOOK_SECRET`/`SETUP_TOKEN` : jamais journalisée,
+   * jamais renvoyée par une route Superadmin, refusée en production tant
+   * qu'elle garde sa valeur de développement. 32 octets, en hexadécimal (64
+   * caractères) ou en base64.
+   */
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined
+      ? DEVELOPMENT_ENCRYPTION_KEY
+      : (value as string),
+  )
+  @IsString()
+  CREDENTIALS_ENCRYPTION_KEY: string = DEVELOPMENT_ENCRYPTION_KEY;
 
   // ---------------------------------------------------------------------
   // Plateforme de paiement (Phase 1) — routage pay-in/payout configurable
@@ -395,6 +421,27 @@ export function validateEnvironment(raw: Record<string, unknown>): Environment {
     throw new Error(
       'Configuration refusée : SETUP_TOKEN a gardé sa valeur de développement. ' +
         'Quiconque connaît le dépôt pourrait alors créer le compte superadmin de la plateforme.',
+    );
+  }
+
+  if (
+    environment.NODE_ENV === NodeEnvironment.production &&
+    environment.CREDENTIALS_ENCRYPTION_KEY === DEVELOPMENT_ENCRYPTION_KEY
+  ) {
+    throw new Error(
+      'Configuration refusée : CREDENTIALS_ENCRYPTION_KEY a gardé sa valeur de développement. ' +
+        'Les identifiants de prestataire de paiement enregistrés depuis le Superadmin seraient ' +
+        'alors déchiffrables par quiconque connaît le dépôt.',
+    );
+  }
+
+  if (
+    !/^[0-9a-fA-F]{64}$/.test(environment.CREDENTIALS_ENCRYPTION_KEY) &&
+    Buffer.from(environment.CREDENTIALS_ENCRYPTION_KEY, 'base64').length !== 32
+  ) {
+    throw new Error(
+      'Configuration refusée : CREDENTIALS_ENCRYPTION_KEY doit représenter exactement 32 octets ' +
+        '(hexadécimal 64 caractères, ou base64).',
     );
   }
 

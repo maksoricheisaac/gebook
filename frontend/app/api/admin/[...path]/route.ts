@@ -98,6 +98,10 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
   return proxy(request, (await context.params).path);
 }
 
+export async function PUT(request: Request, context: RouteContext): Promise<Response> {
+  return proxy(request, (await context.params).path);
+}
+
 export async function PATCH(request: Request, context: RouteContext): Promise<Response> {
   return proxy(request, (await context.params).path);
 }

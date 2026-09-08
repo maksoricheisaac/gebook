@@ -1,16 +1,15 @@
-import { FeexPayPaymentDriver } from './feexpay-payment.driver';
+import { PawaPayPaymentDriver } from './pawapay-payment.driver';
 import { fakeProviderConfig } from './test-support/fake-provider-config';
 
 const ENV: Record<string, string> = {
-  FEEXPAY_API_URL: 'https://feexpay.test',
-  FEEXPAY_API_KEY: 'apikey-de-test',
-  FEEXPAY_SHOP_ID: 'shop-de-test',
+  PAWAPAY_API_URL: 'https://pawapay.test',
+  PAWAPAY_API_TOKEN: 'token-de-test',
 };
 
 function driver(
   env: Record<string, string | undefined> = ENV,
-): FeexPayPaymentDriver {
-  return new FeexPayPaymentDriver(fakeProviderConfig(env));
+): PawaPayPaymentDriver {
+  return new PawaPayPaymentDriver(fakeProviderConfig(env));
 }
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
@@ -21,7 +20,7 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   } as Response;
 }
 
-describe('FeexPayPaymentDriver', () => {
+describe('PawaPayPaymentDriver', () => {
   let fetchSpy: jest.SpyInstance;
 
   afterEach(() => {
@@ -35,19 +34,19 @@ describe('FeexPayPaymentDriver', () => {
           idempotencyKey: 'gb-tx-1',
           orderNumber: 'GB-1',
           amountMinor: 10000,
-          currency: 'XOF',
+          currency: 'ZMW',
           customerEmail: 'a@example.test',
           returnUrl: 'https://gebook.test/x',
         }),
       ).rejects.toThrow();
     });
 
-    it('envoie le montant en unités majeures vers le canal demandé', async () => {
+    it('envoie le dépôt vers /v2/deposits avec le montant en unités majeures', async () => {
       fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
         jsonResponse({
-          reference: 'ref-abc',
-          message: 'Accepted',
-          status: 'PENDING',
+          depositId: 'gb-tx-1',
+          status: 'ACCEPTED',
+          created: '2026-09-08T00:00:00Z',
         }),
       );
 
@@ -55,70 +54,87 @@ describe('FeexPayPaymentDriver', () => {
         idempotencyKey: 'gb-tx-1',
         orderNumber: 'GB-20260813-ABCDEF',
         amountMinor: 10000,
-        currency: 'XOF',
+        currency: 'ZMW',
         customerEmail: 'lecteur@example.test',
         returnUrl: 'https://gebook.test/paiement/GB-20260813-ABCDEF',
-        customerPhone: '242676600000000',
-        channel: 'mtn_cg',
+        customerPhone: '260763456789',
+        channel: 'MTN_MOMO_ZMB',
       });
 
       expect(result).toMatchObject({
-        providerTransactionId: 'ref-abc',
-        providerReference: 'ref-abc',
+        providerTransactionId: 'gb-tx-1',
+        providerReference: null,
         checkoutUrl: null,
       });
 
       const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-      expect(url).toBe(
-        'https://feexpay.test/api/transactions/public/requesttopay/mtn_cg',
-      );
+      expect(url).toBe('https://pawapay.test/v2/deposits');
       const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.amount).toBe(100);
-      expect(body.phoneNumber).toBe('242676600000000');
-      expect(body.shop).toBe('shop-de-test');
+      expect(body.depositId).toBe('gb-tx-1');
+      expect(body.amount).toBe('100');
+      expect(body.currency).toBe('ZMW');
+      expect(body.payer).toMatchObject({
+        type: 'MMO',
+        accountDetails: {
+          phoneNumber: '260763456789',
+          provider: 'MTN_MOMO_ZMB',
+        },
+      });
       expect((init.headers as Record<string, string>).Authorization).toBe(
-        'Bearer apikey-de-test',
+        'Bearer token-de-test',
       );
     });
 
-    it('rejette une réponse sans référence', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ message: 'rejected' }));
+    it('rejette une réponse REJECTED', async () => {
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'REJECTED',
+          failureReason: {
+            failureCode: 'PAYER_NOT_FOUND',
+            failureMessage: 'Payer not found',
+          },
+        }),
+      );
 
       await expect(
         driver().initialize({
           idempotencyKey: 'gb-tx-2',
           orderNumber: 'GB-1',
           amountMinor: 100,
-          currency: 'XOF',
+          currency: 'ZMW',
           customerEmail: 'a@example.test',
           returnUrl: 'https://gebook.test/x',
-          customerPhone: '242676600000000',
-          channel: 'mtn_cg',
+          customerPhone: '260763456789',
+          channel: 'MTN_MOMO_ZMB',
         }),
       ).rejects.toThrow();
     });
   });
 
   describe('verify', () => {
-    it('traduit SUCCESSFUL en succès avec le montant en unités mineures', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'SUCCESSFUL', amount: 100 }));
+    it('traduit COMPLETED en succès avec le montant en unités mineures', async () => {
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: { depositId: 'gb-tx-1', status: 'COMPLETED', amount: '100' },
+        }),
+      );
 
-      const result = await driver().verify('ref-abc');
+      const result = await driver().verify('gb-tx-1');
 
       expect(result.outcome).toBe('successful');
       expect(result.paidAmountMinor).toBe(10000);
     });
 
     it('traduit FAILED en échec sans montant payé', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'FAILED', amount: 100 }));
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: { depositId: 'gb-tx-1', status: 'FAILED', amount: '100' },
+        }),
+      );
 
-      const result = await driver().verify('ref-abc');
+      const result = await driver().verify('gb-tx-1');
 
       expect(result.outcome).toBe('failed');
       expect(result.paidAmountMinor).toBe(0);
@@ -134,23 +150,26 @@ describe('FeexPayPaymentDriver', () => {
       expect(parsed).toMatchObject({ signatureValid: false });
     });
 
-    it('refuse une notification sans référence identifiable', async () => {
+    it('refuse une notification sans depositId identifiable', async () => {
       const parsed = await driver().parseWebhook(
-        Buffer.from(JSON.stringify({ amount: 100 }), 'utf8'),
+        Buffer.from(JSON.stringify({ amount: '100' }), 'utf8'),
         {},
       );
       expect(parsed).toMatchObject({ signatureValid: false });
     });
 
-    it('accepte une notification dont la référence est vérifiée SUCCESSFUL, quel que soit le statut prétendu dans le corps', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'SUCCESSFUL', amount: 100 }));
+    it('accepte une notification dont le dépôt est vérifié COMPLETED, quel que soit le statut prétendu dans le corps', async () => {
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: { depositId: 'gb-tx-1', status: 'COMPLETED', amount: '100' },
+        }),
+      );
 
       // Le corps prétend FAILED : n'a aucune importance, seul le rappel authentifié compte.
       const parsed = await driver().parseWebhook(
         Buffer.from(
-          JSON.stringify({ reference: 'ref-abc', status: 'FAILED' }),
+          JSON.stringify({ depositId: 'gb-tx-1', status: 'FAILED' }),
           'utf8',
         ),
         {},
@@ -158,54 +177,41 @@ describe('FeexPayPaymentDriver', () => {
 
       expect(parsed).toMatchObject({
         signatureValid: true,
-        transactionId: 'ref-abc',
+        transactionId: 'gb-tx-1',
         outcome: 'successful',
         paidAmountMinor: 10000,
         paymentMethod: 'mobile_money',
       });
     });
 
-    it('refuse une notification dont la vérification renvoie PENDING', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'PENDING' }));
+    it('refuse une notification dont la vérification renvoie PROCESSING', async () => {
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: { depositId: 'gb-tx-1', status: 'PROCESSING' },
+        }),
+      );
 
       const parsed = await driver().parseWebhook(
-        Buffer.from(JSON.stringify({ reference: 'ref-abc' }), 'utf8'),
+        Buffer.from(JSON.stringify({ depositId: 'gb-tx-1' }), 'utf8'),
         {},
       );
 
       expect(parsed).toMatchObject({ signatureValid: false });
     });
-
-    it('extrait la référence depuis transref si reference est absent', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'SUCCESSFUL', amount: 100 }));
-
-      const parsed = await driver().parseWebhook(
-        Buffer.from(JSON.stringify({ transref: 'ref-xyz' }), 'utf8'),
-        {},
-      );
-
-      expect(parsed).toMatchObject({
-        signatureValid: true,
-        transactionId: 'ref-xyz',
-      });
-    });
   });
 
   describe('refund', () => {
-    it('rejette explicitement : aucune API de remboursement documentée', async () => {
+    it('rejette explicitement : aucune API de remboursement vérifiée pour ce pilote', async () => {
       await expect(driver().refund()).rejects.toThrow();
     });
   });
 
   describe('testConnection', () => {
-    it('confirme la connexion quand le solde répond success:true', async () => {
+    it('confirme la connexion quand une transaction inexistante répond NOT_FOUND', async () => {
       fetchSpy = jest
         .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ success: true, data: {} }));
+        .mockResolvedValue(jsonResponse({ status: 'NOT_FOUND' }));
 
       const result = await driver().testConnection();
 

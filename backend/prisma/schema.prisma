@@ -838,8 +838,10 @@ model OrderItem {
 // Paiement
 // ---------------------------------------------------------------------------
 
-/// Décrit les capacités et l'état d'un prestataire. Les clés d'API et les secrets
-/// de signature n'y figurent volontairement pas : ils vivent dans l'environnement.
+/// Décrit les capacités et l'état d'un prestataire. Les identifiants (clés d'API,
+/// secrets de signature) vivent séparément dans `PaymentProviderCredential`,
+/// chiffrés — jamais sur ce modèle, pour qu'aucune requête ordinaire (`findMany`
+/// sans `select` explicite) ne puisse jamais les faire fuiter par accident.
 model PaymentProvider {
   id                  String              @id @default(uuid(7)) @db.Uuid
   code                String              @unique(map: "uq_payment_providers_code") @db.VarChar(50)
@@ -864,9 +866,34 @@ model PaymentProvider {
   products     ProviderProduct[]
   payouts      Payout[]
   payoutEvents PayoutEvent[]     @relation("PayoutProviderEvents")
+  credentials  PaymentProviderCredential[]
 
   @@index([status, priority], map: "idx_payment_providers_status_priority")
   @@map("payment_providers")
+}
+
+/// Identifiants chiffrés d'un prestataire (clé d'API, jeton, secret de
+/// signature...), saisis depuis Superadmin → Paiements → Configurer. Clé/valeur
+/// plutôt que des colonnes dédiées : un nouveau prestataire (ou un nouveau champ
+/// pour un prestataire existant) ne demande donc jamais de migration, seulement
+/// une entrée dans `PROVIDER_CREDENTIAL_SCHEMAS` (`provider-credential-schema.ts`)
+/// — même philosophie que « ajouter un prestataire ne touche qu'à son pilote ».
+/// `valueEncrypted` ne contient jamais de texte en clair (voir `EncryptionService`,
+/// AES-256-GCM) ; aucune route Superadmin ne le renvoie jamais, même chiffré.
+model PaymentProviderCredential {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  paymentProviderId String   @map("payment_provider_id") @db.Uuid
+  /// Nom de champ propre au prestataire (ex. `apiKey`, `siteId`) — voir
+  /// `CredentialFieldSpec.key`, jamais le nom d'une variable d'environnement.
+  key               String   @db.VarChar(100)
+  valueEncrypted    String   @map("value_encrypted") @db.Text
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  provider PaymentProvider @relation(fields: [paymentProviderId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentProviderId, key], map: "uq_payment_provider_credentials_provider_key")
+  @@map("payment_provider_credentials")
 }
 
 /// Correspondance entre un format GeBook et un produit chez le prestataire,

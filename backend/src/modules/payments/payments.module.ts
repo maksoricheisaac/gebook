@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivityLogService } from '../../common/activity-log.service';
+import { CryptoModule } from '../../common/crypto/crypto.module';
 import { AuthModule } from '../auth/auth.module';
 import { CommissionsModule } from '../commissions/commissions.module';
 import { AdminPaymentProvidersController } from './admin-payment-providers.controller';
@@ -10,12 +11,15 @@ import { FakePaymentDriver } from './drivers/fake-payment.driver';
 import { FakePayoutDriver } from './drivers/fake-payout.driver';
 import { FeexPayPaymentDriver } from './drivers/feexpay-payment.driver';
 import { FeexPayPayoutDriver } from './drivers/feexpay-payout.driver';
+import { PawaPayPaymentDriver } from './drivers/pawapay-payment.driver';
+import { PawaPayPayoutDriver } from './drivers/pawapay-payout.driver';
 import { PAYMENT_DRIVER } from './payment-driver';
 import { PaymentDriverRegistry } from './payment-driver.registry';
 import { PAYOUT_DRIVER } from './payout-driver';
 import { PayoutDriverRegistry } from './payout-driver.registry';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { ProviderConfigService } from './provider-config.service';
 import { WebhooksController } from './webhooks.controller';
 
 /**
@@ -26,7 +30,7 @@ import { WebhooksController } from './webhooks.controller';
  * un pilote peut n'exister que côté pay-in, que côté payout, ou des deux.
  */
 @Module({
-  imports: [AuthModule, CommissionsModule],
+  imports: [AuthModule, CommissionsModule, CryptoModule],
   controllers: [
     PaymentsController,
     AdminPaymentsController,
@@ -38,30 +42,40 @@ import { WebhooksController } from './webhooks.controller';
     PaymentDriverRegistry,
     PayoutDriverRegistry,
     AdminPaymentProvidersService,
+    ProviderConfigService,
     ActivityLogService,
     FakePaymentDriver,
     FakePayoutDriver,
     CinetPayPaymentDriver,
     FeexPayPaymentDriver,
     FeexPayPayoutDriver,
+    PawaPayPaymentDriver,
+    PawaPayPayoutDriver,
     {
       provide: PAYMENT_DRIVER,
       useFactory: (
         fake: FakePaymentDriver,
         cinetpay: CinetPayPaymentDriver,
         feexpay: FeexPayPaymentDriver,
-      ) => [fake, cinetpay, feexpay],
-      inject: [FakePaymentDriver, CinetPayPaymentDriver, FeexPayPaymentDriver],
+        pawapay: PawaPayPaymentDriver,
+      ) => [fake, cinetpay, feexpay, pawapay],
+      inject: [
+        FakePaymentDriver,
+        CinetPayPaymentDriver,
+        FeexPayPaymentDriver,
+        PawaPayPaymentDriver,
+      ],
     },
     {
       provide: PAYOUT_DRIVER,
-      useFactory: (fake: FakePayoutDriver, feexpay: FeexPayPayoutDriver) => [
-        fake,
-        feexpay,
-      ],
-      inject: [FakePayoutDriver, FeexPayPayoutDriver],
+      useFactory: (
+        fake: FakePayoutDriver,
+        feexpay: FeexPayPayoutDriver,
+        pawapay: PawaPayPayoutDriver,
+      ) => [fake, feexpay, pawapay],
+      inject: [FakePayoutDriver, FeexPayPayoutDriver, PawaPayPayoutDriver],
     },
   ],
-  exports: [PayoutDriverRegistry],
+  exports: [PayoutDriverRegistry, ProviderConfigService],
 })
 export class PaymentsModule {}

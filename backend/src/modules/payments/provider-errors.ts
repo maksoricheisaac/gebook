@@ -64,3 +64,17 @@ export class InvalidProviderResponse extends PaymentProviderError {
     this.name = 'InvalidProviderResponse';
   }
 }
+
+/** Ni identifiant en base (`payment_provider_credentials`) ni repli `.env` pour
+ * ce champ — voir `ProviderConfigService.get()`. Distincte des erreurs
+ * réseau/réponse ci-dessus : c'est une absence de configuration, pas un
+ * incident chez le prestataire. */
+export class MissingProviderCredentialError extends PaymentProviderError {
+  constructor(providerCode: string, key: string) {
+    super(
+      `Identifiant « ${key} » manquant pour le prestataire « ${providerCode} ».`,
+      providerCode,
+    );
+    this.name = 'MissingProviderCredentialError';
+  }
+}

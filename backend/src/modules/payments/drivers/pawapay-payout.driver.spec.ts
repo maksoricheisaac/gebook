@@ -1,16 +1,15 @@
-import { FeexPayPayoutDriver } from './feexpay-payout.driver';
+import { PawaPayPayoutDriver } from './pawapay-payout.driver';
 import { fakeProviderConfig } from './test-support/fake-provider-config';
 
 const ENV: Record<string, string> = {
-  FEEXPAY_API_URL: 'https://feexpay.test',
-  FEEXPAY_API_KEY: 'apikey-de-test',
-  FEEXPAY_SHOP_ID: 'shop-de-test',
+  PAWAPAY_API_URL: 'https://pawapay.test',
+  PAWAPAY_API_TOKEN: 'token-de-test',
 };
 
 function driver(
   env: Record<string, string | undefined> = ENV,
-): FeexPayPayoutDriver {
-  return new FeexPayPayoutDriver(fakeProviderConfig(env));
+): PawaPayPayoutDriver {
+  return new PawaPayPayoutDriver(fakeProviderConfig(env));
 }
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
@@ -21,7 +20,7 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   } as Response;
 }
 
-describe('FeexPayPayoutDriver', () => {
+describe('PawaPayPayoutDriver', () => {
   let fetchSpy: jest.SpyInstance;
 
   afterEach(() => {
@@ -35,74 +34,86 @@ describe('FeexPayPayoutDriver', () => {
           idempotencyKey: 'gb-payout-1',
           payoutReference: 'payout-id-1',
           amountMinor: 10000,
-          currency: 'XOF',
+          currency: 'ZMW',
           beneficiaryName: 'John Ecrit',
-          beneficiaryCountry: 'CG',
-          beneficiaryAccount: '242676600000000',
+          beneficiaryCountry: 'ZM',
+          beneficiaryAccount: '260763456789',
           method: 'mobile_money',
         }),
       ).rejects.toThrow();
     });
 
-    it('envoie le montant en unités majeures vers le canal demandé', async () => {
+    it('envoie le reversement vers /v2/payouts avec le montant en unités majeures', async () => {
       fetchSpy = jest
         .spyOn(global, 'fetch')
         .mockResolvedValue(
-          jsonResponse({ reference: 'payout-ref-abc', status: 'PENDING' }),
+          jsonResponse({ payoutId: 'payout-ref-abc', status: 'ACCEPTED' }),
         );
 
       const result = await driver().initiate({
         idempotencyKey: 'gb-payout-1',
         payoutReference: 'payout-id-1',
         amountMinor: 10000,
-        currency: 'XOF',
+        currency: 'ZMW',
         beneficiaryName: 'John Ecrit',
-        beneficiaryCountry: 'CG',
-        beneficiaryAccount: '242676600000000',
+        beneficiaryCountry: 'ZM',
+        beneficiaryAccount: '260763456789',
         method: 'mobile_money',
-        channel: 'mtn_cg',
+        channel: 'MTN_MOMO_ZMB',
       });
 
       expect(result).toMatchObject({
         providerTransactionId: 'payout-ref-abc',
-        providerReference: 'payout-ref-abc',
+        providerReference: null,
       });
 
       const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('https://feexpay.test/api/payouts/public/mtn_cg');
+      expect(url).toBe('https://pawapay.test/v2/payouts');
       const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.amount).toBe(100);
-      expect(body.phoneNumber).toBe('242676600000000');
-      expect(body.shop).toBe('shop-de-test');
-      expect(body.motif).toBe('Reversement John Ecrit');
+      expect(body.payoutId).toBe('gb-payout-1');
+      expect(body.amount).toBe('100');
+      expect(body.recipient).toMatchObject({
+        type: 'MMO',
+        accountDetails: {
+          phoneNumber: '260763456789',
+          provider: 'MTN_MOMO_ZMB',
+        },
+      });
     });
 
-    it('rejette une réponse sans référence', async () => {
+    it('rejette une réponse REJECTED', async () => {
       fetchSpy = jest
         .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'rejected' }));
+        .mockResolvedValue(jsonResponse({ status: 'REJECTED' }));
 
       await expect(
         driver().initiate({
           idempotencyKey: 'gb-payout-2',
           payoutReference: 'payout-id-2',
           amountMinor: 100,
-          currency: 'XOF',
+          currency: 'ZMW',
           beneficiaryName: 'John Ecrit',
-          beneficiaryCountry: 'CG',
-          beneficiaryAccount: '242676600000000',
+          beneficiaryCountry: 'ZM',
+          beneficiaryAccount: '260763456789',
           method: 'mobile_money',
-          channel: 'mtn_cg',
+          channel: 'MTN_MOMO_ZMB',
         }),
       ).rejects.toThrow();
     });
   });
 
   describe('verify', () => {
-    it('traduit SUCCESSFUL en succès avec le montant en unités mineures', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'SUCCESSFUL', amount: 100 }));
+    it('traduit COMPLETED en succès avec le montant en unités mineures', async () => {
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: {
+            payoutId: 'payout-ref-abc',
+            status: 'COMPLETED',
+            amount: '100',
+          },
+        }),
+      );
 
       const result = await driver().verify('payout-ref-abc');
 
@@ -111,9 +122,12 @@ describe('FeexPayPayoutDriver', () => {
     });
 
     it('renvoie pending honnêtement plutôt que de fabriquer une issue', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'PENDING' }));
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: { payoutId: 'payout-ref-abc', status: 'PROCESSING' },
+        }),
+      );
 
       const result = await driver().verify('payout-ref-abc');
 
@@ -131,14 +145,21 @@ describe('FeexPayPayoutDriver', () => {
       expect(parsed).toMatchObject({ signatureValid: false });
     });
 
-    it('accepte une notification dont la référence est vérifiée SUCCESSFUL, quel que soit le statut prétendu dans le corps', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'SUCCESSFUL', amount: 100 }));
+    it('accepte une notification dont le reversement est vérifié COMPLETED, quel que soit le statut prétendu dans le corps', async () => {
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: {
+            payoutId: 'payout-ref-abc',
+            status: 'COMPLETED',
+            amount: '100',
+          },
+        }),
+      );
 
       const parsed = await driver().parseWebhook(
         Buffer.from(
-          JSON.stringify({ reference: 'payout-ref-abc', status: 'FAILED' }),
+          JSON.stringify({ payoutId: 'payout-ref-abc', status: 'FAILED' }),
           'utf8',
         ),
         {},
@@ -152,13 +173,16 @@ describe('FeexPayPayoutDriver', () => {
       });
     });
 
-    it('accepte une vérification PENDING avec outcome pending, sans la fabriquer en issue définitive', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'PENDING' }));
+    it('accepte une vérification ENQUEUED avec outcome pending, sans la fabriquer en issue définitive', async () => {
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: { payoutId: 'payout-ref-abc', status: 'ENQUEUED' },
+        }),
+      );
 
       const parsed = await driver().parseWebhook(
-        Buffer.from(JSON.stringify({ reference: 'payout-ref-abc' }), 'utf8'),
+        Buffer.from(JSON.stringify({ payoutId: 'payout-ref-abc' }), 'utf8'),
         {},
       );
 
@@ -170,12 +194,18 @@ describe('FeexPayPayoutDriver', () => {
     });
 
     it('refuse une vérification dont le statut est totalement inconnu', async () => {
-      fetchSpy = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ status: 'SOMETHING_UNDOCUMENTED' }));
+      fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          status: 'FOUND',
+          data: {
+            payoutId: 'payout-ref-abc',
+            status: 'SOMETHING_UNDOCUMENTED',
+          },
+        }),
+      );
 
       const parsed = await driver().parseWebhook(
-        Buffer.from(JSON.stringify({ reference: 'payout-ref-abc' }), 'utf8'),
+        Buffer.from(JSON.stringify({ payoutId: 'payout-ref-abc' }), 'utf8'),
         {},
       );
 
@@ -184,10 +214,10 @@ describe('FeexPayPayoutDriver', () => {
   });
 
   describe('testConnection', () => {
-    it('confirme la connexion quand le solde répond success:true', async () => {
+    it('confirme la connexion quand une transaction inexistante répond NOT_FOUND', async () => {
       fetchSpy = jest
         .spyOn(global, 'fetch')
-        .mockResolvedValue(jsonResponse({ success: true, data: {} }));
+        .mockResolvedValue(jsonResponse({ status: 'NOT_FOUND' }));
 
       const result = await driver().testConnection();
 

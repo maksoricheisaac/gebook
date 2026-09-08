@@ -129,20 +129,23 @@ async function seedPaymentProviders(): Promise<void> {
       supportsPayout: true,
       priority: 1,
     },
-    // Catalogue des trois prestataires de la plateforme de paiement (mission
-    // dédiée, `docs/PAYMENT_PLATFORM_PROGRESS.md`). `inactive` tant qu'aucun
-    // pilote réel n'est écrit (Phases 4-6 pay-in, 10-11 payout) : la table
-    // décrit ce qui existera, le code exécute ce qui existe vraiment — même
-    // règle que pour `chariow`/`mtn_momo` ci-dessous. Les capacités cochées
-    // ne reprennent que ce que le brief affirme explicitement ; tout le reste
-    // reste à `false` jusqu'à vérification réelle contre un compte sandbox
-    // (jamais supposé depuis la documentation du prestataire).
+    // Catalogue des prestataires de la plateforme de paiement (mission dédiée,
+    // `docs/PAYMENT_PLATFORM_PROGRESS.md`). `inactive` tant qu'aucun pilote
+    // réel n'est écrit : la table décrit ce qui existera, le code exécute ce
+    // qui existe vraiment — même règle que pour `chariow`/`mtn_momo`
+    // ci-dessous. Les capacités cochées ne reprennent que ce que la
+    // documentation officielle du prestataire confirme explicitement.
     {
       code: 'pawapay',
       name: 'PawaPay',
-      driver: 'PawaPayDriver',
+      driver: 'PawaPayPaymentDriver',
       environment: ProviderEnvironment.sandbox,
-      status: ProviderStatus.inactive,
+      // Actif : un vrai pilote existe désormais (PawaPayPaymentDriver /
+      // PawaPayPayoutDriver, vérifiés contre docs.pawapay.io). Reste
+      // indisponible tant qu'aucun identifiant (base ou repli
+      // PAWAPAY_API_TOKEN) n'a été renseigné — `ProviderConfigService`
+      // renvoie alors une erreur explicite, jamais un envoi silencieux.
+      status: ProviderStatus.active,
       supportsMobileMoney: true,
       supportsCard: false,
       supportsRefund: false,

@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   CircleAlert,
   PlugZap,
+  Settings,
+  Star,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,8 +22,26 @@ import {
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { DataRow, DataRowFull, DataTable } from "@/src/components/ui/data-table";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/src/components/ui/dialog";
+import { Field, FormError } from "@/src/components/ui/field";
+import { Input } from "@/src/components/ui/input";
 import { RetryRow, TableSkeleton } from "@/src/components/ui/states";
 import { AdminApiError, adminFetch } from "@/src/lib/admin-api";
+
+interface CredentialFieldState {
+  key: string;
+  label: string;
+  secret: boolean;
+  required: boolean;
+  hasValue: boolean;
+}
 
 interface AdminPaymentProvider {
   code: string;
@@ -36,7 +56,9 @@ interface AdminPaymentProvider {
   payinDriverInstalled: boolean;
   payoutDriverInstalled: boolean;
   configured: boolean;
-  missingEnvVars: string[];
+  missingFields: string[];
+  credentialFields: CredentialFieldState[];
+  isDefault: boolean;
 }
 
 interface ConnectionTestResult {
@@ -50,32 +72,61 @@ interface ConnectionTestResponse {
   payout: ConnectionTestResult | null;
 }
 
+interface CapabilitiesState {
+  supportsMobileMoney: boolean;
+  supportsCard: boolean;
+  supportsRefund: boolean;
+  supportsPayout: boolean;
+  priority: number;
+}
+
+function capabilitiesOf(provider: AdminPaymentProvider): CapabilitiesState {
+  return {
+    supportsMobileMoney: provider.supportsMobileMoney,
+    supportsCard: provider.supportsCard,
+    supportsRefund: provider.supportsRefund,
+    supportsPayout: provider.supportsPayout,
+    priority: provider.priority,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof AdminApiError
+    ? error.message
+    : "Une erreur est survenue. Veuillez réessayer.";
+}
+
 /**
- * Superadmin → Paramètres → Paiements (mission plateforme de paiement, Phase 2).
+ * Superadmin → Paramètres → Paiements.
  *
- * Lecture seule pour tout ce qui est dérivé de l'environnement : les secrets
- * des prestataires (PawaPay, CinetPay, FeexPay) ne vivent que dans la
- * configuration serveur (`.env`), jamais en base — cette page ne fait donc
- * que refléter ce que le serveur voit (variable présente ou non, pilote
- * installé ou non), jamais les valeurs elles-mêmes. « Tester la connexion »
- * appelle un vrai test côté serveur ; un prestataire sans pilote installé le
- * dit explicitement plutôt que de fabriquer un succès.
+ * Les identifiants (URL d'API, clés, jetons) se saisissent désormais depuis
+ * cette page — chiffrés en base (`EncryptionService`, AES-256-GCM) — plutôt
+ * que dans `.env` du serveur : plus besoin d'un redéploiement pour faire
+ * pivoter une clé. `credentialFields` ne porte jamais la valeur réelle, que
+ * ce champ soit renseigné ou non (`hasValue`) : le formulaire « Configurer »
+ * n'affiche donc jamais un identifiant existant, seulement s'il est présent —
+ * un champ laissé vide à l'enregistrement conserve la valeur déjà en place.
  *
- * `status` (actif/inactif) fait exception : ce n'est pas un secret, c'est
- * une colonne ordinaire que `PaymentsService#resolveProvider` relit à chaque
- * paiement — la case à cocher de la colonne « Statut » la change directement,
- * sans redémarrage ni variable d'environnement à toucher.
+ * `status` (actif/inactif) reste immédiat, sans passer par le formulaire :
+ * `PaymentsService#resolveProvider` relit cette colonne à chaque paiement.
  */
 export function PaymentProvidersManager() {
   const queryClient = useQueryClient();
   const [testResults, setTestResults] = useState<Record<string, ConnectionTestResponse>>(
     {},
   );
+  const [configuring, setConfiguring] = useState<AdminPaymentProvider | null>(null);
+  const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
+  const [capabilities, setCapabilities] = useState<CapabilitiesState | null>(null);
+  const [configError, setConfigError] = useState<string | undefined>();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin", "payment-providers"],
     queryFn: () => adminFetch<AdminPaymentProvider[]>("/payment-providers"),
   });
+
+  const invalidate = (): Promise<void> =>
+    queryClient.invalidateQueries({ queryKey: ["admin", "payment-providers"] });
 
   const statusMutation = useMutation({
     mutationFn: ({ code, status }: { code: string; status: "active" | "inactive" }) =>
@@ -87,15 +138,9 @@ export function PaymentProvidersManager() {
       toast.success(
         `${provider.name} : ${provider.status === "active" ? "activé" : "désactivé"}.`,
       );
-      await queryClient.invalidateQueries({ queryKey: ["admin", "payment-providers"] });
+      await invalidate();
     },
-    onError: (error: unknown) => {
-      toast.error(
-        error instanceof AdminApiError
-          ? error.message
-          : "Une erreur est survenue. Veuillez réessayer.",
-      );
-    },
+    onError: (error: unknown) => toast.error(errorMessage(error)),
   });
 
   const testMutation = useMutation({
@@ -112,14 +157,53 @@ export function PaymentProvidersManager() {
         toast.error(`${result.code} : échec de connexion — voir le détail.`);
       }
     },
-    onError: (error: unknown) => {
-      toast.error(
-        error instanceof AdminApiError
-          ? error.message
-          : "Une erreur est survenue. Veuillez réessayer.",
-      );
-    },
+    onError: (error: unknown) => toast.error(errorMessage(error)),
   });
+
+  const configurationMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      adminFetch<AdminPaymentProvider>(
+        `/payment-providers/${configuring?.code}/configuration`,
+        { method: "PUT", body: payload },
+      ),
+    onSuccess: async (provider) => {
+      toast.success(`${provider.name} : configuration enregistrée.`);
+      setConfiguring(null);
+      setConfigError(undefined);
+      await invalidate();
+    },
+    onError: (error: unknown) => setConfigError(errorMessage(error)),
+  });
+
+  const defaultMutation = useMutation({
+    mutationFn: (code: string) =>
+      adminFetch<AdminPaymentProvider>(`/payment-providers/${code}/default`, {
+        method: "PUT",
+      }),
+    onSuccess: async (provider) => {
+      toast.success(`${provider.name} est désormais le prestataire par défaut.`);
+      await invalidate();
+    },
+    onError: (error: unknown) => toast.error(errorMessage(error)),
+  });
+
+  const openConfigure = (provider: AdminPaymentProvider): void => {
+    setConfiguring(provider);
+    setCredentialValues({});
+    setCapabilities(capabilitiesOf(provider));
+    setConfigError(undefined);
+  };
+
+  const submitConfiguration = (): void => {
+    if (!configuring || !capabilities) return;
+    const credentials = Object.fromEntries(
+      Object.entries(credentialValues).filter(([, value]) => value.trim().length > 0),
+    );
+    configurationMutation.mutate({
+      ...(Object.keys(credentials).length > 0 ? { credentials } : {}),
+      ...capabilities,
+    });
+  };
 
   const providers = data ?? [];
   const activeCount = providers.filter((p) => p.status === "active").length;
@@ -157,7 +241,7 @@ export function PaymentProvidersManager() {
         title="Prestataires de paiement et de reversement"
         description="Le pay-in (encaissement) et le payout (reversement) sont deux capacités indépendantes : un même prestataire peut n'offrir que l'une des deux."
       >
-        {isLoading && <TableSkeleton rows={4} columns={6} />}
+        {isLoading && <TableSkeleton rows={4} columns={7} />}
         {isError && <RetryRow onRetry={() => void refetch()} label="prestataires" />}
 
         {!isLoading && !isError && (
@@ -173,7 +257,7 @@ export function PaymentProvidersManager() {
                 <th scope="col">Payout</th>
                 <th scope="col">Configuration</th>
                 <th scope="col" className="text-right!">
-                  Connexion
+                  Actions
                 </th>
               </>
             }
@@ -186,7 +270,15 @@ export function PaymentProvidersManager() {
                 return (
                   <DataRow key={provider.code}>
                     <td>
-                      <span className="text-secondary font-medium">{provider.name}</span>
+                      <span className="text-secondary flex items-center gap-1.5 font-medium">
+                        {provider.name}
+                        {provider.isDefault && (
+                          <Star
+                            aria-label="Prestataire par défaut"
+                            className="text-gold-500 size-3.5 fill-current"
+                          />
+                        )}
+                      </span>
                       <span className="type-caption block">{provider.code}</span>
                     </td>
                     <td>
@@ -246,27 +338,53 @@ export function PaymentProvidersManager() {
                       ) : (
                         <div>
                           <Badge variant="warning">Incomplet</Badge>
-                          <span className="type-caption mt-1 block max-w-48">
-                            Manque : {provider.missingEnvVars.join(", ")}
-                          </span>
+                          {provider.missingFields.length > 0 && (
+                            <span className="type-caption mt-1 block max-w-48">
+                              Manque : {provider.missingFields.join(", ")}
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>
                     <td>
                       <div className="flex flex-col items-end gap-1.5">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          isLoading={
-                            testMutation.isPending &&
-                            testMutation.variables === provider.code
-                          }
-                          onClick={() => testMutation.mutate(provider.code)}
-                        >
-                          <PlugZap aria-hidden />
-                          Tester la connexion
-                        </Button>
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openConfigure(provider)}
+                          >
+                            <Settings aria-hidden />
+                            Configurer
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={provider.isDefault}
+                            isLoading={
+                              defaultMutation.isPending &&
+                              defaultMutation.variables === provider.code
+                            }
+                            onClick={() => defaultMutation.mutate(provider.code)}
+                          >
+                            {provider.isDefault ? "Par défaut" : "Définir par défaut"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            isLoading={
+                              testMutation.isPending &&
+                              testMutation.variables === provider.code
+                            }
+                            onClick={() => testMutation.mutate(provider.code)}
+                          >
+                            <PlugZap aria-hidden />
+                            Tester
+                          </Button>
+                        </div>
                         {result && (
                           <div className="max-w-56 text-right">
                             <p
@@ -302,12 +420,150 @@ export function PaymentProvidersManager() {
       </AdminTablePanel>
 
       <p className="type-caption max-w-2xl">
-        Les identifiants réels (URL d’API, clé, jeton) se configurent exclusivement via
-        les variables d’environnement du serveur — jamais depuis cette page. Le statut
-        actif/inactif, lui, se change ici à tout moment, sans reconfiguration : un
-        prestataire désactivé n’est plus proposé au règlement dès ce changement,
-        immédiatement.
+        Les identifiants (URL d’API, clés, jetons) sont chiffrés en base et modifiables à
+        tout moment depuis « Configurer », sans redéploiement — une variable
+        d’environnement du serveur reste un repli tant qu’aucune valeur n’a été
+        enregistrée ici.
       </p>
+
+      <Dialog
+        open={configuring !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfiguring(null);
+            setConfigError(undefined);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {configuring ? `Configurer ${configuring.name}` : "Configurer"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {configuring && capabilities && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitConfiguration();
+              }}
+            >
+              <DialogBody className="grid gap-5">
+                <FormError message={configError} />
+
+                {configuring.credentialFields.length > 0 && (
+                  <div className="grid gap-4">
+                    <h3 className="text-secondary text-sm font-semibold">Identifiants</h3>
+                    {configuring.credentialFields.map((field) => (
+                      <Field
+                        key={field.key}
+                        id={`cred-${field.key}`}
+                        label={field.label}
+                        required={field.required}
+                        hint={
+                          field.hasValue
+                            ? "Une valeur est déjà enregistrée — laissez vide pour la conserver."
+                            : undefined
+                        }
+                      >
+                        <Input
+                          type={field.secret ? "password" : "text"}
+                          autoComplete="off"
+                          placeholder={field.hasValue ? "•••••••• (inchangé)" : undefined}
+                          value={credentialValues[field.key] ?? ""}
+                          onChange={(event) =>
+                            setCredentialValues((current) => ({
+                              ...current,
+                              [field.key]: event.target.value,
+                            }))
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid gap-3">
+                  <h3 className="text-secondary text-sm font-semibold">Disponibilité</h3>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <CapabilityCheckbox
+                      label="Mobile money"
+                      checked={capabilities.supportsMobileMoney}
+                      onChange={(checked) =>
+                        setCapabilities((current) =>
+                          current
+                            ? { ...current, supportsMobileMoney: checked }
+                            : current,
+                        )
+                      }
+                    />
+                    <CapabilityCheckbox
+                      label="Carte bancaire"
+                      checked={capabilities.supportsCard}
+                      onChange={(checked) =>
+                        setCapabilities((current) =>
+                          current ? { ...current, supportsCard: checked } : current,
+                        )
+                      }
+                    />
+                    <CapabilityCheckbox
+                      label="Remboursement"
+                      checked={capabilities.supportsRefund}
+                      onChange={(checked) =>
+                        setCapabilities((current) =>
+                          current ? { ...current, supportsRefund: checked } : current,
+                        )
+                      }
+                    />
+                    <CapabilityCheckbox
+                      label="Reversement (payout)"
+                      checked={capabilities.supportsPayout}
+                      onChange={(checked) =>
+                        setCapabilities((current) =>
+                          current ? { ...current, supportsPayout: checked } : current,
+                        )
+                      }
+                    />
+                  </div>
+
+                  <Field
+                    id="cfg-priority"
+                    label="Priorité"
+                    hint="Plus la valeur est basse, plus le prestataire est prioritaire."
+                  >
+                    <Input
+                      type="number"
+                      min={1}
+                      value={capabilities.priority}
+                      onChange={(event) =>
+                        setCapabilities((current) =>
+                          current
+                            ? { ...current, priority: Number(event.target.value) || 1 }
+                            : current,
+                        )
+                      }
+                    />
+                  </Field>
+                </div>
+              </DialogBody>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setConfiguring(null)}
+                >
+                  Annuler
+                </Button>
+                <Button type="submit" isLoading={configurationMutation.isPending}>
+                  Enregistrer
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -324,5 +580,27 @@ function DriverBadge({
       <Icon aria-hidden className="size-3" />
       {installed ? "Installé" : "Non installé"}
     </Badge>
+  );
+}
+
+function CapabilityCheckbox({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="accent-primary size-4 cursor-pointer"
+      />
+      {label}
+    </label>
   );
 }

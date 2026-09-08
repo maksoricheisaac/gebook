@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -17,17 +18,17 @@ import {
   type AdminPaymentProviderResponse,
   type AdminProviderConnectionTestResponse,
 } from './admin-payment-providers.service';
+import { UpdateProviderConfigurationDto } from './dto/update-provider-configuration.dto';
 import { UpdateProviderStatusDto } from './dto/update-provider-status.dto';
 
 /**
- * Superadmin → Paramètres → Paiements (brief §9). Lecture seule sur ce qui est
- * dérivé de l'environnement — aucune route ici n'écrit un secret en base : s'il
- * n'existe que dans `.env`, l'interface ne doit pas prétendre le gérer.
+ * Superadmin → Paramètres → Paiements. Les identifiants (`credentials`) sont
+ * chiffrés avant stockage (`EncryptionService`) et jamais renvoyés en clair —
+ * `list()` n'expose que `hasValue` par champ, jamais la valeur elle-même.
  *
- * `status` fait exception : ce n'est pas un secret, c'est une colonne de
- * `payment_providers` qui gate déjà `PaymentsService#resolveProvider` (un
- * prestataire `inactive` est refusé au moment de payer) — l'activer ou le
- * désactiver ne demande donc aucune reconfiguration, juste ce PATCH.
+ * `status` (actif/inactif) reste une colonne ordinaire de `payment_providers`
+ * relue à chaque paiement par `PaymentsService#resolveProvider` — l'activer ou
+ * le désactiver ne demande donc aucune reconfiguration, juste ce PATCH.
  */
 @Controller('admin/payment-providers')
 @UseGuards(AuthGuard, RolesGuard)
@@ -46,6 +47,21 @@ export class AdminPaymentProvidersController {
     @Body() dto: UpdateProviderStatusDto,
   ): Promise<AdminPaymentProviderResponse> {
     return this.providers.updateStatus(code, dto.status);
+  }
+
+  @Put(':code/configuration')
+  setConfiguration(
+    @Param('code') code: string,
+    @Body() dto: UpdateProviderConfigurationDto,
+  ): Promise<AdminPaymentProviderResponse> {
+    return this.providers.setConfiguration(code, dto);
+  }
+
+  @Put(':code/default')
+  setDefault(
+    @Param('code') code: string,
+  ): Promise<AdminPaymentProviderResponse> {
+    return this.providers.setDefault(code);
   }
 
   @Post(':code/test-connection')

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Prisma } from '../../../generated/prisma/client';
 import { fromMinorUnits, toMinorUnits } from '../money';
+import { ProviderConfigService } from '../provider-config.service';
 import type {
   ConnectionTestResult,
   DriverCapabilities,
@@ -79,7 +79,7 @@ export class FeexPayPaymentDriver implements PaymentDriver {
     supportsRefund: false,
   };
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly providerConfig: ProviderConfigService) {}
 
   async initialize(request: PaymentInitRequest): Promise<PaymentInitResult> {
     if (!request.customerPhone || !request.channel) {
@@ -94,7 +94,7 @@ export class FeexPayPaymentDriver implements PaymentDriver {
       {
         phoneNumber: request.customerPhone,
         amount: fromMinorUnits(request.amountMinor).toNumber(),
-        shop: this.shopId(),
+        shop: await this.shopId(),
         description: this.sanitizeText(
           `Commande GeBook ${request.orderNumber}`,
         ),
@@ -222,7 +222,7 @@ export class FeexPayPaymentDriver implements PaymentDriver {
   async testConnection(): Promise<ConnectionTestResult> {
     try {
       const response = await this.get<FeexPayBalanceResponse>(
-        `/api/balance/public/getByShop/${this.shopId()}`,
+        `/api/balance/public/getByShop/${await this.shopId()}`,
       );
       if (response.success !== true) {
         return {
@@ -283,16 +283,19 @@ export class FeexPayPaymentDriver implements PaymentDriver {
     return value.replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 100);
   }
 
-  private apiUrl(): string {
-    return this.config.get<string>('FEEXPAY_API_URL') || DEFAULT_API_URL;
+  private async apiUrl(): Promise<string> {
+    return (
+      (await this.providerConfig.getOptional(this.code, 'apiUrl')) ??
+      DEFAULT_API_URL
+    );
   }
 
-  private apiKey(): string {
-    return this.config.getOrThrow<string>('FEEXPAY_API_KEY');
+  private async apiKey(): Promise<string> {
+    return this.providerConfig.get(this.code, 'apiKey');
   }
 
-  private shopId(): string {
-    return this.config.getOrThrow<string>('FEEXPAY_SHOP_ID');
+  private async shopId(): Promise<string> {
+    return this.providerConfig.get(this.code, 'shopId');
   }
 
   private async post<T>(
@@ -315,11 +318,11 @@ export class FeexPayPaymentDriver implements PaymentDriver {
 
     let response: Response;
     try {
-      response = await fetch(`${this.apiUrl()}${path}`, {
+      response = await fetch(`${await this.apiUrl()}${path}`, {
         ...init,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey()}`,
+          Authorization: `Bearer ${await this.apiKey()}`,
         },
         signal: controller.signal,
       });

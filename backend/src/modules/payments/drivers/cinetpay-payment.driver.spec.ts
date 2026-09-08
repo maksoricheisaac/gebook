@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import { CinetPayPaymentDriver } from './cinetpay-payment.driver';
+import { fakeProviderConfig } from './test-support/fake-provider-config';
 
 const SECRET_KEY = 'secret-x-token-de-test';
 const ENV: Record<string, string> = {
@@ -22,7 +23,7 @@ function driver(
       return value;
     },
   } as unknown as ConfigService;
-  return new CinetPayPaymentDriver(config);
+  return new CinetPayPaymentDriver(config, fakeProviderConfig(env));
 }
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {

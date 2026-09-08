@@ -12,7 +12,11 @@ export class AdminApiError extends Error {
   readonly statusCode: number;
   readonly fieldErrors: Record<string, string[]>;
 
-  constructor(statusCode: number, message: string, fieldErrors: Record<string, string[]> = {}) {
+  constructor(
+    statusCode: number,
+    message: string,
+    fieldErrors: Record<string, string[]> = {},
+  ) {
     super(message);
     this.name = "AdminApiError";
     this.statusCode = statusCode;
@@ -21,7 +25,7 @@ export class AdminApiError extends Error {
 }
 
 export interface AdminFetchOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   /** Corps déjà prêt à l'envoi (téléversement) : pas de sérialisation JSON. */
   formData?: FormData;
