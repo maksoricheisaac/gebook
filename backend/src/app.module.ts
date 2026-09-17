@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnvironment } from './config/environment';
 import { PrismaModule } from './prisma/prisma.module';
+import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CommissionsModule } from './modules/commissions/commissions.module';
@@ -37,6 +38,7 @@ import { SystemModule } from './modules/system/system.module';
     TenantsModule,
     SystemModule,
     ContactModule,
+    ActivityLogModule,
   ],
 })
 export class AppModule {}
