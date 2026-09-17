@@ -58,4 +58,16 @@ export class RegisterDto {
     message: 'Vous devez accepter les conditions d’utilisation.',
   })
   acceptTerms!: boolean;
+
+  /**
+   * Présence et validité réellement vérifiées par `TurnstileGuard`, qui
+   * s'exécute avant ce DTO (les guards passent avant les pipes) — `optional`
+   * ici uniquement pour que la validation globale (`forbidNonWhitelisted`) ne
+   * rejette pas le champ envoyé par le formulaire, sans dupliquer le contrôle
+   * ni casser les tests qui appellent ces routes hors `TurnstileGuard`
+   * (désactivé en `NODE_ENV=test`).
+   */
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }

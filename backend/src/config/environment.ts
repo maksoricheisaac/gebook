@@ -62,6 +62,15 @@ const DEVELOPMENT_SETUP_TOKEN = 'jeton-de-developpement-gebook-a-remplacer';
 const DEVELOPMENT_ENCRYPTION_KEY = 'dead'.repeat(16);
 
 /**
+ * Clé secrète de test publique documentée par Cloudflare pour Turnstile :
+ * toujours acceptée par `siteverify`, jamais liée à un compte réel. Sert de
+ * valeur par défaut en développement — même rôle que `DEVELOPMENT_WEBHOOK_SECRET`
+ * — et de repère reconnaissable pour interdire le démarrage en production
+ * avec cette valeur.
+ */
+const DEVELOPMENT_TURNSTILE_SECRET_KEY = '1x0000000000000000000000000000000AA';
+
+/**
  * Variables d'environnement attendues par l'API.
  *
  * Le démarrage échoue si l'une d'elles manque ou est invalide : mieux vaut un refus
@@ -352,16 +361,13 @@ export class Environment {
   CONTACT_RECIPIENT_EMAIL?: string;
 
   // ---------------------------------------------------------------------
-  // CAPTCHA (Cloudflare Turnstile) — préparé pour l'inscription et la
-  // connexion, PAS ENCORE CÂBLÉ (audit pré-production, confirmé par lecture
-  // du code le 2026-09-06) : ces variables ne sont lues nulle part ailleurs
-  // dans le backend, il n'existe aucun widget côté frontend, et aucune des
-  // deux routes ne vérifie de jeton. La friction anti-bot actuelle sur
-  // `/auth/register`/`/auth/login` repose uniquement sur `LoginThrottleService`
-  // (5 tentatives/15 min par IP/e-mail) et la vérification d'adresse e-mail —
-  // pas sur un CAPTCHA. À wirer avant l'ouverture au trafic public réel :
-  // service de vérification côté serveur (appel à l'API Cloudflare
-  // siteverify) + widget Turnstile côté frontend, jamais l'un sans l'autre.
+  // CAPTCHA (Cloudflare Turnstile) — câblé sur l'inscription et la connexion
+  // (`TurnstileGuard`, `TurnstileService`). `TURNSTILE_SECRET_KEY` garde par
+  // défaut la clé secrète de test publique documentée par Cloudflare
+  // (`1x0000000000000000000000000000000AA`, toujours acceptée) : le
+  // développement fonctionne sans compte Cloudflare, même principe que
+  // `DEVELOPMENT_WEBHOOK_SECRET`. Le démarrage en production est refusé tant
+  // qu'elle garde cette valeur (voir `validateEnvironment()`).
   // ---------------------------------------------------------------------
 
   @IsOptional()
@@ -369,9 +375,13 @@ export class Environment {
   TURNSTILE_SITE_KEY?: string;
 
   /** Jamais journalisée, jamais renvoyée par une route Superadmin. */
-  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined
+      ? DEVELOPMENT_TURNSTILE_SECRET_KEY
+      : (value as string),
+  )
   @IsString()
-  TURNSTILE_SECRET_KEY?: string;
+  TURNSTILE_SECRET_KEY: string = DEVELOPMENT_TURNSTILE_SECRET_KEY;
 }
 
 /**
@@ -432,6 +442,16 @@ export function validateEnvironment(raw: Record<string, unknown>): Environment {
       'Configuration refusée : CREDENTIALS_ENCRYPTION_KEY a gardé sa valeur de développement. ' +
         'Les identifiants de prestataire de paiement enregistrés depuis le Superadmin seraient ' +
         'alors déchiffrables par quiconque connaît le dépôt.',
+    );
+  }
+
+  if (
+    environment.NODE_ENV === NodeEnvironment.production &&
+    environment.TURNSTILE_SECRET_KEY === DEVELOPMENT_TURNSTILE_SECRET_KEY
+  ) {
+    throw new Error(
+      'Configuration refusée : TURNSTILE_SECRET_KEY a gardé la clé de test publique de Cloudflare. ' +
+        "L'inscription et la connexion ne seraient alors protégées par aucun CAPTCHA réel.",
     );
   }
 

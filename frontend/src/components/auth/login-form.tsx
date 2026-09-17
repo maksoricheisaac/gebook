@@ -7,6 +7,7 @@ import { Field, FormError } from "@/src/components/ui/field";
 import { Input } from "@/src/components/ui/input";
 import { loginAction, type AuthFormState } from "@/src/lib/auth-actions";
 import { PasswordInput } from "./password-input";
+import { TurnstileWidget } from "./turnstile-widget";
 
 const initialState: AuthFormState = {};
 
@@ -43,6 +44,8 @@ export function LoginForm({ retour }: { retour?: string }) {
       >
         <PasswordInput name="password" autoComplete="current-password" />
       </Field>
+
+      <TurnstileWidget />
 
       <Button type="submit" size="lg" isLoading={pending} className="w-full">
         {pending ? "Connexion en cours…" : "Se connecter"}
