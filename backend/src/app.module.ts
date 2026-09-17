@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { validateEnvironment } from './config/environment';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { NodeEnvironment, validateEnvironment } from './config/environment';
 import { PrismaModule } from './prisma/prisma.module';
 import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -25,6 +27,11 @@ import { SystemModule } from './modules/system/system.module';
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
       validate: validateEnvironment,
     }),
+    // Garde-fou générique (100 req/min par IP) : `LoginThrottleService` reste
+    // l'autorité métier sur register/login/OTP (5/15min), plus stricte. Le
+    // gain net de ce garde global est de couvrir les routes qui n'ont aucune
+    // protection dédiée aujourd'hui — `POST /contact` en tête.
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
     HealthModule,
     AuthModule,
@@ -39,6 +46,16 @@ import { SystemModule } from './modules/system/system.module';
     SystemModule,
     ContactModule,
     ActivityLogModule,
+  ],
+  providers: [
+    // Jamais enregistré en `NODE_ENV=test` : la suite e2e enchaîne des
+    // dizaines de requêtes rapprochées par fichier (même précédent que
+    // `LoginThrottleService`, qui saute déjà sa propre limite en test) — un
+    // garde global actif y produirait des 429 sans rapport avec ce qui est
+    // testé.
+    ...(process.env.NODE_ENV === NodeEnvironment.test
+      ? []
+      : [{ provide: APP_GUARD, useClass: ThrottlerGuard }]),
   ],
 })
 export class AppModule {}
