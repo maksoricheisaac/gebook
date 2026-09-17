@@ -283,6 +283,7 @@ export class AdminAuthorsService {
       action: 'admin.author.create',
       entityType: 'author',
       entityId: author.id,
+      tenantId,
     });
 
     return author;
@@ -363,6 +364,7 @@ export class AdminAuthorsService {
       action: 'admin.author.update',
       entityType: 'author',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
 
     return this.findOne(id, admin, tenant);
@@ -399,6 +401,7 @@ export class AdminAuthorsService {
       action: 'admin.author.delete',
       entityType: 'author',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
   }
 
@@ -432,6 +435,7 @@ export class AdminAuthorsService {
       action: 'admin.author.photo',
       entityType: 'author',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
 
     return author;

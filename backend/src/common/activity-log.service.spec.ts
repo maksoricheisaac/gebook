@@ -86,3 +86,47 @@ describe('ActivityLogService.list', () => {
     );
   });
 });
+
+describe('ActivityLogService.recordForOrder', () => {
+  it('écrit une ligne par tenant distinct présent dans la commande (panier multi-tenant)', async () => {
+    const executeRaw = jest.fn().mockResolvedValue(undefined);
+    const service = new ActivityLogService({
+      $executeRaw: executeRaw,
+    } as never);
+
+    await service.recordForOrder(
+      {
+        userId: admin.id,
+        action: 'order.create',
+        entityType: 'order',
+        entityId: 'order-1',
+      },
+      [
+        { tenantId: 'tenant-a' },
+        { tenantId: 'tenant-b' },
+        { tenantId: 'tenant-a' },
+      ],
+    );
+
+    expect(executeRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it("n'écrit rien si la commande n'a aucune ligne", async () => {
+    const executeRaw = jest.fn().mockResolvedValue(undefined);
+    const service = new ActivityLogService({
+      $executeRaw: executeRaw,
+    } as never);
+
+    await service.recordForOrder(
+      {
+        userId: admin.id,
+        action: 'order.create',
+        entityType: 'order',
+        entityId: 'order-1',
+      },
+      [],
+    );
+
+    expect(executeRaw).not.toHaveBeenCalled();
+  });
+});

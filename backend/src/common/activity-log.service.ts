@@ -16,6 +16,8 @@ export interface ActivityLogEntry {
   entityId?: string;
   /** Motif saisi par l'auteur de l'action, lorsqu'il en existe un (remboursement). */
   description?: string;
+  /** Tenant concerné par l'action — `null`/absent pour une action de compte ou plateforme, jamais deviné. */
+  tenantId?: string | null;
 }
 
 /**
@@ -39,7 +41,7 @@ export class ActivityLogService {
 
   async record(entry: ActivityLogEntry): Promise<void> {
     await this.prisma.$executeRaw`
-      INSERT INTO activity_logs (id, user_id, action, entity_type, entity_id, description, created_at)
+      INSERT INTO activity_logs (id, user_id, action, entity_type, entity_id, description, tenant_id, created_at)
       VALUES (
         ${randomUUID()}::uuid,
         ${entry.userId}::uuid,
@@ -47,9 +49,27 @@ export class ActivityLogService {
         ${entry.entityType ?? null},
         ${entry.entityId ?? null}::uuid,
         ${entry.description ?? null},
+        ${entry.tenantId ?? null}::uuid,
         now()
       )
     `;
+  }
+
+  /**
+   * Une commande peut contenir des lignes de plusieurs tenants (panier
+   * multi-tenant) : une seule entrée `tenantId: null` la rendrait invisible à
+   * chacun d'eux (policy RLS `activity_logs_select`, qui exige `tenant_id
+   * IS NOT NULL`). Une ligne de journal par tenant réellement concerné,
+   * plutôt qu'une portée unique artificielle.
+   */
+  async recordForOrder(
+    entry: Omit<ActivityLogEntry, 'tenantId'>,
+    items: { tenantId: string }[],
+  ): Promise<void> {
+    const tenantIds = [...new Set(items.map((item) => item.tenantId))];
+    await Promise.all(
+      tenantIds.map((tenantId) => this.record({ ...entry, tenantId })),
+    );
   }
 
   /**

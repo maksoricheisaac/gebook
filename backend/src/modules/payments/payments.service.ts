@@ -119,7 +119,10 @@ export class PaymentsService {
     const order = await this.prisma.withRlsContext(ctx, (tx) =>
       tx.order.findUnique({
         where: { orderNumber: dto.orderNumber },
-        include: { user: { select: { email: true } } },
+        include: {
+          user: { select: { email: true } },
+          items: { select: { tenantId: true } },
+        },
       }),
     );
 
@@ -224,12 +227,15 @@ export class PaymentsService {
       return updatedPayment;
     });
 
-    await this.activityLog.record({
-      userId: user.id,
-      action: 'payment.initialize',
-      entityType: 'payment',
-      entityId: payment.id,
-    });
+    await this.activityLog.recordForOrder(
+      {
+        userId: user.id,
+        action: 'payment.initialize',
+        entityType: 'payment',
+        entityId: payment.id,
+      },
+      order.items,
+    );
 
     return toPaymentResponse(updated, provider.code);
   }
@@ -508,13 +514,16 @@ export class PaymentsService {
       });
     });
 
-    await this.activityLog.record({
-      userId: admin.id,
-      action: 'admin.order.refund',
-      entityType: 'order',
-      entityId: order.id,
-      description: dto.reason,
-    });
+    await this.activityLog.recordForOrder(
+      {
+        userId: admin.id,
+        action: 'admin.order.refund',
+        entityType: 'order',
+        entityId: order.id,
+        description: dto.reason,
+      },
+      updated.items,
+    );
 
     return toOrderResponse(updated);
   }

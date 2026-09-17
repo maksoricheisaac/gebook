@@ -129,6 +129,7 @@ export class TeamService {
       action: 'admin.team.invite',
       entityType: 'tenant_member',
       entityId: member.id,
+      tenantId,
     });
 
     return toTeamMemberResponse(member);
@@ -185,6 +186,7 @@ export class TeamService {
       action: 'admin.team.update_role',
       entityType: 'tenant_member',
       entityId: memberId,
+      tenantId,
     });
 
     return toTeamMemberResponse(updated);
@@ -232,6 +234,7 @@ export class TeamService {
       action: 'admin.team.remove',
       entityType: 'tenant_member',
       entityId: memberId,
+      tenantId,
     });
   }
 }

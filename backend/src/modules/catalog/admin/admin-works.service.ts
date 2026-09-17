@@ -425,6 +425,7 @@ export class AdminWorksService {
       action: 'admin.work.create',
       entityType: 'work',
       entityId: work.id,
+      tenantId: work.tenantId,
     });
 
     return work;
@@ -519,6 +520,7 @@ export class AdminWorksService {
       action: 'admin.work.update',
       entityType: 'work',
       entityId: work.id,
+      tenantId: work.tenantId,
     });
 
     return work;
@@ -572,6 +574,7 @@ export class AdminWorksService {
       action: 'admin.work.delete',
       entityType: 'work',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
   }
 
@@ -705,6 +708,7 @@ export class AdminWorksService {
       action: dto.featured ? 'admin.work.feature' : 'admin.work.unfeature',
       entityType: 'work',
       entityId: id,
+      tenantId: work.tenantId,
     });
 
     return work;
@@ -757,6 +761,7 @@ export class AdminWorksService {
       action: 'admin.work.cover',
       entityType: 'work',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
 
     return work;
@@ -791,6 +796,7 @@ export class AdminWorksService {
       action: 'admin.work.format.create',
       entityType: 'work_format',
       entityId: format.id,
+      tenantId: tenant.tenantId,
     });
 
     return format;
@@ -817,6 +823,7 @@ export class AdminWorksService {
       action: 'admin.work.format.update',
       entityType: 'work_format',
       entityId: format.id,
+      tenantId: tenant.tenantId,
     });
 
     return format;
@@ -842,6 +849,7 @@ export class AdminWorksService {
       action: 'admin.work.format.delete',
       entityType: 'work_format',
       entityId: formatId,
+      tenantId: tenant.tenantId,
     });
   }
 
@@ -904,6 +912,7 @@ export class AdminWorksService {
       action: 'admin.work.format.file',
       entityType: 'work_file',
       entityId: workFile.id,
+      tenantId: tenant.tenantId,
     });
 
     return {

@@ -106,12 +106,15 @@ export class OrdersService {
       totalAmount: subtotal,
     });
 
-    await this.activityLog.record({
-      userId,
-      action: 'order.create',
-      entityType: 'order',
-      entityId: order.id,
-    });
+    await this.activityLog.recordForOrder(
+      {
+        userId,
+        action: 'order.create',
+        entityType: 'order',
+        entityId: order.id,
+      },
+      itemsData,
+    );
 
     return toOrderResponse(order);
   }
@@ -196,12 +199,15 @@ export class OrdersService {
       },
     );
 
-    await this.activityLog.record({
-      userId: user.id,
-      action: 'order.cancel',
-      entityType: 'order',
-      entityId: updated.id,
-    });
+    await this.activityLog.recordForOrder(
+      {
+        userId: user.id,
+        action: 'order.cancel',
+        entityType: 'order',
+        entityId: updated.id,
+      },
+      updated.items,
+    );
 
     return toOrderResponse(updated);
   }
@@ -342,12 +348,15 @@ export class OrdersService {
       });
     });
 
-    await this.activityLog.record({
-      userId: adminId,
-      action: 'admin.order.status',
-      entityType: 'order',
-      entityId: id,
-    });
+    await this.activityLog.recordForOrder(
+      {
+        userId: adminId,
+        action: 'admin.order.status',
+        entityType: 'order',
+        entityId: id,
+      },
+      updated.items,
+    );
 
     return toOrderResponse(updated);
   }
