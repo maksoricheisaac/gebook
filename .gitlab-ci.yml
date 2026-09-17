@@ -1,0 +1,80 @@
+# CI de validation — lint, typecheck, tests. Pas de build ni de publication
+# d'image : le déploiement reste manuel via Dokploy (prod) ou docker compose
+# (staging), voir docs/DEPLOYMENT.md.
+#
+# backend/ et frontend/ sont deux projets pnpm indépendants (chacun son
+# propre pnpm-lock.yaml/pnpm-workspace.yaml, pas de workspace unifié à la
+# racine) : deux jobs distincts, chacun avec son propre cache.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+image: node:22-bookworm
+
+variables:
+  PNPM_STORE_DIR: "$CI_PROJECT_DIR/.pnpm-store"
+
+.pnpm_setup:
+  before_script:
+    - corepack enable
+    - pnpm config set store-dir $PNPM_STORE_DIR
+
+backend:verify:
+  stage: test
+  services:
+    - name: postgres:17-bookworm
+      alias: postgres
+  variables:
+    POSTGRES_USER: gebook_admin
+    POSTGRES_PASSWORD: gebook_admin_password
+    POSTGRES_DB: gebook_db
+    APP_DB_USER: gebook_user
+    APP_DB_PASSWORD: gebook_user_password
+    # Rôle applicatif (voir before_script ci-dessous) : mêmes noms de variable
+    # que docker-compose.yml/docker-compose.staging.yml, assemblés depuis les
+    # mêmes valeurs — une seule source de vérité sur la forme de l'URL.
+    DATABASE_URL: "postgresql://gebook_user:gebook_user_password@postgres:5432/gebook_db?schema=public"
+    ADMIN_DATABASE_URL: "postgresql://gebook_admin:gebook_admin_password@postgres:5432/gebook_db?schema=public"
+    CORS_ORIGINS: "http://localhost:3000"
+  cache:
+    key:
+      files:
+        - backend/pnpm-lock.yaml
+    paths:
+      - $PNPM_STORE_DIR
+  before_script:
+    - !reference [.pnpm_setup, before_script]
+    # Même script que docker/postgres/init/01-app-role.sh (jamais dupliqué en
+    # SQL inline) : c'est ce rôle, sans SUPERUSER ni BYPASSRLS, qui fait
+    # réellement tenir l'isolation multi-tenant testée par la suite e2e.
+    - apt-get update && apt-get install -y --no-install-recommends postgresql-client
+    - PGPASSWORD=$POSTGRES_PASSWORD PGHOST=postgres bash docker/postgres/init/01-app-role.sh
+  script:
+    - cd backend
+    - pnpm install --frozen-lockfile
+    - pnpm exec prisma generate
+    - pnpm lint
+    - pnpm exec tsc --noEmit
+    - pnpm test
+    - pnpm run db:deploy
+    - pnpm test:e2e
+
+frontend:verify:
+  stage: test
+  cache:
+    key:
+      files:
+        - frontend/pnpm-lock.yaml
+    paths:
+      - $PNPM_STORE_DIR
+  before_script:
+    - !reference [.pnpm_setup, before_script]
+  script:
+    - cd frontend
+    - pnpm install --frozen-lockfile
+    - pnpm lint
+    - pnpm exec tsc --noEmit
+    - pnpm build
