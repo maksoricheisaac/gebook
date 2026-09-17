@@ -1,5 +1,12 @@
 # Stockage des fichiers sur Cloudflare R2
 
+R2 est le pilote de stockage **par défaut** des piles Docker de ce dépôt
+(`docker-compose.yml` en production, `docker-compose.staging.yml` en
+staging — `STORAGE_DRIVER=r2`), pas une option parmi d'autres : sans les
+quatre identifiants ci-dessous, le conteneur `backend` refuse de démarrer.
+`local` reste disponible comme dégradé de secours (`STORAGE_DRIVER=local`,
+volume Docker sans redondance), à réserver au développement.
+
 Ce guide couvre uniquement ce que **vous** devez faire côté Cloudflare — tout
 le reste (le pilote qui parle à R2, le choix entre disque local et R2, la
 diffusion des fichiers publics) est déjà en place dans le code

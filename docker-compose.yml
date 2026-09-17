@@ -220,12 +220,15 @@ services:
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
       # --- Stockage des fichiers ---------------------------------------------
-      # local (par défaut, le volume `backend-storage` ci-dessous) | r2. Guide
-      # complet côté Cloudflare : docs/STORAGE_R2_SETUP.md. Toutes les valeurs
-      # R2 sont obligatoires si STORAGE_DRIVER=r2 — le démarrage du conteneur
-      # refuse alors sans elles (validateEnvironment()), jamais un stockage à
+      # r2 (Cloudflare R2, par défaut) | local (volume `backend-storage`
+      # ci-dessous, dégradé de secours sans redondance). Guide complet côté
+      # Cloudflare : docs/STORAGE_R2_SETUP.md. Les quatre identifiants R2
+      # restent optionnels ici (pas de `:?` — on ne peut pas les rendre
+      # obligatoires seulement « si STORAGE_DRIVER=r2 » au niveau de Compose) :
+      # c'est `validateEnvironment()`, côté application, qui refuse le
+      # démarrage sans eux tant que STORAGE_DRIVER=r2, jamais un stockage à
       # moitié configuré qui échoue au premier téléversement.
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-r2}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
@@ -245,10 +248,14 @@ services:
       # défaut depuis FRONTEND_DOMAIN, déjà obligatoire ci-dessus.
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-https://${FRONTEND_DOMAIN}}
       # --- CAPTCHA (Cloudflare Turnstile) -------------------------------------
-      # Optionnelles au niveau du démarrage, mais sans TURNSTILE_SECRET_KEY les
-      # routes d'inscription/connexion refusent toute tentative (503).
+      # TURNSTILE_SECRET_KEY garde par défaut la clé de test publique de
+      # Cloudflare si absente ici — mais le démarrage en production est refusé
+      # tant qu'elle n'a pas été remplacée par la vraie clé secrète du site
+      # (validateEnvironment()). TURNSTILE_SITE_KEY (publique) doit aussi être
+      # passée en `build.args` au service `frontend` ci-dessous : elle est
+      # figée dans le bundle au build, pas lue à l'exécution.
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY est obligatoire en production (clé secrète Turnstile du site, tableau de bord Cloudflare)}
     volumes:
       # `LocalStorageDriver` écrit sous `process.cwd()/storage` — pertinent
       # uniquement si STORAGE_DRIVER=local (par défaut) ; sans objet une fois
@@ -296,6 +303,11 @@ services:
         # `app/api/*`, exécutés côté serveur Next.js. Le trafic serveur-à-serveur
         # reste ainsi sur le réseau interne au lieu de ressortir par Traefik.
         NEXT_PUBLIC_API_URL: ${INTERNAL_API_URL:-http://backend:3001}
+        # Publique par nature (visible dans le bundle navigateur), distincte
+        # de TURNSTILE_SECRET_KEY ci-dessus. Obligatoire ici : sans elle,
+        # l'image reste utilisable mais retombe sur la clé de test Cloudflare
+        # (voir frontend/Dockerfile), jamais souhaitable en production.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY est obligatoire en production (clé site Turnstile, tableau de bord Cloudflare)}
     restart: unless-stopped
     depends_on:
       backend:
