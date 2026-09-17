@@ -2,12 +2,16 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buildRlsContext } from '../../prisma/rls-context';
 import { ActivityLogService } from '../../common/activity-log.service';
+import { escapeHtml, renderEmailLayout } from '../mail/email-layout';
+import { MailService, MailUnavailableError } from '../mail/mail.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { TENANT_MANAGEMENT_ROLES } from './tenant-context';
 import type { TenantContext } from './tenant-context';
@@ -62,9 +66,13 @@ function requireTenantId(tenant: TenantContext): string {
 
 @Injectable()
 export class TeamService {
+  private readonly logger = new Logger(TeamService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityLog: ActivityLogService,
+    private readonly mail: MailService,
+    private readonly config: ConfigService,
   ) {}
 
   async list(
@@ -97,7 +105,7 @@ export class TeamService {
     }
     const tenantId = requireTenantId(tenant);
 
-    const member = await this.prisma
+    const { member, tenantName } = await this.prisma
       .withRlsContext(buildRlsContext(admin, tenantId), async (tx) => {
         const user = await tx.user.findUnique({ where: { email: dto.email } });
         if (!user) {
@@ -110,7 +118,7 @@ export class TeamService {
         // statut prévu par le schéma. La personne devient réellement membre
         // à l'acceptation (`TenantsService.acceptInvitation`), pas à
         // l'invitation elle-même.
-        return tx.tenantMember.create({
+        const created = await tx.tenantMember.create({
           data: {
             tenantId,
             userId: user.id,
@@ -119,6 +127,13 @@ export class TeamService {
           },
           include: memberInclude,
         });
+
+        const tenantRecord = await tx.tenant.findUniqueOrThrow({
+          where: { id: tenantId },
+          select: { name: true },
+        });
+
+        return { member: created, tenantName: tenantRecord.name };
       })
       .catch((error: unknown) => {
         throw translateMemberError(error);
@@ -132,7 +147,63 @@ export class TeamService {
       tenantId,
     });
 
+    await this.sendInviteEmail(member, tenantName);
+
     return toTeamMemberResponse(member);
+  }
+
+  /**
+   * L'adhésion `invited` est déjà écrite en base et reste découvrable dans
+   * `/mon-espace` sans dépendre de cet e-mail (l'acceptation est authentifiée
+   * par session, pas par un jeton mailé — voir `TenantsService.acceptInvitation`).
+   * Contrairement à `EmailVerificationService` (où l'e-mail EST l'action), un
+   * échec SMTP ne doit donc pas faire échouer l'invitation déjà réussie :
+   * journalisé, jamais renvoyé à l'appelant.
+   */
+  private async sendInviteEmail(
+    member: Prisma.TenantMemberGetPayload<{ include: typeof memberInclude }>,
+    tenantName: string,
+  ): Promise<void> {
+    const frontendUrl = this.frontendUrl();
+    const firstName = escapeHtml(member.user.firstName);
+    const tenant = escapeHtml(tenantName);
+
+    const html = renderEmailLayout({
+      previewText: `Vous avez été invité(e) à rejoindre ${tenantName} sur GeBook.`,
+      heading: `Rejoignez ${tenant} sur GeBook`,
+      paragraphs: [
+        `Bonjour ${firstName},`,
+        `Vous avez été invité(e) à rejoindre l'équipe de « ${tenant} » sur GeBook. Connectez-vous à votre compte pour accepter cette invitation depuis votre espace.`,
+      ],
+      ctaLabel: 'Voir l’invitation',
+      ctaUrl: `${frontendUrl}/mon-espace`,
+      logoUrl: `${frontendUrl}/logo_gebook.png`,
+    });
+
+    try {
+      await this.mail.send({
+        to: member.user.email,
+        subject: `Invitation à rejoindre ${tenantName} — GeBook`,
+        html,
+      });
+    } catch (error) {
+      if (error instanceof MailUnavailableError) {
+        this.logger.warn(
+          `Invitation créée mais e-mail non envoyé à ${member.user.email} : ${error.message}`,
+        );
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private frontendUrl(): string {
+    const configured = this.config.get<string>('APP_PUBLIC_URL');
+    if (configured) {
+      return configured.replace(/\/$/, '');
+    }
+    const corsOrigins = this.config.get<string[]>('CORS_ORIGINS') ?? [];
+    return (corsOrigins[0] ?? 'http://localhost:3000').replace(/\/$/, '');
   }
 
   async updateRole(
