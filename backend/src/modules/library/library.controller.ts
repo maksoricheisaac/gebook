@@ -75,3 +75,24 @@ export function sendAsAttachment(
 
   return new StreamableFile(file.buffer);
 }
+
+/**
+ * `Content-Disposition: inline` : réservé aux extraits gratuits (brief §2)
+ * — un visiteur doit pouvoir lire l'extrait directement dans son navigateur
+ * plutôt que se voir imposer un téléchargement pour une simple lecture.
+ * Jamais utilisée pour un fichier acheté (`sendAsAttachment` ci-dessus,
+ * inchangée) : un extrait est public par nature, un achat ne l'est pas.
+ */
+export function sendInline(
+  file: DownloadableFile,
+  response: Response,
+): StreamableFile {
+  response.set({
+    'Content-Type': file.mimeType,
+    'Content-Disposition': `inline; filename="${file.fileName}"`,
+    'Content-Length': String(file.buffer.length),
+    'Cache-Control': 'public, max-age=3600',
+  });
+
+  return new StreamableFile(file.buffer);
+}

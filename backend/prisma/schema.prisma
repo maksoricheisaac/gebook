@@ -521,6 +521,9 @@ model Author {
   city           String?      @db.VarChar(100)
   publicEmail    String?      @map("public_email") @db.VarChar(190)
   publicPhone    String?      @map("public_phone") @db.VarChar(30)
+  /// Réseaux sociaux publics de l'auteur (clé = plateforme, valeur = URL), sur le
+  /// même principe que `Tenant.socialLinks` — affichés sur la page auteur publique.
+  socialLinks    Json?        @map("social_links")
   payoutPhone    String?      @map("payout_phone") @db.VarChar(30)
   payoutMethod   String?      @map("payout_method") @db.VarChar(100)
   status         AuthorStatus @default(draft)

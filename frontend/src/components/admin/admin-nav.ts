@@ -1,5 +1,6 @@
 import {
   BookText,
+  Coins,
   FolderTree,
   LayoutDashboard,
   ListChecks,
@@ -83,6 +84,21 @@ const ADMIN_NAV: AdminNavItem[] = [
     label: "Commissions",
     icon: Percent,
     platformOnly: true,
+    group: "Opérations",
+  },
+  {
+    href: "/admin/modele-economique",
+    label: "Modèle économique",
+    icon: Coins,
+    platformOnly: true,
+    group: "Opérations",
+  },
+  {
+    href: "/admin/retraits",
+    label: "Retraits",
+    icon: Wallet,
+    platformOnly: true,
+    financeOnly: true,
     group: "Opérations",
   },
   { href: "/admin/team", label: "Équipe", icon: Users, group: "Opérations" },

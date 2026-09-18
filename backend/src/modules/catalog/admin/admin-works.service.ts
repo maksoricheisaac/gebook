@@ -25,6 +25,7 @@ import { buildRlsContext } from '../../../prisma/rls-context';
 import type { RlsContext } from '../../../prisma/rls-context';
 import type { AuthenticatedUser } from '../../auth/auth.types';
 import { ActivityLogService } from '../../../common/activity-log.service';
+import { TransactionalMailService } from '../../mail/transactional-mail.service';
 import { TENANT_CATALOG_WRITE_ROLES } from '../../tenants/tenant-context';
 import type { TenantContext } from '../../tenants/tenant-context';
 import { STORAGE_DRIVER, type StorageDriver } from '../../files/storage-driver';
@@ -259,6 +260,7 @@ export class AdminWorksService {
     private readonly prisma: PrismaService,
     private readonly activityLog: ActivityLogService,
     private readonly uploadValidator: UploadValidatorService,
+    private readonly transactionalMail: TransactionalMailService,
     @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
   ) {}
 
@@ -437,7 +439,10 @@ export class AdminWorksService {
     admin: AuthenticatedUser,
     tenant: TenantContext,
   ): Promise<WorkWithFormats> {
-    const { publicationDate, translations, ...rest } = dto;
+    const { publicationDate, translations, statusReason, ...rest } = dto;
+
+    let previousStatus: WorkStatus | undefined;
+    let notifyAuthor: { email: string; firstName: string } | null = null;
 
     const work = await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
@@ -446,6 +451,7 @@ export class AdminWorksService {
           id,
           tenant.tenantId,
         );
+        previousStatus = existing.status;
         const permission = assertCanWriteWork(
           tenant,
           { tenantId: existing.tenantId, authorUserId: existing.author.userId },
@@ -457,6 +463,20 @@ export class AdminWorksService {
           existing.status,
           rest.status,
         );
+
+        if (
+          rest.status &&
+          rest.status !== existing.status &&
+          existing.author.userId &&
+          (rest.status === WorkStatus.submitted ||
+            rest.status === WorkStatus.approved ||
+            rest.status === WorkStatus.rejected)
+        ) {
+          notifyAuthor = await tx.user.findUnique({
+            where: { id: existing.author.userId },
+            select: { email: true, firstName: true },
+          });
+        }
 
         const visibility = resolveVisibility(rest.status, rest.visibility);
         const updated = await tx.work.update({
@@ -521,7 +541,26 @@ export class AdminWorksService {
       entityType: 'work',
       entityId: work.id,
       tenantId: work.tenantId,
+      description:
+        work.status === WorkStatus.rejected ? statusReason : undefined,
     });
+
+    if (notifyAuthor && previousStatus !== work.status) {
+      if (work.status === WorkStatus.submitted) {
+        await this.transactionalMail.sendWorkSubmitted(
+          notifyAuthor,
+          work.title,
+        );
+      } else if (work.status === WorkStatus.approved) {
+        await this.transactionalMail.sendWorkApproved(notifyAuthor, work.title);
+      } else if (work.status === WorkStatus.rejected) {
+        await this.transactionalMail.sendWorkRejected(
+          notifyAuthor,
+          work.title,
+          statusReason ?? 'Aucun motif détaillé n’a été fourni.',
+        );
+      }
+    }
 
     return work;
   }

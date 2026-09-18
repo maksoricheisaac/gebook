@@ -5,6 +5,7 @@ import { Globe, Link2 } from "lucide-react";
 
 import { AuthorCard } from "@/src/components/catalog/author-card";
 import { BookGrid } from "@/src/components/catalog/book-grid";
+import { ShareButton, WhatsAppShareLink } from "@/src/components/catalog/share-button";
 import { Breadcrumb, Container, SectionHeader } from "@/src/components/layout/page-shell";
 import { RichText } from "@/src/components/ui/rich-text";
 import { ApiError } from "@/src/lib/api";
@@ -93,8 +94,13 @@ export default async function TenantStorefrontPage(props: PageProps<"/espaces/[s
 
           <RichText html={tenant.description} className="text-foreground/85 mt-6" />
 
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <ShareButton title={tenant.name} path={`/espaces/${tenant.slug}`} />
+            <WhatsAppShareLink title={tenant.name} path={`/espaces/${tenant.slug}`} />
+          </div>
+
           {(tenant.website || socialEntries.length > 0) && (
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               {tenant.website && (
                 <ExternalLink href={tenant.website} label="Site web" icon={Globe} />
               )}

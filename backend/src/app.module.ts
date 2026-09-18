@@ -14,7 +14,9 @@ import { HealthModule } from './modules/health/health.module';
 import { LibraryModule } from './modules/library/library.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { PayoutsModule } from './modules/payouts/payouts.module';
 import { SetupModule } from './modules/setup/setup.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { SystemModule } from './modules/system/system.module';
 
@@ -40,8 +42,10 @@ import { SystemModule } from './modules/system/system.module';
     CatalogModule,
     OrdersModule,
     PaymentsModule,
+    PayoutsModule,
     LibraryModule,
     CommissionsModule,
+    SettingsModule,
     TenantsModule,
     SystemModule,
     ContactModule,

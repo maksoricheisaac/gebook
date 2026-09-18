@@ -29,6 +29,7 @@ import { ActivityLogService } from '../../common/activity-log.service';
 import { NodeEnvironment } from '../../config/environment';
 import { CommissionsService } from '../commissions/commissions.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
 import {
   toOrderResponse,
   type OrderResponse,
@@ -98,6 +99,7 @@ export class PaymentsService {
     private readonly fakeDriver: FakePaymentDriver,
     private readonly activityLog: ActivityLogService,
     private readonly commissions: CommissionsService,
+    private readonly transactionalMail: TransactionalMailService,
   ) {}
 
   /**
@@ -377,8 +379,77 @@ export class PaymentsService {
     // lecteur et l'événement : un paiement confirmé sans droit d'accès est un
     // client mécontent (règle n° 11).
     await this.applyOutcome(event.id, payment, payment.order, parsed);
+    await this.notifyPaymentOutcome(payment.order.id, parsed.outcome);
 
     return { received: true };
+  }
+
+  /**
+   * E-mails déclenchés une seule fois par appel, juste après que
+   * `applyOutcome` a validé sa transaction — `handleWebhook` a déjà écarté
+   * plus haut (ligne « déjà confirmé », contrainte unique de `PaymentEvent`)
+   * toute notification répétée du même événement, donc cet appel n'est
+   * jamais rejoué pour un même paiement.
+   */
+  private async notifyPaymentOutcome(
+    orderId: string,
+    outcome: PaymentOutcome,
+  ): Promise<void> {
+    const order = await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
+      tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          user: { select: { email: true, firstName: true } },
+          items: { select: { id: true, workTitle: true } },
+        },
+      }),
+    );
+    if (!order) return;
+
+    const buyer = order.user;
+    const orderSummary = {
+      orderNumber: order.orderNumber,
+      totalAmount: order.totalAmount.toFixed(2),
+      currency: 'XAF',
+    };
+
+    if (outcome === 'successful') {
+      await this.transactionalMail.sendPaymentConfirmation(buyer, orderSummary);
+
+      const digitalTitles = order.items.map((item) => item.workTitle);
+      if (digitalTitles.length > 0) {
+        await this.transactionalMail.sendDigitalBooksAvailable(
+          buyer,
+          digitalTitles,
+        );
+      }
+
+      const sales = await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
+        tx.saleDistribution.findMany({
+          where: { orderItemId: { in: order.items.map((item) => item.id) } },
+          include: {
+            author: {
+              select: {
+                penName: true,
+                user: { select: { email: true, firstName: true } },
+              },
+            },
+            orderItem: { select: { workTitle: true } },
+          },
+        }),
+      );
+      for (const sale of sales) {
+        if (!sale.author.user) continue;
+        await this.transactionalMail.sendNewSale(
+          sale.author.user,
+          sale.orderItem.workTitle,
+          sale.authorNetAmount.toFixed(2),
+          'XAF',
+        );
+      }
+    } else {
+      await this.transactionalMail.sendPaymentFailed(buyer, orderSummary);
+    }
   }
 
   /**
@@ -524,6 +595,18 @@ export class PaymentsService {
       },
       updated.items,
     );
+
+    const buyer = await this.prisma.user.findUnique({
+      where: { id: updated.userId },
+      select: { email: true, firstName: true },
+    });
+    if (buyer) {
+      await this.transactionalMail.sendRefundCompleted(buyer, {
+        orderNumber: updated.orderNumber,
+        totalAmount: refundedAmount.toFixed(2),
+        currency: 'XAF',
+      });
+    }
 
     return toOrderResponse(updated);
   }

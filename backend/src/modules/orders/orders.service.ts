@@ -12,6 +12,7 @@ import { buildRlsContext, type RlsContext } from '../../prisma/rls-context';
 import { ActivityLogService } from '../../common/activity-log.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { publiclyVisible } from '../catalog/works.service';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
 import type {
   CreateOrderDto,
   CreateOrderItemDto,
@@ -53,6 +54,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityLog: ActivityLogService,
+    private readonly transactionalMail: TransactionalMailService,
   ) {}
 
   async create(dto: CreateOrderDto, userId: string): Promise<OrderResponse> {
@@ -115,6 +117,18 @@ export class OrdersService {
       },
       itemsData,
     );
+
+    const buyer = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (buyer) {
+      await this.transactionalMail.sendOrderConfirmation(buyer, {
+        orderNumber: order.orderNumber,
+        totalAmount: order.totalAmount.toFixed(2),
+        currency: 'XAF',
+      });
+    }
 
     return toOrderResponse(order);
   }

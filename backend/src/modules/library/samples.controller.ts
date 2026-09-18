@@ -10,7 +10,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { sendAsAttachment } from './library.controller';
+import { sendInline } from './library.controller';
 import { LibraryService } from './library.service';
 import { SampleThrottleService } from './sample-throttle.service';
 
@@ -43,9 +43,6 @@ export class SamplesController {
       );
     }
 
-    return sendAsAttachment(
-      await this.library.sample(slug, formatId),
-      response,
-    );
+    return sendInline(await this.library.sample(slug, formatId), response);
   }
 }
