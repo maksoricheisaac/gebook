@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { Eye } from "lucide-react";
 
+import { BookPreview } from "@/src/components/preview/book-preview";
 import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
 import { formatPrice } from "@/src/lib/format";
 import type { WorkSummary } from "@/src/lib/catalog";
 import { cn } from "@/src/lib/utils";
@@ -35,17 +38,36 @@ export function BookCard({
   className?: string;
 }) {
   const price = work.priceFrom ? formatPrice(work.priceFrom) : null;
+  const hasPreviewableFormat = work.formats.some((format) => format.formatType === "pdf");
 
   return (
     <article className={cn("group relative flex flex-col", className)}>
-      <BookCover
-        title={work.title}
-        authorName={work.author.penName}
-        coverPath={work.coverPath}
-        priority={priority}
-        sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 220px"
-        className="transition-[transform,box-shadow] duration-[--duration-base] ease-[--ease-out] group-hover:-translate-y-1 group-hover:shadow-lifted"
-      />
+      <div className="relative">
+        <BookCover
+          title={work.title}
+          authorName={work.author.penName}
+          coverPath={work.coverPath}
+          priority={priority}
+          sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 220px"
+          className="transition-[transform,box-shadow] duration-[--duration-base] ease-[--ease-out] group-hover:-translate-y-1 group-hover:shadow-lifted"
+        />
+        {hasPreviewableFormat && (
+          <BookPreview
+            slug={work.slug}
+            trigger={
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="absolute top-2 right-2 z-10 size-8 shadow-lifted"
+              >
+                <Eye aria-hidden className="size-3.5" />
+                <span className="sr-only">Aperçu de {work.title}</span>
+              </Button>
+            }
+          />
+        )}
+      </div>
 
       <div className="mt-4 flex flex-1 flex-col gap-1.5">
         {work.category && (

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
+  BookOpenCheck,
   BookText,
   CheckCircle2,
   Eye,
@@ -26,6 +27,7 @@ import {
   AdminTablePanel,
 } from "@/src/components/admin/admin-page";
 import { DataTableActionMenu } from "@/src/components/admin/data-table-action-menu";
+import { BookPreview } from "@/src/components/preview/book-preview";
 import { ConfirmDialog } from "@/src/components/ui/confirm-dialog";
 import { IdCell } from "@/src/components/admin/id-cell";
 import { Badge } from "@/src/components/ui/badge";
@@ -122,6 +124,7 @@ export function WorkList() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [toDelete, setToDelete] = useState<WorkListItem | null>(null);
   const [toView, setToView] = useState<WorkListItem | null>(null);
+  const [toPreview, setToPreview] = useState<string | null>(null);
 
   // Un changement de recherche doit revenir à la page 1 : rester en page 4
   // d'une recherche qui n'a plus que 2 pages de résultats afficherait une
@@ -325,6 +328,11 @@ export function WorkList() {
                               onSelect: () => setToView(work),
                             },
                             {
+                              label: "Prévisualiser",
+                              icon: BookOpenCheck,
+                              onSelect: () => setToPreview(work.slug),
+                            },
+                            {
                               label: "Gérer",
                               icon: Pencil,
                               href: `/admin/oeuvres/${work.id}`,
@@ -476,6 +484,14 @@ export function WorkList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {toPreview && (
+        <BookPreview
+          slug={toPreview}
+          open={toPreview !== null}
+          onOpenChange={(open) => !open && setToPreview(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={toDelete !== null}

@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
 import { AuthGuard } from './guards/auth.guard';
+import { OptionalAuthGuard } from './guards/optional-auth.guard';
 import { OriginGuard } from './guards/origin.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { LoginOtpService } from './login-otp.service';
@@ -23,6 +24,7 @@ import { TurnstileService } from './turnstile.service';
     EmailVerificationService,
     LoginOtpService,
     AuthGuard,
+    OptionalAuthGuard,
     RolesGuard,
     TurnstileService,
     TurnstileGuard,
@@ -30,6 +32,12 @@ import { TurnstileService } from './turnstile.service';
     // wiring supplémentaire (voir le commentaire d'`OriginGuard`).
     { provide: APP_GUARD, useClass: OriginGuard },
   ],
-  exports: [AuthGuard, RolesGuard, SessionService, LoginThrottleService],
+  exports: [
+    AuthGuard,
+    OptionalAuthGuard,
+    RolesGuard,
+    SessionService,
+    LoginThrottleService,
+  ],
 })
 export class AuthModule {}
