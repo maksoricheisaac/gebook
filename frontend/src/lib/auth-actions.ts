@@ -126,6 +126,7 @@ export async function registerAction(
     password: formData.get("password"),
     passwordConfirmation: formData.get("passwordConfirmation"),
     acceptTerms: formData.get("acceptTerms") === "on",
+    turnstileToken: formData.get("turnstileToken"),
   });
 
   if ("formState" in result) {
@@ -146,6 +147,7 @@ export async function loginAction(
   const result = await proxyAuthRequest("/auth/login", {
     email: formData.get("email"),
     password: formData.get("password"),
+    turnstileToken: formData.get("turnstileToken"),
   });
 
   if ("formState" in result) {

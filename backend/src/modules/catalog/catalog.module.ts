@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ActivityLogService } from '../../common/activity-log.service';
 import { AuthModule } from '../auth/auth.module';
 import { FilesModule } from '../files/files.module';
+import { MailModule } from '../mail/mail.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { AdminAuthorsController } from './admin/admin-authors.controller';
 import { AdminAuthorsService } from './admin/admin-authors.service';
@@ -23,7 +24,7 @@ import { WorksService } from './works.service';
  * des routes et des guards différents, pas un domaine différent (audit §28).
  */
 @Module({
-  imports: [AuthModule, FilesModule, TenantsModule],
+  imports: [AuthModule, FilesModule, TenantsModule, MailModule],
   controllers: [
     CatalogController,
     AdminCategoriesController,

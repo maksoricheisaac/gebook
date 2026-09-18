@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { buildRlsContext, SYSTEM_CONTEXT } from '../../prisma/rls-context';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { LoginThrottleService } from '../auth/login-throttle.service';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
 import type { CreateTenantDto } from './dto/create-tenant.dto';
 import {
   toTenantMembershipResponse,
@@ -31,6 +32,7 @@ export class TenantsService {
     private readonly prisma: PrismaService,
     private readonly throttle: LoginThrottleService,
     private readonly config: ConfigService,
+    private readonly transactionalMail: TransactionalMailService,
   ) {}
 
   /**
@@ -121,6 +123,11 @@ export class TenantsService {
         }
         throw error;
       });
+
+    await this.transactionalMail.sendSpaceCreated(
+      { email: user.email, firstName: user.firstName },
+      member.tenant.name,
+    );
 
     return toTenantMembershipResponse(member);
   }

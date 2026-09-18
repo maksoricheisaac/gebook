@@ -1,5 +1,5 @@
 import type { Prisma } from '../../../generated/prisma/client';
-import { ContentLocale } from '../../../generated/prisma/enums';
+import { ContentLocale, FileType } from '../../../generated/prisma/enums';
 
 /**
  * Ce que l'API expose réellement du catalogue.
@@ -40,6 +40,8 @@ export interface AuthorSummaryResponse {
 
 export interface AuthorDetailResponse extends AuthorSummaryResponse {
   biography: string | null;
+  /** Réseaux sociaux publics (clé = plateforme, valeur = URL) — brief §3, vitrine auteur. */
+  socialLinks: Record<string, string> | null;
 }
 
 export interface WorkFormatResponse {
@@ -50,6 +52,8 @@ export interface WorkFormatResponse {
   currency: string;
   deliveryType: string;
   isAvailable: boolean;
+  /** Un extrait gratuit existe pour ce format (brief §2) — sert à afficher « Lire un extrait ». */
+  hasSample: boolean;
 }
 
 export interface WorkSummaryResponse {
@@ -257,6 +261,13 @@ export function buildWorkSelection(locale: ContentLocale) {
         currency: true,
         deliveryType: true,
         isAvailable: true,
+        // Un seul enregistrement suffit à savoir qu'un extrait existe (brief
+        // §2) — jamais le fichier lui-même, servi uniquement via `/sample`.
+        files: {
+          where: { fileType: FileType.sample, isActive: true },
+          select: { id: true },
+          take: 1,
+        },
       },
       orderBy: { price: 'asc' },
     },
@@ -311,6 +322,7 @@ export function toWorkSummary(
     currency: format.currency,
     deliveryType: format.deliveryType,
     isAvailable: format.isAvailable,
+    hasSample: format.files.length > 0,
   }));
 
   const cheapest = formats.find((format) => format.isAvailable);
@@ -377,6 +389,7 @@ export function buildAuthorSelection(locale: ContentLocale) {
 export function buildAuthorDetailSelection(locale: ContentLocale) {
   return {
     ...buildAuthorSelection(locale),
+    socialLinks: true,
     translations: {
       where: { locale: { in: translationLocales(locale) } },
       select: { locale: true, shortBiography: true, biography: true },
@@ -416,6 +429,7 @@ export function toAuthorDetail(
   return {
     ...toAuthorSummary(author, locale, workCount),
     ...resolveAuthorDetailFields(author.translations, locale),
+    socialLinks: (author.socialLinks as Record<string, string> | null) ?? null,
   };
 }
 

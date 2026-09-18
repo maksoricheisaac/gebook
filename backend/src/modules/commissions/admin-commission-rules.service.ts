@@ -89,6 +89,7 @@ export class AdminCommissionRulesService {
       action: 'admin.commission-rule.create',
       entityType: 'commission_rule',
       entityId: rule.id,
+      tenantId: rule.tenantId,
     });
 
     return rule;
@@ -156,6 +157,7 @@ export class AdminCommissionRulesService {
       action: 'admin.commission-rule.update',
       entityType: 'commission_rule',
       entityId: id,
+      tenantId: rule.tenantId,
     });
 
     return rule;
@@ -181,6 +183,7 @@ export class AdminCommissionRulesService {
       action: 'admin.commission-rule.delete',
       entityType: 'commission_rule',
       entityId: id,
+      tenantId: existing.tenantId,
     });
   }
 

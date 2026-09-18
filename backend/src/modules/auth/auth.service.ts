@@ -14,6 +14,7 @@ import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NodeEnvironment } from '../../config/environment';
 import { UserStatus } from '../../generated/prisma/enums';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
 import { EmailVerificationService } from './email-verification.service';
 import { LoginOtpService } from './login-otp.service';
 import { LoginThrottleService } from './login-throttle.service';
@@ -58,6 +59,7 @@ export class AuthService {
     private readonly emailVerification: EmailVerificationService,
     private readonly loginOtp: LoginOtpService,
     private readonly config: ConfigService,
+    private readonly transactionalMail: TransactionalMailService,
   ) {}
 
   async register(dto: RegisterDto, meta: RequestMeta): Promise<AuthOutcome> {
@@ -137,6 +139,11 @@ export class AuthService {
     });
 
     await this.logActivity(user.id, 'auth.register', meta);
+
+    await this.transactionalMail.sendAccountCreated({
+      email: user.email,
+      firstName: user.firstName,
+    });
 
     // Aucune session n'est créée ici : le compte n'est « pleinement actif »
     // qu'une fois l'adresse e-mail confirmée (brief §1). C'est le clic sur le

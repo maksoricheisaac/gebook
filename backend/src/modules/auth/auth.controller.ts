@@ -27,6 +27,7 @@ import {
   type AuthUserResponse,
 } from './dto/auth-user.response';
 import { AuthGuard } from './guards/auth.guard';
+import { TurnstileGuard } from './guards/turnstile.guard';
 import {
   clearedSessionCookieOptions,
   SESSION_COOKIE_NAME,
@@ -68,6 +69,7 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(TurnstileGuard)
   async register(
     @Body() dto: RegisterDto,
     @Req() request: Request,
@@ -79,6 +81,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(TurnstileGuard)
   async login(
     @Body() dto: LoginDto,
     @Req() request: Request,

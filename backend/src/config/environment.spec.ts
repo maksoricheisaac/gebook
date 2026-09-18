@@ -16,6 +16,9 @@ const PRODUCTION_SETUP_TOKEN =
 
 const PRODUCTION_ENCRYPTION_KEY = 'b'.repeat(64);
 
+const PRODUCTION_TURNSTILE_SECRET_KEY =
+  'un-secret-turnstile-de-production-suffisamment-long';
+
 describe('validateEnvironment', () => {
   it('accepte une configuration complète et convertit les types', () => {
     const environment = validateEnvironment(baseEnvironment);
@@ -77,6 +80,7 @@ describe('validateEnvironment', () => {
       PAYMENT_WEBHOOK_SECRET: PRODUCTION_WEBHOOK_SECRET,
       SETUP_TOKEN: PRODUCTION_SETUP_TOKEN,
       CREDENTIALS_ENCRYPTION_KEY: PRODUCTION_ENCRYPTION_KEY,
+      TURNSTILE_SECRET_KEY: PRODUCTION_TURNSTILE_SECRET_KEY,
     });
 
     expect(environment.NODE_ENV).toBe(NodeEnvironment.production);
@@ -159,5 +163,24 @@ describe('validateEnvironment', () => {
         SETUP_TOKEN: PRODUCTION_SETUP_TOKEN,
       }),
     ).toThrow(/CREDENTIALS_ENCRYPTION_KEY/);
+  });
+
+  it('fournit une clé secrète Turnstile de test par défaut hors production', () => {
+    expect(validateEnvironment(baseEnvironment).TURNSTILE_SECRET_KEY).toBe(
+      '1x0000000000000000000000000000000AA',
+    );
+  });
+
+  it('refuse la production tant que la clé Turnstile de test n’a pas été remplacée', () => {
+    expect(() =>
+      validateEnvironment({
+        ...baseEnvironment,
+        NODE_ENV: 'production',
+        APP_DEBUG: 'false',
+        PAYMENT_WEBHOOK_SECRET: PRODUCTION_WEBHOOK_SECRET,
+        SETUP_TOKEN: PRODUCTION_SETUP_TOKEN,
+        CREDENTIALS_ENCRYPTION_KEY: PRODUCTION_ENCRYPTION_KEY,
+      }),
+    ).toThrow(/TURNSTILE_SECRET_KEY/);
   });
 });

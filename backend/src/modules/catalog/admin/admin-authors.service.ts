@@ -238,7 +238,7 @@ export class AdminAuthorsService {
     }
     const tenantId = tenant.tenantId;
 
-    const { userId, birthDate, translations, ...rest } = dto;
+    const { userId, birthDate, translations, socialLinks, ...rest } = dto;
 
     const author = await this.prisma
       .withRlsContext(buildRlsContext(admin, tenantId), (tx) =>
@@ -246,6 +246,11 @@ export class AdminAuthorsService {
           data: {
             ...rest,
             tenantId,
+            // Instance de classe (`SocialLinksDto`) réécrite en objet simple :
+            // Prisma attend un `InputJsonObject` structurel, pas une classe.
+            ...(socialLinks !== undefined && {
+              socialLinks: { ...socialLinks },
+            }),
             ...(birthDate !== undefined && { birthDate: new Date(birthDate) }),
             // Style "unchecked" (userId scalaire, pas `user: { connect }`) : mélanger
             // les deux styles dans un même `data` rend l'union de types de Prisma
@@ -283,6 +288,7 @@ export class AdminAuthorsService {
       action: 'admin.author.create',
       entityType: 'author',
       entityId: author.id,
+      tenantId,
     });
 
     return author;
@@ -294,7 +300,7 @@ export class AdminAuthorsService {
     admin: AuthenticatedUser,
     tenant: TenantContext,
   ): Promise<AuthorWithTranslations> {
-    const { userId, birthDate, translations, ...rest } = dto;
+    const { userId, birthDate, translations, socialLinks, ...rest } = dto;
 
     await this.prisma
       .withRlsContext(buildRlsContext(admin, tenant.tenantId), async (tx) => {
@@ -317,6 +323,9 @@ export class AdminAuthorsService {
             ...(birthDate !== undefined && { birthDate: new Date(birthDate) }),
             ...(userId !== undefined && {
               user: userId ? { connect: { id: userId } } : { disconnect: true },
+            }),
+            ...(socialLinks !== undefined && {
+              socialLinks: { ...socialLinks },
             }),
             ...(translations?.fr && {
               biography: translations.fr.biography,
@@ -363,6 +372,7 @@ export class AdminAuthorsService {
       action: 'admin.author.update',
       entityType: 'author',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
 
     return this.findOne(id, admin, tenant);
@@ -399,6 +409,7 @@ export class AdminAuthorsService {
       action: 'admin.author.delete',
       entityType: 'author',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
   }
 
@@ -432,6 +443,7 @@ export class AdminAuthorsService {
       action: 'admin.author.photo',
       entityType: 'author',
       entityId: id,
+      tenantId: tenant.tenantId,
     });
 
     return author;

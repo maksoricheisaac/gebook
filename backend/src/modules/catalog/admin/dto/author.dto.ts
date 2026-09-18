@@ -13,6 +13,7 @@ import {
 } from 'class-validator';
 import { AuthorStatus } from '../../../../generated/prisma/enums';
 import { sanitizeRichText } from '../../../../common/rich-text';
+import { SocialLinksDto } from '../../../tenants/dto/update-tenant-profile.dto';
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SLUG_MESSAGE =
@@ -115,6 +116,11 @@ export class CreateAuthorDto {
   @IsOptional()
   @IsUUID()
   userId?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SocialLinksDto)
+  socialLinks?: SocialLinksDto;
 }
 
 export class UpdateAuthorDto {
@@ -180,4 +186,9 @@ export class UpdateAuthorDto {
   @IsOptional()
   @IsUUID()
   userId?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SocialLinksDto)
+  socialLinks?: SocialLinksDto;
 }

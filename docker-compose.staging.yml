@@ -1,0 +1,230 @@
+# Déploiement GeBook en staging, sur un serveur classique (hors Dokploy).
+#
+#   docker compose -f docker-compose.staging.yml up -d --build
+#
+# Autonome plutôt qu'une surcouche de docker-compose.yml : la forme de la
+# prod (labels Traefik, réseau `dokploy-network` externe fourni par Dokploy)
+# ne se « retire » pas proprement par override Compose — les mêmes services
+# sont donc redéclarés ici, en façade d'un reverse proxy Caddy (TLS
+# automatique via Let's Encrypt) plutôt que Traefik, qui exige un
+# control-plane (Dokploy) pour rester pratique à configurer sur un serveur
+# autonome.
+#
+# NODE_ENV=production est conservé côté backend/frontend, comme en prod : le
+# cookie de session prend alors le préfixe `__Host-gebook_session`, que tout
+# navigateur refuse hors HTTPS (voir backend/src/modules/auth/session-cookie.ts)
+# — d'où le reverse proxy TLS, plutôt que de simples ports publiés en clair.
+# C'est aussi ce qui fait que le staging reproduit fidèlement le comportement
+# de sécurité de la prod, l'intérêt même d'un environnement de staging.
+#
+# Nom de projet et volumes distincts de la prod : les deux piles peuvent
+# coexister sur la même machine sans collision.
+#
+# Variables à renseigner : voir .env.staging.example.
+
+name: gebook-staging
+
+services:
+  # ---------------------------------------------------------------------------
+  # Reverse proxy — TLS automatique (Let's Encrypt), seul service exposé.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    environment:
+      STAGING_BACKEND_DOMAIN: ${STAGING_BACKEND_DOMAIN:?STAGING_BACKEND_DOMAIN est obligatoire}
+      STAGING_FRONTEND_DOMAIN: ${STAGING_FRONTEND_DOMAIN:?STAGING_FRONTEND_DOMAIN est obligatoire}
+      # Requis par Let's Encrypt pour les notifications d'expiration de
+      # certificat — jamais utilisé à d'autres fins par Caddy.
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL est obligatoire (compte Let's Encrypt)}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - staging-caddy-data:/data
+      - staging-caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - edge
+
+  # ---------------------------------------------------------------------------
+  # Base de données
+  # ---------------------------------------------------------------------------
+  database:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gebook_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}
+      POSTGRES_DB: ${POSTGRES_DB:-gebook_db}
+      APP_DB_USER: ${APP_DB_USER:-gebook_user}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD est obligatoire}
+    volumes:
+      - staging-database-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - internal
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-gebook_admin} -d ${POSTGRES_DB:-gebook_db}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # ClamAV — voir docker-compose.yml pour le détail, identique ici.
+  # ---------------------------------------------------------------------------
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    mem_limit: 2g
+    volumes:
+      - staging-clamav-data:/var/lib/clamav
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
+  # Migrations Prisma — service éphémère, joué avant chaque démarrage de l'API
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: ./backend
+      target: migrator
+    restart: "no"
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      # Données de démo utiles pour explorer un staging fraîchement déployé —
+      # contrairement à la prod, où RUN_SEED passe à false une fois le vrai
+      # catalogue en place.
+      RUN_SEED: ${RUN_SEED:-true}
+      ADMIN_DATABASE_URL: ${ADMIN_DATABASE_URL:-postgresql://${POSTGRES_USER:-gebook_admin}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}@database:5432/${POSTGRES_DB:-gebook_db}?schema=public}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${APP_DB_USER:-gebook_user}:${APP_DB_PASSWORD:?APP_DB_PASSWORD est obligatoire}@database:5432/${POSTGRES_DB:-gebook_db}?schema=public}
+    networks:
+      - internal
+    command:
+      - sh
+      - -c
+      - pnpm run db:deploy && if [ "$$RUN_SEED" != "false" ]; then DATABASE_URL="$$ADMIN_DATABASE_URL" pnpm run db:seed; fi
+
+  # ---------------------------------------------------------------------------
+  # API NestJS  —  https://${STAGING_BACKEND_DOMAIN}
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${APP_DB_USER:-gebook_user}:${APP_DB_PASSWORD:?APP_DB_PASSWORD est obligatoire}@database:5432/${POSTGRES_DB:-gebook_db}?schema=public}
+      CORS_ORIGINS: https://${STAGING_FRONTEND_DOMAIN:?STAGING_FRONTEND_DOMAIN est obligatoire}
+      APP_DEBUG: "false"
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET est obligatoire (32 caracteres minimum)}
+      SETUP_TOKEN: ${SETUP_TOKEN:?SETUP_TOKEN est obligatoire (32 caracteres minimum)}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?CREDENTIALS_ENCRYPTION_KEY est obligatoire (32 octets hexadecimaux — openssl rand -hex 32)}
+      # --- Plateforme de paiement --------------------------------------------
+      # Forcé en sandbox : le staging ne doit jamais pouvoir encaisser un
+      # paiement réel, quelle que soit la configuration copiée depuis la prod.
+      PAYMENT_ENV: sandbox
+      PAYIN_PROVIDER: ${PAYIN_PROVIDER:-fake}
+      PAYOUT_PROVIDER: ${PAYOUT_PROVIDER:-fake}
+      PAWAPAY_API_URL: ${PAWAPAY_API_URL:-}
+      PAWAPAY_API_TOKEN: ${PAWAPAY_API_TOKEN:-}
+      CINETPAY_API_URL: ${CINETPAY_API_URL:-}
+      CINETPAY_API_KEY: ${CINETPAY_API_KEY:-}
+      CINETPAY_SITE_ID: ${CINETPAY_SITE_ID:-}
+      CINETPAY_SECRET_KEY: ${CINETPAY_SECRET_KEY:-}
+      FEEXPAY_API_URL: ${FEEXPAY_API_URL:-}
+      FEEXPAY_API_KEY: ${FEEXPAY_API_KEY:-}
+      FEEXPAY_SHOP_ID: ${FEEXPAY_SHOP_ID:-}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://${STAGING_BACKEND_DOMAIN}}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      # --- Stockage des fichiers ---------------------------------------------
+      # r2 par défaut (voir docs/STORAGE_R2_SETUP.md) — un bucket dédié
+      # « staging », distinct de celui de la prod, est recommandé mais pas
+      # imposé par ce fichier.
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-r2}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      # --- Envoi d'e-mails (SMTP du domaine propre) --------------------------
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-https://${STAGING_FRONTEND_DOMAIN}}
+      # --- CAPTCHA (Cloudflare Turnstile) -------------------------------------
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY est obligatoire en production (clé secrète Turnstile du site, tableau de bord Cloudflare)}
+    volumes:
+      - staging-backend-storage:/app/storage
+    networks:
+      - internal
+      - edge
+    # Pas de `healthcheck:` ici : `backend/Dockerfile` en déclare déjà un
+    # (`HEALTHCHECK ... /health`), que Compose utilise nativement pour
+    # `condition: service_healthy` — le redéclarer risquerait de diverger en
+    # silence de celui réellement packagé dans l'image (même choix que
+    # docker-compose.yml).
+
+  # ---------------------------------------------------------------------------
+  # Frontend Next.js  —  https://${STAGING_FRONTEND_DOMAIN}
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      target: runtime
+      args:
+        NEXT_PUBLIC_API_URL: ${INTERNAL_API_URL:-http://backend:3001}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY est obligatoire en production (clé site Turnstile, tableau de bord Cloudflare)}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+    networks:
+      - internal
+      - edge
+    # Idem : `frontend/Dockerfile` déclare déjà son propre `HEALTHCHECK`.
+
+networks:
+  internal:
+  # Réseau du reverse proxy — équivalent local de `dokploy-network`, mais créé
+  # par ce fichier lui-même plutôt qu'attendu d'un control-plane externe.
+  edge:
+
+volumes:
+  staging-database-data:
+  staging-backend-storage:
+  staging-clamav-data:
+  staging-caddy-data:
+  staging-caddy-config:

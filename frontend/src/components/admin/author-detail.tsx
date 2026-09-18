@@ -46,6 +46,7 @@ interface Author {
   status: AuthorStatus;
   payoutMethod: string | null;
   payoutPhone: string | null;
+  socialLinks: Record<string, string> | null;
   translations: AuthorTranslation[];
   _count: { works: number };
 }
@@ -90,6 +91,12 @@ const authorSchema = z.object({
   city: z.string().trim().max(100).optional(),
   payoutMethod: z.string().trim().max(100).optional(),
   payoutPhone: z.string().trim().max(30).optional(),
+  socialLinks: z.object({
+    facebook: z.string().trim().max(300).optional(),
+    instagram: z.string().trim().max(300).optional(),
+    x: z.string().trim().max(300).optional(),
+    youtube: z.string().trim().max(300).optional(),
+  }),
   status: z.enum(["draft", "active", "inactive"]),
   translations: z.object({
     fr: authorTranslationFieldsSchema,
@@ -135,6 +142,12 @@ function toFormValues(author: Author): AuthorFormValues {
     city: author.city ?? "",
     payoutMethod: author.payoutMethod ?? "",
     payoutPhone: author.payoutPhone ?? "",
+    socialLinks: {
+      facebook: author.socialLinks?.facebook ?? "",
+      instagram: author.socialLinks?.instagram ?? "",
+      x: author.socialLinks?.x ?? "",
+      youtube: author.socialLinks?.youtube ?? "",
+    },
     status: author.status,
     translations: {
       fr: {
@@ -202,6 +215,12 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
           city: values.city,
           payoutMethod: values.payoutMethod,
           payoutPhone: values.payoutPhone,
+          socialLinks: {
+            facebook: emptyToUndefined(values.socialLinks.facebook),
+            instagram: emptyToUndefined(values.socialLinks.instagram),
+            x: emptyToUndefined(values.socialLinks.x),
+            youtube: emptyToUndefined(values.socialLinks.youtube),
+          },
           status: values.status,
           translations: buildTranslationsPayload(values),
         },
@@ -362,6 +381,30 @@ export function AuthorDetail({ authorId }: { authorId: string }) {
                 optional
               >
                 <Input {...register("payoutPhone")} />
+              </Field>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <Field id="author-social-facebook" label="Facebook" optional>
+                <Input
+                  placeholder="https://facebook.com/…"
+                  {...register("socialLinks.facebook")}
+                />
+              </Field>
+              <Field id="author-social-instagram" label="Instagram" optional>
+                <Input
+                  placeholder="https://instagram.com/…"
+                  {...register("socialLinks.instagram")}
+                />
+              </Field>
+              <Field id="author-social-x" label="X (Twitter)" optional>
+                <Input placeholder="https://x.com/…" {...register("socialLinks.x")} />
+              </Field>
+              <Field id="author-social-youtube" label="YouTube" optional>
+                <Input
+                  placeholder="https://youtube.com/…"
+                  {...register("socialLinks.youtube")}
+                />
               </Field>
             </div>
 

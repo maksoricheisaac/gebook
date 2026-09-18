@@ -9,6 +9,7 @@ import { Input } from "@/src/components/ui/input";
 import { registerAction, type AuthFormState } from "@/src/lib/auth-actions";
 import { cn } from "@/src/lib/utils";
 import { PasswordInput } from "./password-input";
+import { TurnstileWidget } from "./turnstile-widget";
 
 const initialState: AuthFormState = {};
 
@@ -126,8 +127,24 @@ export function RegisterForm({ retour }: { retour?: string }) {
             className="accent-primary mt-0.5 size-4.5 shrink-0 cursor-pointer"
           />
           <span className="text-secondary leading-relaxed">
-            J’accepte les conditions d’utilisation de GeBook et le traitement de mes
-            données pour le suivi de mes commandes.
+            J’accepte les{" "}
+            <a
+              href="/cgu"
+              target="_blank"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              conditions d’utilisation
+            </a>{" "}
+            de GeBook et le traitement de mes données pour le suivi de mes commandes,
+            conformément à la{" "}
+            <a
+              href="/confidentialite"
+              target="_blank"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              politique de confidentialité
+            </a>
+            .
           </span>
         </label>
         {state.fieldErrors?.acceptTerms?.[0] && (
@@ -136,6 +153,8 @@ export function RegisterForm({ retour }: { retour?: string }) {
           </p>
         )}
       </div>
+
+      <TurnstileWidget />
 
       <Button type="submit" size="lg" isLoading={pending} className="w-full">
         {pending ? "Création du compte…" : "Créer mon compte"}

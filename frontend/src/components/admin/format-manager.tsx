@@ -17,6 +17,7 @@ import { deliveryTypeLabel, formatPrice, formatTypeLabel } from "@/src/lib/forma
 
 interface WorkFile {
   id: string;
+  fileType: "full" | "sample" | "cover" | "supplement";
   originalName: string | null;
   createdAt: string;
 }
@@ -64,6 +65,7 @@ export function FormatManager({ workId }: { workId: string }) {
     unlimitedStock: false,
   });
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const sampleInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const { data: formats, isLoading } = useQuery({
     queryKey: ["admin", "works", workId, "formats"],
@@ -155,31 +157,48 @@ export function FormatManager({ workId }: { workId: string }) {
   });
 
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [sampleUploadProgress, setSampleUploadProgress] = useState<
+    Record<string, number>
+  >({});
 
   const uploadFile = useMutation({
-    mutationFn: ({ formatId, file }: { formatId: string; file: File }) => {
+    mutationFn: ({
+      formatId,
+      file,
+      fileType = "full",
+    }: {
+      formatId: string;
+      file: File;
+      fileType?: "full" | "sample";
+    }) => {
       const formData = new FormData();
       formData.set("file", file);
-      setUploadProgress((progress) => ({ ...progress, [formatId]: 0 }));
+      formData.set("fileType", fileType);
+      const setProgress =
+        fileType === "sample" ? setSampleUploadProgress : setUploadProgress;
+      setProgress((progress) => ({ ...progress, [formatId]: 0 }));
       return uploadWithProgress(
         `/works/${workId}/formats/${formatId}/file`,
         formData,
-        (fraction) =>
-          setUploadProgress((progress) => ({ ...progress, [formatId]: fraction })),
+        (fraction) => setProgress((progress) => ({ ...progress, [formatId]: fraction })),
       );
     },
-    onSuccess: async (_result, { formatId }) => {
+    onSuccess: async (_result, { formatId, fileType = "full" }) => {
       setError(null);
-      setUploadProgress((progress) => {
+      const setProgress =
+        fileType === "sample" ? setSampleUploadProgress : setUploadProgress;
+      setProgress((progress) => {
         const next = { ...progress };
         delete next[formatId];
         return next;
       });
       await invalidate();
     },
-    onError: (e: unknown, { formatId }) => {
+    onError: (e: unknown, { formatId, fileType = "full" }) => {
       setError(errorMessage(e));
-      setUploadProgress((progress) => {
+      const setProgress =
+        fileType === "sample" ? setSampleUploadProgress : setUploadProgress;
+      setProgress((progress) => {
         const next = { ...progress };
         delete next[formatId];
         return next;
@@ -299,70 +318,150 @@ export function FormatManager({ workId }: { workId: string }) {
 
                 {format.deliveryType !== "physical_delivery" && (
                   <>
-                    <input
-                      ref={(el) => {
-                        fileInputRefs.current[format.id] = el;
-                      }}
-                      type="file"
-                      accept={ACCEPT_BY_FORMAT[format.formatType]}
-                      className="hidden"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) {
-                          uploadFile.mutate({ formatId: format.id, file });
-                        }
-                        event.target.value = "";
-                      }}
-                    />
-
-                    {uploadProgress[format.id] !== undefined ? (
-                      // Progression réelle de l'envoi (`uploadWithProgress`,
-                      // XMLHttpRequest) : un fichier de plusieurs dizaines de
-                      // Mo peut prendre du temps, un simple spinner ne dit pas
-                      // si l'envoi avance ou s'est figé.
-                      <div className="w-36">
-                        <div className="bg-muted h-2 overflow-hidden rounded-full">
-                          <div
-                            className="bg-primary h-full rounded-full transition-[width]"
-                            style={{
-                              width: `${Math.round(uploadProgress[format.id] * 100)}%`,
+                    {(() => {
+                      const fullFile = format.files.find((f) => f.fileType === "full");
+                      const sampleFile = format.files.find(
+                        (f) => f.fileType === "sample",
+                      );
+                      return (
+                        <>
+                          <input
+                            ref={(el) => {
+                              fileInputRefs.current[format.id] = el;
+                            }}
+                            type="file"
+                            accept={ACCEPT_BY_FORMAT[format.formatType]}
+                            className="hidden"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) {
+                                uploadFile.mutate({
+                                  formatId: format.id,
+                                  file,
+                                  fileType: "full",
+                                });
+                              }
+                              event.target.value = "";
                             }}
                           />
-                        </div>
-                        <p className="type-caption mt-1">
-                          {Math.round(uploadProgress[format.id] * 100)}%
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fileInputRefs.current[format.id]?.click()}
-                        >
-                          <Upload aria-hidden />
-                          {format.files.length > 0 ? "Remplacer" : "Fichier"}
-                          <span className="sr-only">
-                            {" "}
-                            du format {format.formatType.toUpperCase()}
-                          </span>
-                        </Button>
 
-                        {format.files.length > 0 && (
-                          <Button asChild variant="ghost" size="sm">
-                            <a
-                              href={`/api/admin/works/${workId}/formats/${format.id}/files/${format.files[0].id}/preview`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <Eye aria-hidden />
-                              Aperçu
-                            </a>
-                          </Button>
-                        )}
-                      </>
-                    )}
+                          {uploadProgress[format.id] !== undefined ? (
+                            // Progression réelle de l'envoi (`uploadWithProgress`,
+                            // XMLHttpRequest) : un fichier de plusieurs dizaines de
+                            // Mo peut prendre du temps, un simple spinner ne dit pas
+                            // si l'envoi avance ou s'est figé.
+                            <div className="w-36">
+                              <div className="bg-muted h-2 overflow-hidden rounded-full">
+                                <div
+                                  className="bg-primary h-full rounded-full transition-[width]"
+                                  style={{
+                                    width: `${Math.round(uploadProgress[format.id] * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="type-caption mt-1">
+                                {Math.round(uploadProgress[format.id] * 100)}%
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => fileInputRefs.current[format.id]?.click()}
+                              >
+                                <Upload aria-hidden />
+                                {fullFile ? "Remplacer" : "Fichier"}
+                                <span className="sr-only">
+                                  {" "}
+                                  du format {format.formatType.toUpperCase()}
+                                </span>
+                              </Button>
+
+                              {fullFile && (
+                                <Button asChild variant="ghost" size="sm">
+                                  <a
+                                    href={`/api/admin/works/${workId}/formats/${format.id}/files/${fullFile.id}/preview`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <Eye aria-hidden />
+                                    Aperçu
+                                  </a>
+                                </Button>
+                              )}
+                            </>
+                          )}
+
+                          {/* Extrait gratuit consultable avant achat (brief §2) —
+                              fichier distinct du livre complet, jamais confondu
+                              avec lui : `fileType: "sample"` côté serveur. */}
+                          <input
+                            ref={(el) => {
+                              sampleInputRefs.current[format.id] = el;
+                            }}
+                            type="file"
+                            accept={ACCEPT_BY_FORMAT[format.formatType]}
+                            className="hidden"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) {
+                                uploadFile.mutate({
+                                  formatId: format.id,
+                                  file,
+                                  fileType: "sample",
+                                });
+                              }
+                              event.target.value = "";
+                            }}
+                          />
+
+                          {sampleUploadProgress[format.id] !== undefined ? (
+                            <div className="w-36">
+                              <div className="bg-muted h-2 overflow-hidden rounded-full">
+                                <div
+                                  className="bg-primary h-full rounded-full transition-[width]"
+                                  style={{
+                                    width: `${Math.round(sampleUploadProgress[format.id] * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="type-caption mt-1">
+                                {Math.round(sampleUploadProgress[format.id] * 100)}%
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  sampleInputRefs.current[format.id]?.click()
+                                }
+                              >
+                                <Upload aria-hidden />
+                                {sampleFile ? "Remplacer l’extrait" : "Extrait gratuit"}
+                              </Button>
+
+                              {sampleFile && (
+                                <Button asChild variant="ghost" size="sm">
+                                  <a
+                                    href={`/api/admin/works/${workId}/formats/${format.id}/files/${sampleFile.id}/preview`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <Eye aria-hidden />
+                                    Aperçu de l’extrait
+                                  </a>
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </>
                 )}
 

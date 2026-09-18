@@ -9,6 +9,8 @@ export interface ActivityLogEntryResponse {
   entityType: string | null;
   entityId: string | null;
   description: string | null;
+  oldValues: unknown;
+  newValues: unknown;
   createdAt: string;
 }
 

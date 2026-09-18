@@ -3,13 +3,16 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowRight, Languages, ScrollText } from "lucide-react";
 
+import { BookOpen } from "lucide-react";
+
 import { BookCover } from "@/src/components/catalog/book-cover";
 import { BookGrid } from "@/src/components/catalog/book-grid";
 import { FormatSelector } from "@/src/components/catalog/format-selector";
 import { Breadcrumb, Container, SectionHeader } from "@/src/components/layout/page-shell";
 import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
 import { RichText } from "@/src/components/ui/rich-text";
-import { ApiError } from "@/src/lib/api";
+import { ApiError, apiBaseUrl } from "@/src/lib/api";
 import { getCurrentUser } from "@/src/lib/auth";
 import {
   authorInitials,
@@ -80,6 +83,7 @@ export default async function WorkPage(props: PageProps<"/livres/[slug]">) {
   const related = await loadRelatedWorks(work);
 
   const priceFrom = work.priceFrom ? formatPrice(work.priceFrom) : null;
+  const sampleFormat = work.formats.find((wf) => wf.hasSample);
   const publication = work.publicationDate
     ? formatDate(work.publicationDate)
     : work.publicationYear
@@ -223,6 +227,19 @@ export default async function WorkPage(props: PageProps<"/livres/[slug]">) {
                     {priceFrom}
                   </span>
                 </div>
+              )}
+
+              {sampleFormat && (
+                <Button asChild variant="outline" className="mb-5 w-full">
+                  <a
+                    href={`${apiBaseUrl()}/works/${work.slug}/formats/${sampleFormat.id}/sample`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <BookOpen aria-hidden />
+                    Lire un extrait
+                  </a>
+                </Button>
               )}
 
               <FormatSelector

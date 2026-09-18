@@ -12,6 +12,7 @@ import { buildRlsContext, type RlsContext } from '../../prisma/rls-context';
 import { ActivityLogService } from '../../common/activity-log.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { publiclyVisible } from '../catalog/works.service';
+import { TransactionalMailService } from '../mail/transactional-mail.service';
 import type {
   CreateOrderDto,
   CreateOrderItemDto,
@@ -53,6 +54,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityLog: ActivityLogService,
+    private readonly transactionalMail: TransactionalMailService,
   ) {}
 
   async create(dto: CreateOrderDto, userId: string): Promise<OrderResponse> {
@@ -106,12 +108,27 @@ export class OrdersService {
       totalAmount: subtotal,
     });
 
-    await this.activityLog.record({
-      userId,
-      action: 'order.create',
-      entityType: 'order',
-      entityId: order.id,
+    await this.activityLog.recordForOrder(
+      {
+        userId,
+        action: 'order.create',
+        entityType: 'order',
+        entityId: order.id,
+      },
+      itemsData,
+    );
+
+    const buyer = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
     });
+    if (buyer) {
+      await this.transactionalMail.sendOrderConfirmation(buyer, {
+        orderNumber: order.orderNumber,
+        totalAmount: order.totalAmount.toFixed(2),
+        currency: 'XAF',
+      });
+    }
 
     return toOrderResponse(order);
   }
@@ -196,12 +213,15 @@ export class OrdersService {
       },
     );
 
-    await this.activityLog.record({
-      userId: user.id,
-      action: 'order.cancel',
-      entityType: 'order',
-      entityId: updated.id,
-    });
+    await this.activityLog.recordForOrder(
+      {
+        userId: user.id,
+        action: 'order.cancel',
+        entityType: 'order',
+        entityId: updated.id,
+      },
+      updated.items,
+    );
 
     return toOrderResponse(updated);
   }
@@ -342,12 +362,15 @@ export class OrdersService {
       });
     });
 
-    await this.activityLog.record({
-      userId: adminId,
-      action: 'admin.order.status',
-      entityType: 'order',
-      entityId: id,
-    });
+    await this.activityLog.recordForOrder(
+      {
+        userId: adminId,
+        action: 'admin.order.status',
+        entityType: 'order',
+        entityId: id,
+      },
+      updated.items,
+    );
 
     return toOrderResponse(updated);
   }

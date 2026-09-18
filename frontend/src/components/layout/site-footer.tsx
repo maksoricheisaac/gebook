@@ -88,12 +88,24 @@ export function SiteFooter() {
       </div>
 
       <div className="border-border border-t">
-        <div className="text-muted-foreground mx-auto flex w-full max-w-7xl flex-col gap-3 px-5 py-6 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <p>© 2026 GeBook. Tous droits réservés.</p>
-          <p className="flex items-center gap-2">
-            <ShieldCheck aria-hidden className="size-3.5" />
-            Vos données restent chez GeBook · Conçu par B-LAB
-          </p>
+        <div className="text-muted-foreground mx-auto flex w-full max-w-7xl flex-col gap-4 px-5 py-6 text-xs sm:px-8">
+          <nav
+            aria-label="Informations légales"
+            className="flex flex-wrap gap-x-4 gap-y-2"
+          >
+            <FooterLink href="/mentions-legales">Mentions légales</FooterLink>
+            <FooterLink href="/cgu">CGU</FooterLink>
+            <FooterLink href="/cgv">CGV</FooterLink>
+            <FooterLink href="/confidentialite">Confidentialité</FooterLink>
+            <FooterLink href="/cookies">Cookies</FooterLink>
+          </nav>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>© 2026 GeBook. Tous droits réservés.</p>
+            <p className="flex items-center gap-2">
+              <ShieldCheck aria-hidden className="size-3.5" />
+              Vos données restent chez GeBook · Conçu par B-LAB
+            </p>
+          </div>
         </div>
       </div>
     </footer>

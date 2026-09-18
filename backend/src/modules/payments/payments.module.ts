@@ -3,6 +3,7 @@ import { ActivityLogService } from '../../common/activity-log.service';
 import { CryptoModule } from '../../common/crypto/crypto.module';
 import { AuthModule } from '../auth/auth.module';
 import { CommissionsModule } from '../commissions/commissions.module';
+import { MailModule } from '../mail/mail.module';
 import { AdminPaymentProvidersController } from './admin-payment-providers.controller';
 import { AdminPaymentProvidersService } from './admin-payment-providers.service';
 import { AdminPaymentsController } from './admin-payments.controller';
@@ -30,7 +31,7 @@ import { WebhooksController } from './webhooks.controller';
  * un pilote peut n'exister que côté pay-in, que côté payout, ou des deux.
  */
 @Module({
-  imports: [AuthModule, CommissionsModule, CryptoModule],
+  imports: [AuthModule, CommissionsModule, CryptoModule, MailModule],
   controllers: [
     PaymentsController,
     AdminPaymentsController,

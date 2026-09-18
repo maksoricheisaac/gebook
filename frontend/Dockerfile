@@ -22,6 +22,12 @@ FROM deps AS build
 # publiquement.
 ARG NEXT_PUBLIC_API_URL=http://backend:3001
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Clé SITE Turnstile (publique par nature) : repli sur la clé de test
+# Cloudflare si non fournie, pour qu'une image construite sans ce build-arg
+# reste utilisable (widget affiché, toujours accepté, jamais lié à un compte
+# réel) plutôt que de casser silencieusement l'inscription/la connexion.
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000000000000000AA
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY . .
 RUN pnpm run build

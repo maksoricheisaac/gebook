@@ -10,6 +10,8 @@ import { RolesGuard } from './guards/roles.guard';
 import { LoginOtpService } from './login-otp.service';
 import { LoginThrottleService } from './login-throttle.service';
 import { SessionService } from './session.service';
+import { TurnstileGuard } from './guards/turnstile.guard';
+import { TurnstileService } from './turnstile.service';
 
 @Module({
   imports: [MailModule],
@@ -22,6 +24,8 @@ import { SessionService } from './session.service';
     LoginOtpService,
     AuthGuard,
     RolesGuard,
+    TurnstileService,
+    TurnstileGuard,
     // Global : toute méthode d'écriture, présente ou future, est vérifiée sans
     // wiring supplémentaire (voir le commentaire d'`OriginGuard`).
     { provide: APP_GUARD, useClass: OriginGuard },
