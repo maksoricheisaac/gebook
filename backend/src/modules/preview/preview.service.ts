@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SYSTEM_CONTEXT } from '../../prisma/rls-context';
 import { STORAGE_DRIVER, type StorageDriver } from '../files/storage-driver';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { PreviewGenerationService } from './preview-generation.service';
 import { PreviewPolicyService } from './preview-policy.service';
 import type { PreviewResponse } from './dto/preview.response';
 
@@ -36,6 +37,7 @@ export class PreviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PreviewPolicyService,
+    private readonly generation: PreviewGenerationService,
     @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
   ) {}
 
@@ -48,7 +50,28 @@ export class PreviewService {
       user,
     );
 
-    const status = pdfFormat ? STATUS_MAP[pdfFormat.previewStatus] : 'none';
+    // Livre uploadé avant la Book Preview Sandbox (ou génération restée
+    // bloquée) : les pages se génèrent à la première consultation, en tâche
+    // de fond — le lecteur voit « en préparation » puis l'aperçu apparaît.
+    const staleMs = 10 * 60 * 1000;
+    const needsGeneration =
+      pdfFormat !== null &&
+      pdfFormat.files.length > 0 &&
+      (pdfFormat.previewStatus === PreviewStatus.none ||
+        (pdfFormat.previewStatus === PreviewStatus.pending &&
+          Date.now() - pdfFormat.updatedAt.getTime() > staleMs) ||
+        // L'équipe éditoriale peut relancer un rendu échoué en rouvrant l'aperçu.
+        (pdfFormat.previewStatus === PreviewStatus.failed &&
+          (policy.mode === 'author' || policy.mode === 'admin')));
+    if (pdfFormat && needsGeneration) {
+      this.generation.generateInBackground(pdfFormat.id);
+    }
+
+    const status = !pdfFormat
+      ? 'none'
+      : needsGeneration
+        ? 'pending'
+        : STATUS_MAP[pdfFormat.previewStatus];
     const totalPages = pdfFormat?.previewPageCount ?? 0;
 
     const allowedPages =

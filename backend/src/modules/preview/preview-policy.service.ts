@@ -27,6 +27,14 @@ const workForPreviewSelect = {
       previewStatus: true,
       previewPageCount: true,
       previewError: true,
+      updatedAt: true,
+      // Sert uniquement à savoir qu'un fichier complet existe (génération à la
+      // demande des livres uploadés avant la Book Preview Sandbox).
+      files: {
+        where: { fileType: 'full' as const, isActive: true },
+        select: { id: true },
+        take: 1,
+      },
     },
   },
 } satisfies Prisma.WorkSelect;

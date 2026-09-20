@@ -54,6 +54,10 @@ export function BookPreview({
     queryFn: () => fetchPreview(slug),
     enabled: open,
     retry: false,
+    // Aperçu en cours de génération (première consultation d'un livre) : la
+    // modale se met à jour toute seule dès que les pages sont prêtes.
+    refetchInterval: (query) =>
+      query.state.data?.preview.status === "pending" ? 3000 : false,
   });
 
   return (

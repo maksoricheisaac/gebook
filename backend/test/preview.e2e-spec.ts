@@ -509,4 +509,35 @@ describe('Book Preview Sandbox (e2e)', () => {
       );
     });
   });
+  describe('Livre uploadé avant la Book Preview Sandbox', () => {
+    it('génère les pages à la première consultation puis les sert', async () => {
+      await adminDb(prisma, async (tx) => {
+        await tx.workPreviewPage.deleteMany({
+          where: { workFormatId: publicFormatId },
+        });
+        await tx.workFormat.update({
+          where: { id: publicFormatId },
+          data: { previewStatus: 'none', previewPageCount: null },
+        });
+      });
+
+      const first = await request(app.getHttpServer())
+        .get(`/preview/${publicSlug}`)
+        .expect(200);
+      expect(
+        (first.body as { preview: { status: string } }).preview.status,
+      ).toBe('pending');
+
+      await waitForPreviewStatus(prisma, publicFormatId);
+      const second = await request(app.getHttpServer())
+        .get(`/preview/${publicSlug}`)
+        .expect(200);
+      const body = second.body as {
+        preview: { status: string };
+        pages: unknown[];
+      };
+      expect(body.preview.status).toBe('ready');
+      expect(body.pages).toHaveLength(3);
+    }, 60000);
+  });
 });

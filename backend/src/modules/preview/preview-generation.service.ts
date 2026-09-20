@@ -26,6 +26,7 @@ import { PdfRasterizerService } from './pdf-rasterizer.service';
 @Injectable()
 export class PreviewGenerationService {
   private readonly logger = new Logger(PreviewGenerationService.name);
+  private readonly running = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -37,12 +38,18 @@ export class PreviewGenerationService {
   /** Fire-and-forget : ne rejette jamais, toute erreur se termine en
    * `previewStatus: failed` plutôt que de remonter à l'appelant HTTP. */
   generateInBackground(workFormatId: string): void {
-    void this.generate(workFormatId).catch((error: unknown) => {
-      this.logger.error(
-        `Génération de preview inattendue en échec pour le format ${workFormatId}.`,
-        error instanceof Error ? error.stack : undefined,
-      );
-    });
+    // Une seule génération à la fois par format : plusieurs visiteurs qui
+    // ouvrent l'aperçu au même moment ne déclenchent pas plusieurs rendus.
+    if (this.running.has(workFormatId)) return;
+    this.running.add(workFormatId);
+    void this.generate(workFormatId)
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Génération de preview inattendue en échec pour le format ${workFormatId}.`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      })
+      .finally(() => this.running.delete(workFormatId));
   }
 
   private async generate(workFormatId: string): Promise<void> {
