@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ChevronLeft, ChevronRight, Expand, Lock } from "lucide-react";
+import { Expand, Lock } from "lucide-react";
 
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
@@ -37,11 +36,6 @@ export function BookReader({
   isFullscreen?: boolean;
 }) {
   const { book, preview: policy, pages } = preview;
-  // Pas de `useEffect` pour réinitialiser `page` : ce composant se démonte à
-  // chaque fermeture de la modale (`BookPreview`) et remonte frais à chaque
-  // ouverture — l'état initial est déjà le bon.
-  const [page, setPage] = useState(1);
-  const atWall = pages.length > 0 && page > pages.length;
   const reachedLimit = policy.totalPages > pages.length;
 
   if (policy.status !== "ready" || pages.length === 0) {
@@ -59,11 +53,9 @@ export function BookReader({
     );
   }
 
-  const currentUrl = !atWall ? previewPageUrl(pages[page - 1].url) : null;
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-border flex items-center justify-between gap-3 border-b px-5 py-3">
+      <div className="border-border flex items-center justify-between gap-3 border-b px-5 py-3 pr-14">
         <p className="text-secondary truncate text-sm font-semibold">{book.title}</p>
         <div className="flex shrink-0 items-center gap-2">
           <Badge variant="neutral">{MODE_LABELS[policy.mode]}</Badge>
@@ -78,60 +70,37 @@ export function BookReader({
         </div>
       </div>
 
-      <div className="bg-paper-100 relative flex flex-1 items-center justify-center overflow-auto p-4 sm:p-8">
-        {atWall ? (
-          <PreviewWall policy={policy} bookSlug={bookSlug} />
-        ) : (
-          <div className="relative max-h-full">
-            {/* eslint-disable-next-line @next/next/no-img-element -- image protégée, servie par un contrôleur, jamais un asset Next optimisable */}
+      {/* Toutes les pages autorisées, l'une sous l'autre : on lit en faisant
+          défiler. Le nombre de pages est déjà limité par le backend. */}
+      <div className="bg-paper-100 flex min-h-0 flex-1 flex-col items-center gap-6 overflow-y-auto p-4 sm:p-8">
+        {pages.map((p) => (
+          <figure key={p.page} className="relative w-full max-w-xl">
+            {/* eslint-disable-next-line @next/next/no-img-element -- image protégée, servie par un contrôleur */}
             <img
-              key={currentUrl}
-              src={currentUrl!}
-              alt={`${book.title} — page ${page}`}
-              className="shadow-raised max-h-[70vh] w-auto rounded-sm object-contain sm:max-h-full"
+              src={previewPageUrl(p.url)}
+              alt={`${book.title} — page ${p.page}`}
+              loading={p.page <= 2 ? "eager" : "lazy"}
+              draggable={false}
+              className="shadow-raised w-full rounded-sm bg-white select-none"
             />
             {policy.watermark && (
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden"
               >
-                <span className="text-ink-900/15 -rotate-[24deg] text-2xl font-bold whitespace-nowrap select-none sm:text-4xl">
-                  Aperçu — GeBook
+                <span className="text-ink-900/15 -rotate-[30deg] text-5xl font-black tracking-[0.2em] whitespace-nowrap select-none sm:text-7xl">
+                  PREVIEW
                 </span>
               </div>
             )}
-          </div>
-        )}
-      </div>
+            <figcaption className="text-muted-foreground tnum mt-2 text-center text-xs">
+              Page {p.page}
+            </figcaption>
+          </figure>
+        ))}
 
-      {policy.canNavigate && (
-        <div className="border-border flex items-center justify-center gap-4 border-t px-5 py-3">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            <ChevronLeft aria-hidden className="size-4" />
-            <span className="sr-only">Page précédente</span>
-          </Button>
-          <span className="text-muted-foreground tnum text-sm">
-            {Math.min(page, pages.length)} /{" "}
-            {reachedLimit ? `${pages.length}+` : pages.length}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            disabled={atWall}
-            onClick={() => setPage((p) => Math.min(pages.length + 1, p + 1))}
-          >
-            <ChevronRight aria-hidden className="size-4" />
-            <span className="sr-only">Page suivante</span>
-          </Button>
-        </div>
-      )}
+        {reachedLimit && <PreviewWall policy={policy} bookSlug={bookSlug} />}
+      </div>
     </div>
   );
 }
