@@ -6,7 +6,8 @@ import { useState } from "react";
 import { AdminApiError } from "@/src/lib/admin-api";
 
 /**
- * TanStack Query, réservé au back-office (audit §27) : les pages publiques sont
+ * TanStack Query, monté dans le back-office (audit §27) et dans le site public
+ * pour les seuls composants interactifs (aperçu de livre) : les pages publiques sont
  * rendues côté serveur et n'ont rien à mettre en cache côté client. Un client par
  * session de navigation — `useState` garantit qu'il n'est créé qu'une fois, pas à
  * chaque rendu.
