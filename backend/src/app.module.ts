@@ -15,6 +15,7 @@ import { LibraryModule } from './modules/library/library.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PayoutsModule } from './modules/payouts/payouts.module';
+import { PreviewModule } from './modules/preview/preview.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
@@ -43,6 +44,7 @@ import { SystemModule } from './modules/system/system.module';
     OrdersModule,
     PaymentsModule,
     PayoutsModule,
+    PreviewModule,
     LibraryModule,
     CommissionsModule,
     SettingsModule,

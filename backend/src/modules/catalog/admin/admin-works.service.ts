@@ -26,6 +26,7 @@ import type { RlsContext } from '../../../prisma/rls-context';
 import type { AuthenticatedUser } from '../../auth/auth.types';
 import { ActivityLogService } from '../../../common/activity-log.service';
 import { TransactionalMailService } from '../../mail/transactional-mail.service';
+import { PreviewGenerationService } from '../../preview/preview-generation.service';
 import { TENANT_CATALOG_WRITE_ROLES } from '../../tenants/tenant-context';
 import type { TenantContext } from '../../tenants/tenant-context';
 import { STORAGE_DRIVER, type StorageDriver } from '../../files/storage-driver';
@@ -261,6 +262,7 @@ export class AdminWorksService {
     private readonly activityLog: ActivityLogService,
     private readonly uploadValidator: UploadValidatorService,
     private readonly transactionalMail: TransactionalMailService,
+    private readonly previewGeneration: PreviewGenerationService,
     @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
   ) {}
 
@@ -953,6 +955,13 @@ export class AdminWorksService {
       entityId: workFile.id,
       tenantId: tenant.tenantId,
     });
+
+    // Book Preview Sandbox (brief) : dès qu'un fichier complet est envoyé,
+    // les pages consultables en aperçu se régénèrent en tâche de fond — la
+    // réponse HTTP de l'upload n'attend pas la conversion (brief §6).
+    if (fileType === FileType.full) {
+      this.previewGeneration.generateInBackground(formatId);
+    }
 
     return {
       id: workFile.id,

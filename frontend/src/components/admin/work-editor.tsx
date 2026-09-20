@@ -6,13 +6,20 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { ArrowLeft, ExternalLink, ImagePlus, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpenCheck,
+  ExternalLink,
+  ImagePlus,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPageHeader, AdminPanel } from "@/src/components/admin/admin-page";
 import { CoverCropperDialog } from "@/src/components/admin/cover-cropper-dialog";
 import { FormatManager } from "@/src/components/admin/format-manager";
 import { LocaleTabs } from "@/src/components/admin/locale-tabs";
+import { BookPreview } from "@/src/components/preview/book-preview";
 import { useTenant } from "@/src/components/providers/tenant-provider";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
@@ -320,6 +327,15 @@ export function WorkEditor({ workId }: { workId: string }) {
             <Badge variant={workStatusTone(work.status)}>
               {WORK_STATUS_LABELS[work.status]}
             </Badge>
+            <BookPreview
+              slug={work.slug}
+              trigger={
+                <Button type="button" variant="outline" size="sm">
+                  <BookOpenCheck aria-hidden />
+                  Prévisualiser
+                </Button>
+              }
+            />
             {work.status === "published" && (
               <Button asChild variant="outline" size="sm">
                 <Link href={`/livres/${work.slug}`} target="_blank" rel="noreferrer">
