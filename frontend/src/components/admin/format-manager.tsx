@@ -17,6 +17,7 @@ import { deliveryTypeLabel, formatPrice, formatTypeLabel } from "@/src/lib/forma
 
 interface WorkFile {
   id: string;
+  fileType: "full" | "sample" | "cover" | "supplement";
   originalName: string | null;
   createdAt: string;
 }
@@ -32,6 +33,8 @@ interface WorkFormat {
   unlimitedStock: boolean;
   /** La plus récente d'abord (tri serveur) — `files[0]` est donc le fichier actif à prévisualiser. */
   files: WorkFile[];
+  previewStatus: "none" | "pending" | "ready" | "failed";
+  previewPageCount: number | null;
 }
 
 // Liste des formats possibles
@@ -160,6 +163,7 @@ export function FormatManager({ workId }: { workId: string }) {
     mutationFn: ({ formatId, file }: { formatId: string; file: File }) => {
       const formData = new FormData();
       formData.set("file", file);
+      formData.set("fileType", "full");
       setUploadProgress((progress) => ({ ...progress, [formatId]: 0 }));
       return uploadWithProgress(
         `/works/${workId}/formats/${formatId}/file`,
@@ -299,70 +303,82 @@ export function FormatManager({ workId }: { workId: string }) {
 
                 {format.deliveryType !== "physical_delivery" && (
                   <>
-                    <input
-                      ref={(el) => {
-                        fileInputRefs.current[format.id] = el;
-                      }}
-                      type="file"
-                      accept={ACCEPT_BY_FORMAT[format.formatType]}
-                      className="hidden"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) {
-                          uploadFile.mutate({ formatId: format.id, file });
-                        }
-                        event.target.value = "";
-                      }}
-                    />
-
-                    {uploadProgress[format.id] !== undefined ? (
-                      // Progression réelle de l'envoi (`uploadWithProgress`,
-                      // XMLHttpRequest) : un fichier de plusieurs dizaines de
-                      // Mo peut prendre du temps, un simple spinner ne dit pas
-                      // si l'envoi avance ou s'est figé.
-                      <div className="w-36">
-                        <div className="bg-muted h-2 overflow-hidden rounded-full">
-                          <div
-                            className="bg-primary h-full rounded-full transition-[width]"
-                            style={{
-                              width: `${Math.round(uploadProgress[format.id] * 100)}%`,
+                    {(() => {
+                      const fullFile = format.files.find((f) => f.fileType === "full");
+                      return (
+                        <>
+                          <input
+                            ref={(el) => {
+                              fileInputRefs.current[format.id] = el;
+                            }}
+                            type="file"
+                            accept={ACCEPT_BY_FORMAT[format.formatType]}
+                            className="hidden"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) {
+                                uploadFile.mutate({ formatId: format.id, file });
+                              }
+                              event.target.value = "";
                             }}
                           />
-                        </div>
-                        <p className="type-caption mt-1">
-                          {Math.round(uploadProgress[format.id] * 100)}%
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fileInputRefs.current[format.id]?.click()}
-                        >
-                          <Upload aria-hidden />
-                          {format.files.length > 0 ? "Remplacer" : "Fichier"}
-                          <span className="sr-only">
-                            {" "}
-                            du format {format.formatType.toUpperCase()}
-                          </span>
-                        </Button>
 
-                        {format.files.length > 0 && (
-                          <Button asChild variant="ghost" size="sm">
-                            <a
-                              href={`/api/admin/works/${workId}/formats/${format.id}/files/${format.files[0].id}/preview`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <Eye aria-hidden />
-                              Aperçu
-                            </a>
-                          </Button>
-                        )}
-                      </>
-                    )}
+                          {uploadProgress[format.id] !== undefined ? (
+                            // Progression réelle de l'envoi (`uploadWithProgress`,
+                            // XMLHttpRequest) : un fichier de plusieurs dizaines de
+                            // Mo peut prendre du temps, un simple spinner ne dit pas
+                            // si l'envoi avance ou s'est figé.
+                            <div className="w-36">
+                              <div className="bg-muted h-2 overflow-hidden rounded-full">
+                                <div
+                                  className="bg-primary h-full rounded-full transition-[width]"
+                                  style={{
+                                    width: `${Math.round(uploadProgress[format.id] * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="type-caption mt-1">
+                                {Math.round(uploadProgress[format.id] * 100)}%
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => fileInputRefs.current[format.id]?.click()}
+                              >
+                                <Upload aria-hidden />
+                                {fullFile ? "Remplacer" : "Fichier"}
+                                <span className="sr-only">
+                                  {" "}
+                                  du format {format.formatType.toUpperCase()}
+                                </span>
+                              </Button>
+
+                              {fullFile && (
+                                <Button asChild variant="ghost" size="sm">
+                                  <a
+                                    href={`/api/admin/works/${workId}/formats/${format.id}/files/${fullFile.id}/preview`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <Eye aria-hidden />
+                                    Aperçu
+                                  </a>
+                                </Button>
+                              )}
+                            </>
+                          )}
+
+                          {/* L'extrait/aperçu se génère automatiquement depuis ce
+                              fichier complet (Book Preview Sandbox) — plus besoin
+                              de téléverser un second fichier séparé. */}
+                          {fullFile && <PreviewStatusBadge format={format} />}
+                        </>
+                      );
+                    })()}
                   </>
                 )}
 
@@ -485,4 +501,21 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return "Une erreur est survenue. Veuillez réessayer.";
+}
+
+/** État de la génération des pages d'aperçu (Book Preview Sandbox), générées
+ * automatiquement depuis le fichier complet — rien à déclencher à la main. */
+function PreviewStatusBadge({ format }: { format: WorkFormat }) {
+  if (format.previewStatus === "ready") {
+    return (
+      <Badge variant="success">Aperçu prêt ({format.previewPageCount ?? 0} pages)</Badge>
+    );
+  }
+  if (format.previewStatus === "pending") {
+    return <Badge variant="warning">Aperçu en préparation…</Badge>;
+  }
+  if (format.previewStatus === "failed") {
+    return <Badge variant="danger">Aperçu indisponible</Badge>;
+  }
+  return null;
 }

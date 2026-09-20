@@ -3,6 +3,7 @@ import { ActivityLogService } from '../../common/activity-log.service';
 import { AuthModule } from '../auth/auth.module';
 import { CommissionsModule } from '../commissions/commissions.module';
 import { FilesModule } from '../files/files.module';
+import { MailModule } from '../mail/mail.module';
 import { AdminDistributionTermsController } from './admin-distribution-terms.controller';
 import { AdminTenantsController } from './admin-tenants.controller';
 import { DistributionTermsController } from './distribution-terms.controller';
@@ -18,7 +19,7 @@ import { TenantsPublicController } from './tenants-public.controller';
 import { TenantsService } from './tenants.service';
 
 @Module({
-  imports: [AuthModule, FilesModule, CommissionsModule],
+  imports: [AuthModule, FilesModule, CommissionsModule, MailModule],
   controllers: [
     TenantsController,
     TenantsPublicController,

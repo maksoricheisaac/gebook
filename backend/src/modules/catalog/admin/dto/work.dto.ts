@@ -197,6 +197,17 @@ export class UpdateWorkDto {
   @IsEnum(WorkStatus)
   status?: WorkStatus;
 
+  /**
+   * Motif du rejet, transmis uniquement quand `status` devient `rejected`
+   * (brief §1 — « livre rejeté avec motif »). Non persisté sur l'œuvre
+   * elle-même : conservé dans le journal d'activité et dans l'e-mail envoyé
+   * à l'auteur.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  statusReason?: string;
+
   /** Voir le commentaire équivalent sur `CreateWorkDto.visibility`. */
   @IsOptional()
   @IsEnum(WorkVisibility)

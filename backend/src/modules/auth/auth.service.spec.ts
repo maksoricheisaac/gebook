@@ -7,6 +7,7 @@ import type { LoginOtpService } from './login-otp.service';
 import type { SessionService } from './session.service';
 import type { LoginThrottleService } from './login-throttle.service';
 import type { RegisterDto } from './dto/register.dto';
+import type { TransactionalMailService } from '../mail/transactional-mail.service';
 
 // `NODE_ENV=test` désactive le throttle anti-abus de `register()` (voir son
 // commentaire) — évite d'avoir à simuler `isBlocked`/`hit` dans ces tests
@@ -64,6 +65,9 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
       send: jest.fn(),
     } as unknown as EmailVerificationService;
     const loginOtp = { send: jest.fn() } as unknown as LoginOtpService;
+    const transactionalMail = {
+      sendAccountCreated: jest.fn(),
+    } as unknown as TransactionalMailService;
 
     const auth = new AuthService(
       prisma,
@@ -72,6 +76,7 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
       emailVerification,
       loginOtp,
       testConfig,
+      transactionalMail,
     );
 
     await expect(
@@ -98,6 +103,9 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
       send: jest.fn(),
     } as unknown as EmailVerificationService;
     const loginOtp = { send: jest.fn() } as unknown as LoginOtpService;
+    const transactionalMail = {
+      sendAccountCreated: jest.fn(),
+    } as unknown as TransactionalMailService;
 
     const auth = new AuthService(
       prisma,
@@ -106,6 +114,7 @@ describe('AuthService.register — échec de l’attribution du rôle', () => {
       emailVerification,
       loginOtp,
       testConfig,
+      transactionalMail,
     );
 
     await expect(

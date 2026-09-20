@@ -142,6 +142,23 @@ enum FileType {
   @@map("file_type")
 }
 
+/// État de la génération des pages de prévisualisation d'un format (Book
+/// Preview Sandbox) — déclenchée une seule fois après l'upload du fichier
+/// complet, jamais recalculée à chaque requête (brief §6).
+enum PreviewStatus {
+  /// Aucun fichier complet exploitable pour l'instant (rien à générer).
+  none
+  /// Génération en cours (déclenchée juste après l'upload).
+  pending
+  /// Pages disponibles, `previewPageCount` fiable.
+  ready
+  /// Le fichier n'a pas pu être rendu (PDF corrompu, protégé, format non
+  /// supporté…) — jamais réessayé automatiquement en boucle.
+  failed
+
+  @@map("preview_status")
+}
+
 /// Langue d'une traduction de contenu éditorial (`WorkTranslation`, `AuthorTranslation`,
 /// `CategoryTranslation`) — distinct de la locale d'interface pilotée par next-intl côté
 /// frontend, même si les deux partagent aujourd'hui les deux mêmes valeurs.
@@ -521,6 +538,9 @@ model Author {
   city           String?      @db.VarChar(100)
   publicEmail    String?      @map("public_email") @db.VarChar(190)
   publicPhone    String?      @map("public_phone") @db.VarChar(30)
+  /// Réseaux sociaux publics de l'auteur (clé = plateforme, valeur = URL), sur le
+  /// même principe que `Tenant.socialLinks` — affichés sur la page auteur publique.
+  socialLinks    Json?        @map("social_links")
   payoutPhone    String?      @map("payout_phone") @db.VarChar(30)
   payoutMethod   String?      @map("payout_method") @db.VarChar(100)
   status         AuthorStatus @default(draft)
@@ -696,24 +716,33 @@ model Work {
 
 /// Une manière d'acheter une œuvre, avec son propre prix et son propre mode de livraison.
 model WorkFormat {
-  id             String       @id @default(uuid(7)) @db.Uuid
-  workId         String       @map("work_id") @db.Uuid
-  formatType     FormatType   @map("format_type")
-  label          String?      @db.VarChar(100)
-  price          Decimal      @db.Decimal(12, 2)
-  currency       String       @default("XAF") @db.Char(3)
-  stockQuantity  Int?         @map("stock_quantity")
-  unlimitedStock Boolean      @default(false) @map("unlimited_stock")
-  isAvailable    Boolean      @default(true) @map("is_available")
-  deliveryType   DeliveryType @map("delivery_type")
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String        @id @default(uuid(7)) @db.Uuid
+  workId             String        @map("work_id") @db.Uuid
+  formatType         FormatType    @map("format_type")
+  label              String?       @db.VarChar(100)
+  price              Decimal       @db.Decimal(12, 2)
+  currency           String        @default("XAF") @db.Char(3)
+  stockQuantity      Int?          @map("stock_quantity")
+  unlimitedStock     Boolean       @default(false) @map("unlimited_stock")
+  isAvailable        Boolean       @default(true) @map("is_available")
+  deliveryType       DeliveryType  @map("delivery_type")
+  /// Book Preview Sandbox (brief) : état de la génération des pages
+  /// prévisualisables, dérivées du fichier `full` le plus récent.
+  previewStatus      PreviewStatus @default(none) @map("preview_status")
+  previewPageCount   Int?          @map("preview_page_count")
+  previewGeneratedAt DateTime?     @map("preview_generated_at") @db.Timestamptz(6)
+  /// Motif de l'échec, à l'usage de l'équipe GeBook — jamais montré tel quel
+  /// au lecteur (règle n° 16, jamais d'erreur technique brute).
+  previewError       String?       @map("preview_error") @db.Text
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   work             Work              @relation(fields: [workId], references: [id], onDelete: Cascade, map: "fk_work_formats_work")
   files            WorkFile[]
   orderItems       OrderItem[]
   library          ReaderLibrary[]
   providerProducts ProviderProduct[]
+  previewPages     WorkPreviewPage[]
 
   /// Une œuvre ne peut avoir qu'un seul format de chaque type (règle n° 2).
   @@unique([workId, formatType], map: "uq_work_format")
@@ -745,6 +774,27 @@ model WorkFile {
   @@index([fileType, isActive], map: "idx_work_files_type_active")
   @@index([checksum], map: "idx_work_files_checksum")
   @@map("work_files")
+}
+
+/// Une image par page prévisualisable (Book Preview Sandbox), générée une
+/// seule fois depuis le fichier `full` (brief §6) — jamais le fichier
+/// original lui-même, jamais régénérée à chaque requête. `storagePath` vit
+/// dans le même stockage privé que `WorkFile.storagePath` : aucune URL
+/// directe, toujours servie par un contrôleur qui revérifie la politique de
+/// preview à chaque page (brief §17 — pas de contournement par `?page=`).
+model WorkPreviewPage {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  workFormatId String   @map("work_format_id") @db.Uuid
+  pageNumber   Int      @map("page_number")
+  storagePath  String   @map("storage_path") @db.VarChar(500)
+  width        Int?
+  height       Int?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workFormat WorkFormat @relation(fields: [workFormatId], references: [id], onDelete: Cascade, map: "fk_work_preview_pages_format")
+
+  @@unique([workFormatId, pageNumber], map: "uq_work_preview_pages_format_page")
+  @@map("work_preview_pages")
 }
 
 // ---------------------------------------------------------------------------
@@ -873,7 +923,7 @@ model PaymentProvider {
   events       PaymentEvent[]
   products     ProviderProduct[]
   payouts      Payout[]
-  payoutEvents PayoutEvent[]     @relation("PayoutProviderEvents")
+  payoutEvents PayoutEvent[]               @relation("PayoutProviderEvents")
   credentials  PaymentProviderCredential[]
 
   @@index([status, priority], map: "idx_payment_providers_status_priority")

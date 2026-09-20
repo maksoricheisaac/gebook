@@ -1,7 +1,9 @@
 import {
   BookText,
+  Coins,
   FolderTree,
   LayoutDashboard,
+  ListChecks,
   Percent,
   ReceiptText,
   Settings,
@@ -16,6 +18,8 @@ import { useTenant } from "@/src/components/providers/tenant-provider";
 
 /** Aligné sur `TENANT_FINANCE_ROLES` côté API (policy RLS `sale_distributions_select`). */
 const FINANCE_ROLES = ["owner", "admin", "finance"];
+/** Aligné sur `TENANT_MANAGEMENT_ROLES` côté API (policy RLS `activity_logs_select`). */
+const MANAGEMENT_ROLES = ["owner", "admin"];
 
 /** Les deux seuls regroupements de contenu : au-delà, un intitulé de plus par entrée n'aiderait plus à s'orienter. */
 type AdminNavGroup = "Catalogue" | "Opérations";
@@ -30,6 +34,8 @@ export interface AdminNavItem {
   platformOnly?: boolean;
   /** Tableau de bord de tenant : visible aussi pour owner/admin/finance, pas seulement platform_admin. */
   financeOnly?: boolean;
+  /** Journal d'activité : visible aussi pour owner/admin de tenant, pas seulement platform_admin. */
+  managementOnly?: boolean;
   /** `undefined` = hors groupe (le tableau de bord, affiché seul en tête). */
   group?: AdminNavGroup;
 }
@@ -80,7 +86,30 @@ const ADMIN_NAV: AdminNavItem[] = [
     platformOnly: true,
     group: "Opérations",
   },
+  {
+    href: "/admin/modele-economique",
+    label: "Modèle économique",
+    icon: Coins,
+    platformOnly: true,
+    group: "Opérations",
+  },
+  {
+    href: "/admin/retraits",
+    label: "Retraits",
+    icon: Wallet,
+    platformOnly: true,
+    financeOnly: true,
+    group: "Opérations",
+  },
   { href: "/admin/team", label: "Équipe", icon: Users, group: "Opérations" },
+  {
+    href: "/admin/logs",
+    label: "Journal d'activité",
+    icon: ListChecks,
+    platformOnly: true,
+    managementOnly: true,
+    group: "Opérations",
+  },
 ];
 
 const NAV_GROUPS: AdminNavGroup[] = ["Catalogue", "Opérations"];
@@ -109,10 +138,12 @@ export function isAdminNavItemActive(pathname: string, item: AdminNavItem): bool
 export function useAdminNav(isPlatformAdmin: boolean) {
   const { role } = useTenant();
   const isFinanceRole = role !== null && FINANCE_ROLES.includes(role);
+  const isManagementRole = role !== null && MANAGEMENT_ROLES.includes(role);
   const items = ADMIN_NAV.filter((item) => {
     if (!item.platformOnly) return true;
     if (isPlatformAdmin) return true;
-    return Boolean(item.financeOnly) && isFinanceRole;
+    if (item.financeOnly && isFinanceRole) return true;
+    return Boolean(item.managementOnly) && isManagementRole;
   });
   const ungroupedItems = items.filter((item) => !item.group);
   const groupedItems = NAV_GROUPS.map((name) => ({

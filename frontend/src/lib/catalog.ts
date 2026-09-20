@@ -19,6 +19,8 @@ export interface WorkFormat {
   currency: string;
   deliveryType: string;
   isAvailable: boolean;
+  /** Un extrait gratuit est disponible pour ce format — affiche « Lire un extrait ». */
+  hasSample: boolean;
 }
 
 export interface WorkSummary {
@@ -61,6 +63,7 @@ export interface AuthorSummary {
 
 export interface AuthorDetail extends AuthorSummary {
   biography: string | null;
+  socialLinks: Record<string, string> | null;
 }
 
 export interface Category {

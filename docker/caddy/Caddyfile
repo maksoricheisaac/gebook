@@ -1,0 +1,14 @@
+# Reverse proxy du staging GeBook — TLS automatique (Let's Encrypt),
+# équivalent autonome des labels Traefik de docker-compose.yml (prod, sous
+# Dokploy). Deux blocs, un par domaine ; Caddy gère lui-même le renouvellement
+# des certificats, aucune tâche cron à prévoir.
+
+{$STAGING_BACKEND_DOMAIN} {
+	tls {$ACME_EMAIL}
+	reverse_proxy backend:3001
+}
+
+{$STAGING_FRONTEND_DOMAIN} {
+	tls {$ACME_EMAIL}
+	reverse_proxy frontend:3000
+}

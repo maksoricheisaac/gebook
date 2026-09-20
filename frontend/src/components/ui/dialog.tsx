@@ -59,8 +59,10 @@ function DialogContent({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showClose?: boolean;
-  /** `md` : la plupart des formulaires. `lg` : formulaires à plusieurs colonnes (œuvres). */
-  size?: "md" | "lg";
+  /** `md` : la plupart des formulaires. `lg` : formulaires à plusieurs colonnes
+   * (œuvres). `full` : quasi plein écran, pour un contenu qui a besoin de la
+   * place (lecteur de preview) plutôt qu'une carte de formulaire. */
+  size?: "md" | "lg" | "full";
 }) {
   return (
     <DialogPortal>
@@ -81,7 +83,11 @@ function DialogContent({
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-          size === "lg" ? "max-w-2xl" : "max-w-lg",
+          size === "full"
+            ? "h-[calc(100vh-2rem)] w-[calc(100vw-1rem)] max-w-5xl sm:h-[calc(100vh-3rem)]"
+            : size === "lg"
+              ? "max-w-2xl"
+              : "max-w-lg",
           className,
         )}
         {...props}

@@ -1,8 +1,10 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { Link2 } from "lucide-react";
 
 import { BookGrid } from "@/src/components/catalog/book-grid";
+import { ShareButton, WhatsAppShareLink } from "@/src/components/catalog/share-button";
 import { Breadcrumb, Container, SectionHeader } from "@/src/components/layout/page-shell";
 import { RichText } from "@/src/components/ui/rich-text";
 import { ApiError } from "@/src/lib/api";
@@ -62,6 +64,9 @@ export default async function AuthorPage(props: PageProps<"/auteurs/[slug]">) {
   const works = await fetchWorks({ author: slug, perPage: 24 });
 
   const location = [author.city, author.country].filter(Boolean).join(", ");
+  const socialEntries = Object.entries(author.socialLinks ?? {}).filter(([, href]) =>
+    href?.trim(),
+  );
 
   return (
     <Container size="wide" className="pb-20">
@@ -90,6 +95,23 @@ export default async function AuthorPage(props: PageProps<"/auteurs/[slug]">) {
           </p>
 
           <RichText html={author.biography} className="text-foreground/85 mt-6" />
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <ShareButton title={author.penName} path={`/auteurs/${author.slug}`} />
+            <WhatsAppShareLink title={author.penName} path={`/auteurs/${author.slug}`} />
+            {socialEntries.map(([network, href]) => (
+              <a
+                key={network}
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className="border-border text-secondary hover:border-primary/40 hover:text-primary inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors"
+              >
+                <Link2 aria-hidden className="size-3.5" />
+                {network[0].toUpperCase() + network.slice(1)}
+              </a>
+            ))}
+          </div>
         </div>
       </section>
 

@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class LoginDto {
   @Transform(({ value }): string =>
@@ -13,4 +13,9 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty({ message: 'Le mot de passe est obligatoire.' })
   password!: string;
+
+  /** Vérifié par `TurnstileGuard`, avant ce DTO — voir `RegisterDto.turnstileToken`. */
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }
