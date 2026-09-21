@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { normalizePhoneDigits } from '../phone';
 
 export class InitializePaymentDto {
   @IsString()
@@ -29,7 +30,10 @@ export class InitializePaymentDto {
    */
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLength(30)
+  @Transform(({ value }): unknown =>
+    typeof value === 'string' ? normalizePhoneDigits(value) : value,
+  )
   @Matches(/^\d{8,20}$/, {
     message:
       'Le numéro de téléphone doit être au format international, chiffres uniquement.',

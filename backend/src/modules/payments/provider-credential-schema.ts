@@ -78,6 +78,27 @@ export const PROVIDER_CREDENTIAL_SCHEMAS: Record<
       required: true,
       envFallback: 'FEEXPAY_SHOP_ID',
     },
+    {
+      key: 'network',
+      label: 'Canal par défaut (ex. mtn_cg)',
+      secret: false,
+      required: false,
+      envFallback: 'FEEXPAY_NETWORK',
+    },
+    {
+      key: 'minAmount',
+      label: 'Montant minimum (XAF)',
+      secret: false,
+      required: false,
+      envFallback: 'FEEXPAY_MIN_AMOUNT',
+    },
+    {
+      key: 'maxAmount',
+      label: 'Montant maximum (XAF)',
+      secret: false,
+      required: false,
+      envFallback: 'FEEXPAY_MAX_AMOUNT',
+    },
   ],
   pawapay: [
     {

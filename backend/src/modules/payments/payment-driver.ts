@@ -56,7 +56,12 @@ export interface PaymentInitResult {
 /** Résultat d'une interrogation directe du prestataire. */
 export interface PaymentVerification {
   transactionId: string;
-  outcome: PaymentOutcome;
+  /**
+   * `pending` : le prestataire n'a pas encore tranché. Ce n'est ni un succès ni
+   * un échec — l'appelant ne doit rien livrer et doit reposer la question plus
+   * tard.
+   */
+  outcome: PaymentOutcome | 'pending';
   paidAmountMinor: number;
   feeMinor: number;
   raw: unknown;

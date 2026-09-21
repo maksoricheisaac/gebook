@@ -132,7 +132,7 @@ export class CinetPayPaymentDriver implements PaymentDriver {
 
     return {
       transactionId,
-      outcome: outcome ?? 'failed',
+      outcome: outcome ?? 'pending',
       paidAmountMinor: outcome === 'successful' ? amountMinor : 0,
       // CinetPay ne renvoie aucun frais distinct sur cette route — jamais
       // inventé, laissé à zéro tant qu'aucun champ documenté ne le porte.

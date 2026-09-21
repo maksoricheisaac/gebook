@@ -232,6 +232,21 @@ export class Environment {
   @IsString()
   FEEXPAY_SHOP_ID?: string;
 
+  /** Canal FeexPay par défaut (ex. `mtn_cg`), utilisé quand la requête n'en
+   * précise pas. Format vérifié au démarrage (`validateEnvironment`). */
+  @IsOptional()
+  @IsString()
+  FEEXPAY_NETWORK?: string;
+
+  /** Bornes de montant (unités majeures) ; défauts 100 / 2 000 000 côté pilote. */
+  @IsOptional()
+  @IsString()
+  FEEXPAY_MIN_AMOUNT?: string;
+
+  @IsOptional()
+  @IsString()
+  FEEXPAY_MAX_AMOUNT?: string;
+
   /**
    * URL publique de CETTE API (pas celle du frontend — voir `CORS_ORIGINS`
    * pour ça), utilisée pour construire les `notify_url` que certains
@@ -455,6 +470,8 @@ export function validateEnvironment(raw: Record<string, unknown>): Environment {
     );
   }
 
+  validateFeexPayEnvironment(environment);
+
   if (
     !/^[0-9a-fA-F]{64}$/.test(environment.CREDENTIALS_ENCRYPTION_KEY) &&
     Buffer.from(environment.CREDENTIALS_ENCRYPTION_KEY, 'base64').length !== 32
@@ -484,4 +501,64 @@ export function validateEnvironment(raw: Record<string, unknown>): Environment {
   }
 
   return environment;
+}
+
+/**
+ * Valeurs FeexPay saisies dans l'environnement : vérifiées dès le démarrage
+ * pour qu'une faute de frappe ne se découvre pas au premier paiement d'un
+ * lecteur. Toutes restent facultatives — les identifiants peuvent aussi être
+ * saisis (chiffrés) depuis le Superadmin, l'environnement n'étant qu'un repli.
+ * Les secrets (`FEEXPAY_API_KEY`) ne sont jamais recopiés dans un message.
+ */
+function validateFeexPayEnvironment(environment: Environment): void {
+  const url = environment.FEEXPAY_API_URL;
+  if (url) {
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(url);
+    } catch {
+      parsed = null;
+    }
+    if (!parsed || !['https:', 'http:'].includes(parsed.protocol)) {
+      throw new Error(
+        'Configuration refusée : FEEXPAY_API_URL doit être une URL valide (ex. https://api-v2.feexpay.me).',
+      );
+    }
+    if (
+      environment.NODE_ENV === NodeEnvironment.production &&
+      parsed.protocol !== 'https:'
+    ) {
+      throw new Error(
+        'Configuration refusée : FEEXPAY_API_URL doit utiliser HTTPS en production ' +
+          '(la clé API voyage dans chaque requête).',
+      );
+    }
+  }
+
+  const network = environment.FEEXPAY_NETWORK;
+  if (network && !/^[a-z0-9_]+$/.test(network)) {
+    throw new Error(
+      'Configuration refusée : FEEXPAY_NETWORK doit ressembler à « mtn_cg » (minuscules, chiffres, « _ »).',
+    );
+  }
+
+  const bounds = (['FEEXPAY_MIN_AMOUNT', 'FEEXPAY_MAX_AMOUNT'] as const).map(
+    (key) => {
+      const raw = environment[key];
+      if (!raw) return undefined;
+      const value = Number(raw);
+      if (!Number.isInteger(value) || value <= 0) {
+        throw new Error(
+          `Configuration refusée : ${key} doit être un entier strictement positif.`,
+        );
+      }
+      return value;
+    },
+  );
+  const [min, max] = bounds;
+  if (min !== undefined && max !== undefined && min > max) {
+    throw new Error(
+      'Configuration refusée : FEEXPAY_MIN_AMOUNT ne peut pas dépasser FEEXPAY_MAX_AMOUNT.',
+    );
+  }
 }
