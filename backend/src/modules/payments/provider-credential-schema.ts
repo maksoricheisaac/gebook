@@ -100,6 +100,43 @@ export const PROVIDER_CREDENTIAL_SCHEMAS: Record<
       envFallback: 'FEEXPAY_MAX_AMOUNT',
     },
   ],
+  openpay: [
+    {
+      key: 'apiUrl',
+      label: "URL de l'API",
+      secret: false,
+      required: false,
+      envFallback: 'OPENPAY_API_URL',
+    },
+    {
+      key: 'apiKey',
+      label: 'Clé API (XO-API-KEY)',
+      secret: true,
+      required: true,
+      envFallback: 'OPENPAY_API_KEY',
+    },
+    {
+      key: 'network',
+      label: 'Canal par défaut (mtn ou airtel)',
+      secret: false,
+      required: false,
+      envFallback: 'OPENPAY_NETWORK',
+    },
+    {
+      key: 'minAmount',
+      label: 'Montant minimum (XAF)',
+      secret: false,
+      required: false,
+      envFallback: 'OPENPAY_MIN_AMOUNT',
+    },
+    {
+      key: 'maxAmount',
+      label: 'Montant maximum (XAF)',
+      secret: false,
+      required: false,
+      envFallback: 'OPENPAY_MAX_AMOUNT',
+    },
+  ],
   pawapay: [
     {
       key: 'apiUrl',

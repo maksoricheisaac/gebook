@@ -247,6 +247,27 @@ export class Environment {
   @IsString()
   FEEXPAY_MAX_AMOUNT?: string;
 
+  @IsOptional()
+  @IsString()
+  OPENPAY_API_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  OPENPAY_API_KEY?: string;
+
+  /** Canal OpenPay par défaut : `mtn` ou `airtel`. */
+  @IsOptional()
+  @IsString()
+  OPENPAY_NETWORK?: string;
+
+  @IsOptional()
+  @IsString()
+  OPENPAY_MIN_AMOUNT?: string;
+
+  @IsOptional()
+  @IsString()
+  OPENPAY_MAX_AMOUNT?: string;
+
   /**
    * URL publique de CETTE API (pas celle du frontend — voir `CORS_ORIGINS`
    * pour ça), utilisée pour construire les `notify_url` que certains

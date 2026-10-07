@@ -186,6 +186,19 @@ async function seedPaymentProviders(): Promise<void> {
       priority: 6,
     },
     {
+      code: 'openpay',
+      name: 'OpenPay',
+      driver: 'OpenPayPaymentDriver',
+      environment: ProviderEnvironment.sandbox,
+      // Pay-in uniquement : aucun pilote payout OpenPay n'existe.
+      status: ProviderStatus.active,
+      supportsMobileMoney: true,
+      supportsCard: false,
+      supportsRefund: false,
+      supportsPayout: false,
+      priority: 7,
+    },
+    {
       code: 'chariow',
       name: 'Chariow',
       driver: 'ChariowPaymentDriver',
