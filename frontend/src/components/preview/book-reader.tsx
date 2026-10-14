@@ -55,6 +55,8 @@ export function BookReader({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* Jamais imprimé : une page d'aperçu ne s'exporte pas. */}
+      <style>{`@media print { .preview-pages { display: none !important; } }`}</style>
       <div className="border-border flex items-center justify-between gap-3 border-b px-5 py-3 pr-14">
         <p className="text-secondary truncate text-sm font-semibold">{book.title}</p>
         <div className="flex shrink-0 items-center gap-2">
@@ -72,16 +74,20 @@ export function BookReader({
 
       {/* Toutes les pages autorisées, l'une sous l'autre : on lit en faisant
           défiler. Le nombre de pages est déjà limité par le backend. */}
-      <div className="bg-paper-100 flex min-h-0 flex-1 flex-col items-center gap-6 overflow-y-auto p-4 sm:p-8">
+      <div className="preview-pages bg-paper-100 flex min-h-0 flex-1 flex-col items-center gap-6 overflow-y-auto p-4 sm:p-8">
         {pages.map((p) => (
-          <figure key={p.page} className="relative w-full max-w-xl">
+          <figure
+            key={p.page}
+            className="relative w-full max-w-xl select-none"
+            onContextMenu={(event) => event.preventDefault()}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element -- image protégée, servie par un contrôleur */}
             <img
               src={previewPageUrl(p.url)}
               alt={`${book.title} — page ${p.page}`}
               loading={p.page <= 2 ? "eager" : "lazy"}
               draggable={false}
-              className="shadow-raised w-full rounded-sm bg-white select-none"
+              className="shadow-raised pointer-events-none w-full rounded-sm bg-white select-none"
             />
             {policy.watermark && (
               <div

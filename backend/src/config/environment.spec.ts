@@ -184,3 +184,58 @@ describe('validateEnvironment', () => {
     ).toThrow(/TURNSTILE_SECRET_KEY/);
   });
 });
+
+describe('validateEnvironment — FeexPay', () => {
+  it('accepte une configuration FeexPay valide', () => {
+    expect(() =>
+      validateEnvironment({
+        ...baseEnvironment,
+        FEEXPAY_API_URL: 'https://api-v2.feexpay.me',
+        FEEXPAY_NETWORK: 'mtn_cg',
+        FEEXPAY_MIN_AMOUNT: '100',
+        FEEXPAY_MAX_AMOUNT: '2000000',
+      }),
+    ).not.toThrow();
+  });
+
+  it('traite les valeurs vides du .env.example comme absentes', () => {
+    expect(() =>
+      validateEnvironment({
+        ...baseEnvironment,
+        FEEXPAY_API_URL: '',
+        FEEXPAY_NETWORK: '',
+        FEEXPAY_MIN_AMOUNT: '',
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    [{ FEEXPAY_API_URL: 'pas une url' }, /FEEXPAY_API_URL/],
+    [{ FEEXPAY_NETWORK: 'MTN CG' }, /FEEXPAY_NETWORK/],
+    [{ FEEXPAY_MIN_AMOUNT: '-5' }, /FEEXPAY_MIN_AMOUNT/],
+    [{ FEEXPAY_MAX_AMOUNT: '10.5' }, /FEEXPAY_MAX_AMOUNT/],
+    [
+      { FEEXPAY_MIN_AMOUNT: '500', FEEXPAY_MAX_AMOUNT: '100' },
+      /ne peut pas dépasser/,
+    ],
+  ])('refuse %j au démarrage', (extra, message) => {
+    expect(() => validateEnvironment({ ...baseEnvironment, ...extra })).toThrow(
+      message,
+    );
+  });
+
+  it('refuse une URL FeexPay en clair (http) en production', () => {
+    expect(() =>
+      validateEnvironment({
+        ...baseEnvironment,
+        NODE_ENV: 'production',
+        APP_DEBUG: 'false',
+        PAYMENT_WEBHOOK_SECRET: PRODUCTION_WEBHOOK_SECRET,
+        SETUP_TOKEN: PRODUCTION_SETUP_TOKEN,
+        CREDENTIALS_ENCRYPTION_KEY: PRODUCTION_ENCRYPTION_KEY,
+        TURNSTILE_SECRET_KEY: PRODUCTION_TURNSTILE_SECRET_KEY,
+        FEEXPAY_API_URL: 'http://api-v2.feexpay.me',
+      }),
+    ).toThrow(/HTTPS/);
+  });
+});

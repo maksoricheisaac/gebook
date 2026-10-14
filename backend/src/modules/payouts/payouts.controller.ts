@@ -20,14 +20,18 @@ export class PayoutsController {
 
   @Get('balance')
   balance(
+    @CurrentUser() admin: AuthenticatedUser,
     @CurrentTenant() tenant: TenantContext,
   ): Promise<PayoutBalanceResponse> {
-    return this.payouts.balance(tenant);
+    return this.payouts.balance(admin, tenant);
   }
 
   @Get()
-  list(@CurrentTenant() tenant: TenantContext): Promise<PayoutResponse[]> {
-    return this.payouts.listMine(tenant);
+  list(
+    @CurrentUser() admin: AuthenticatedUser,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<PayoutResponse[]> {
+    return this.payouts.listMine(admin, tenant);
   }
 
   @Post()

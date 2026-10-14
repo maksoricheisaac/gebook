@@ -35,6 +35,19 @@ export class PaymentsController {
     return this.payments.initialize(dto, user);
   }
 
+  /**
+   * Relit l'état chez le prestataire et synchronise la commande. À appeler à
+   * intervalle borné par le frontend tant que le statut vaut `pending`.
+   */
+  @Post('payments/:id/status')
+  @HttpCode(HttpStatus.OK)
+  syncStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaymentResponse> {
+    return this.payments.syncStatus(id, user);
+  }
+
   @Get('orders/:orderNumber/payments')
   listForOrder(
     @Param('orderNumber') orderNumber: string,

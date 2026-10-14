@@ -133,7 +133,7 @@ export class PawaPayPaymentDriver implements PaymentDriver {
 
     return {
       transactionId,
-      outcome: outcome ?? 'failed',
+      outcome: outcome ?? 'pending',
       paidAmountMinor: outcome === 'successful' ? amountMinor : 0,
       // Aucun frais distinct documenté sur cette route.
       feeMinor: 0,

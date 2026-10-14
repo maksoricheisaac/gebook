@@ -12,6 +12,7 @@ import { FakePaymentDriver } from './drivers/fake-payment.driver';
 import { FakePayoutDriver } from './drivers/fake-payout.driver';
 import { FeexPayPaymentDriver } from './drivers/feexpay-payment.driver';
 import { FeexPayPayoutDriver } from './drivers/feexpay-payout.driver';
+import { OpenPayPaymentDriver } from './drivers/openpay-payment.driver';
 import { PawaPayPaymentDriver } from './drivers/pawapay-payment.driver';
 import { PawaPayPayoutDriver } from './drivers/pawapay-payout.driver';
 import { PAYMENT_DRIVER } from './payment-driver';
@@ -50,6 +51,7 @@ import { WebhooksController } from './webhooks.controller';
     CinetPayPaymentDriver,
     FeexPayPaymentDriver,
     FeexPayPayoutDriver,
+    OpenPayPaymentDriver,
     PawaPayPaymentDriver,
     PawaPayPayoutDriver,
     {
@@ -58,12 +60,14 @@ import { WebhooksController } from './webhooks.controller';
         fake: FakePaymentDriver,
         cinetpay: CinetPayPaymentDriver,
         feexpay: FeexPayPaymentDriver,
+        openpay: OpenPayPaymentDriver,
         pawapay: PawaPayPaymentDriver,
-      ) => [fake, cinetpay, feexpay, pawapay],
+      ) => [fake, cinetpay, feexpay, openpay, pawapay],
       inject: [
         FakePaymentDriver,
         CinetPayPaymentDriver,
         FeexPayPaymentDriver,
+        OpenPayPaymentDriver,
         PawaPayPaymentDriver,
       ],
     },

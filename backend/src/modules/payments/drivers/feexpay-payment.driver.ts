@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { fromMinorUnits, toMinorUnits } from '../money';
+import { maskPhone, normalizePhoneDigits } from '../phone';
 import { ProviderConfigService } from '../provider-config.service';
 import type {
   ConnectionTestResult,
@@ -15,14 +16,29 @@ import type {
 } from '../payment-driver';
 import {
   InvalidProviderResponse,
+  PaymentRejectedByProvider,
   ProviderTimeout,
   ProviderUnavailable,
 } from '../provider-errors';
+import { feexPayFailure, rejection } from './feexpay-errors';
 
 export const FEEXPAY_PROVIDER_CODE = 'feexpay';
 
 const DEFAULT_API_URL = 'https://api-v2.feexpay.me';
 const REQUEST_TIMEOUT_MS = 15000;
+
+/** Bornes documentées pour MTN Congo Brazzaville, surchargeables par configuration. */
+const DEFAULT_MIN_AMOUNT = 100;
+const DEFAULT_MAX_AMOUNT = 2_000_000;
+
+/** XAF (Congo) et XOF sont deux monnaies distinctes à parité fixe ; FeexPay
+ * ne reçoit aucune devise, seulement un montant entier. */
+const ACCEPTED_CURRENCIES = ['XAF', 'XOF'];
+
+/** Format international MTN Congo : 242 + 9 chiffres. */
+const CONGO_PHONE = /^242\d{9}$/;
+const GENERIC_INTERNATIONAL_PHONE = /^\d{8,15}$/;
+const CHANNEL_CODE = /^[a-z0-9_]+$/;
 
 interface FeexPayInitResponse {
   reference?: string;
@@ -73,6 +89,8 @@ interface FeexPayBalanceResponse {
 export class FeexPayPaymentDriver implements PaymentDriver {
   readonly code = FEEXPAY_PROVIDER_CODE;
 
+  private readonly logger = new Logger(FeexPayPaymentDriver.name);
+
   readonly capabilities: DriverCapabilities = {
     supportsMobileMoney: true,
     supportsCard: false,
@@ -82,22 +100,29 @@ export class FeexPayPaymentDriver implements PaymentDriver {
   constructor(private readonly providerConfig: ProviderConfigService) {}
 
   async initialize(request: PaymentInitRequest): Promise<PaymentInitResult> {
-    if (!request.customerPhone || !request.channel) {
-      throw new InvalidProviderResponse(
-        this.code,
-        'numéro de téléphone et canal (opérateur/pays) requis pour ce prestataire',
-      );
+    const channel = request.channel ?? (await this.defaultNetwork());
+    if (!channel || !CHANNEL_CODE.test(channel)) {
+      throw rejection(this.code, 'ERR_PROVIDER_REJECTED');
     }
 
+    const phone = this.validatePhone(request.customerPhone, channel);
+    const amount = await this.validateAmount(
+      request.amountMinor,
+      request.currency,
+    );
+
+    const startedAt = Date.now();
     const response = await this.post<FeexPayInitResponse>(
-      `/api/transactions/public/requesttopay/${request.channel}`,
+      'payin.initiate',
+      `/api/transactions/public/requesttopay/${channel}`,
       {
-        phoneNumber: request.customerPhone,
-        amount: fromMinorUnits(request.amountMinor).toNumber(),
+        phoneNumber: phone,
+        amount,
         shop: await this.shopId(),
         description: this.sanitizeText(
           `Commande GeBook ${request.orderNumber}`,
         ),
+        // Référence métier non sensible : jamais de donnée personnelle ici.
         callback_info: request.idempotencyKey,
       },
     );
@@ -105,9 +130,22 @@ export class FeexPayPaymentDriver implements PaymentDriver {
     if (!response.reference) {
       throw new InvalidProviderResponse(
         this.code,
-        response.message ?? 'réponse incomplète',
+        'réponse sans référence de transaction',
       );
     }
+
+    this.logger.log(
+      JSON.stringify({
+        event: 'payment.initiated',
+        provider: this.code,
+        channel,
+        providerReference: response.reference,
+        amount,
+        status: response.status,
+        phone: maskPhone(phone),
+        durationMs: Date.now() - startedAt,
+      }),
+    );
 
     return {
       providerTransactionId: response.reference,
@@ -125,7 +163,8 @@ export class FeexPayPaymentDriver implements PaymentDriver {
 
     return {
       transactionId,
-      outcome: outcome ?? 'failed',
+      // `PENDING` (ou tout statut non définitif) n'est jamais un échec.
+      outcome: outcome ?? 'pending',
       paidAmountMinor: outcome === 'successful' ? amountMinor : 0,
       // Aucun frais distinct dans la réponse de statut FeexPay.
       feeMinor: 0,
@@ -222,7 +261,8 @@ export class FeexPayPaymentDriver implements PaymentDriver {
   async testConnection(): Promise<ConnectionTestResult> {
     try {
       const response = await this.get<FeexPayBalanceResponse>(
-        `/api/balance/public/getByShop/${await this.shopId()}`,
+        'balance.get',
+        `/api/balance/public/getByShop/${encodeURIComponent(await this.shopId())}`,
       );
       if (response.success !== true) {
         return {
@@ -244,7 +284,8 @@ export class FeexPayPaymentDriver implements PaymentDriver {
     transactionId: string,
   ): Promise<FeexPayStatusResponse> {
     return this.get<FeexPayStatusResponse>(
-      `/api/transactions/public/single/status/${transactionId}`,
+      'payin.status',
+      `/api/transactions/public/single/status/${encodeURIComponent(transactionId)}`,
     );
   }
 
@@ -298,23 +339,87 @@ export class FeexPayPaymentDriver implements PaymentDriver {
     return this.providerConfig.get(this.code, 'shopId');
   }
 
+  private validatePhone(phone: string | undefined, channel: string): string {
+    if (!phone) throw rejection(this.code, 'ERR_INVALID_PHONE_NUMBER');
+    const digits = normalizePhoneDigits(phone);
+    const valid =
+      channel === 'mtn_cg'
+        ? CONGO_PHONE.test(digits)
+        : GENERIC_INTERNATIONAL_PHONE.test(digits);
+    if (!valid) throw rejection(this.code, 'ERR_INVALID_PHONE_NUMBER');
+    return digits;
+  }
+
+  /**
+   * Bornes vérifiées côté serveur avant tout appel : la validation du
+   * frontend ne compte jamais. Retourne le montant en unités majeures
+   * (entier — pas de subdivision du franc CFA).
+   */
+  private async validateAmount(
+    amountMinor: number,
+    currency: string,
+  ): Promise<number> {
+    const amount = fromMinorUnits(amountMinor);
+    if (
+      !ACCEPTED_CURRENCIES.includes(currency) ||
+      !Number.isInteger(amountMinor) ||
+      !amount.isInteger()
+    ) {
+      throw rejection(this.code, 'ERR_INVALID_AMOUNT');
+    }
+    const [min, max] = await Promise.all([
+      this.readBound('minAmount', DEFAULT_MIN_AMOUNT),
+      this.readBound('maxAmount', DEFAULT_MAX_AMOUNT),
+    ]);
+    const value = amount.toNumber();
+    if (value < min || value > max) {
+      throw rejection(this.code, 'ERR_INVALID_AMOUNT');
+    }
+    return value;
+  }
+
+  private async readBound(key: string, fallback: number): Promise<number> {
+    const raw = await this.providerConfig.getOptional(this.code, key);
+    const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  private async defaultNetwork(): Promise<string | undefined> {
+    return this.providerConfig.getOptional(this.code, 'network');
+  }
+
   private async post<T>(
+    operation: string,
     path: string,
     body: Record<string, unknown>,
   ): Promise<T> {
-    return this.request<T>(path, {
+    return this.request<T>(operation, path, {
       method: 'POST',
       body: JSON.stringify(body),
     });
   }
 
-  private async get<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'GET' });
+  private async get<T>(operation: string, path: string): Promise<T> {
+    return this.request<T>(operation, path, { method: 'GET' });
   }
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  /**
+   * Aucun retry ici, volontairement : rejouer une initiation dont la réponse a
+   * été perdue pourrait débiter deux fois le lecteur. Un timeout ou une 5xx
+   * lève une erreur d'issue *incertaine* (`isUncertainProviderError`) que
+   * `PaymentsService` traite en interrogeant le statut, jamais en réémettant.
+   *
+   * Ne journalise jamais l'en-tête `Authorization`, le corps envoyé (numéro de
+   * téléphone) ni le corps reçu.
+   */
+  private async request<T>(
+    operation: string,
+    path: string,
+    init: RequestInit,
+  ): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const startedAt = Date.now();
 
     let response: Response;
     try {
@@ -327,26 +432,84 @@ export class FeexPayPaymentDriver implements PaymentDriver {
         signal: controller.signal,
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new ProviderTimeout(this.code);
-      }
+      const timedOut = error instanceof Error && error.name === 'AbortError';
+      this.logFailure(operation, startedAt, timedOut ? 'TIMEOUT' : 'NETWORK');
+      if (timedOut) throw new ProviderTimeout(this.code);
       throw new ProviderUnavailable(this.code, error);
     } finally {
       clearTimeout(timeout);
     }
 
-    let parsed: unknown;
+    let parsed: unknown = null;
+    let jsonError = false;
     try {
       parsed = await response.json();
     } catch {
+      jsonError = true;
+    }
+
+    if (!response.ok) {
+      const failure = feexPayFailure(this.code, response.status, parsed);
+      this.logFailure(
+        operation,
+        startedAt,
+        failure instanceof PaymentRejectedByProvider
+          ? failure.code
+          : `HTTP_${response.status}`,
+        response.status,
+      );
+      throw failure;
+    }
+
+    if (jsonError) {
+      this.logFailure(operation, startedAt, 'INVALID_JSON', response.status);
       throw new InvalidProviderResponse(this.code, 'corps de réponse non JSON');
     }
 
-    if (!response.ok && response.status >= 500) {
-      throw new ProviderUnavailable(this.code, parsed);
+    // HTTP 2xx ne veut pas dire succès métier : `success: false` est un refus.
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      (parsed as { success?: unknown }).success === false
+    ) {
+      const failure = feexPayFailure(this.code, response.status, parsed);
+      this.logFailure(
+        operation,
+        startedAt,
+        failure instanceof PaymentRejectedByProvider
+          ? failure.code
+          : 'SUCCESS_FALSE',
+        response.status,
+      );
+      throw failure;
     }
 
+    this.logger.debug(
+      JSON.stringify({
+        event: 'feexpay.http',
+        operation,
+        httpStatus: response.status,
+        durationMs: Date.now() - startedAt,
+      }),
+    );
     return parsed as T;
+  }
+
+  private logFailure(
+    operation: string,
+    startedAt: number,
+    errorCode: string,
+    httpStatus?: number,
+  ): void {
+    this.logger.warn(
+      JSON.stringify({
+        event: 'feexpay.error',
+        operation,
+        httpStatus,
+        errorCode,
+        durationMs: Date.now() - startedAt,
+      }),
+    );
   }
 
   private parseJson(rawBody: Buffer): Record<string, unknown> | null {
@@ -361,6 +524,7 @@ export class FeexPayPaymentDriver implements PaymentDriver {
   }
 
   private safeErrorDetail(error: unknown): string {
+    if (error instanceof PaymentRejectedByProvider) return error.userMessage;
     if (error instanceof ProviderTimeout)
       return 'le prestataire a mis trop de temps à répondre.';
     if (error instanceof ProviderUnavailable)

@@ -78,3 +78,43 @@ export class MissingProviderCredentialError extends PaymentProviderError {
     this.name = 'MissingProviderCredentialError';
   }
 }
+
+/**
+ * Refus **définitif** : la demande a été rejetée avant ou par le prestataire
+ * (montant hors bornes, numéro invalide, clé refusée, solde insuffisant...).
+ * Aucune somme n'a été prélevée, réessayer à l'identique ne sert à rien — à
+ * l'inverse d'un timeout, où le prestataire a pu accepter la demande sans que
+ * la réponse nous parvienne (`timeout ≠ échec`).
+ *
+ * `code` est un code métier interne stable (ex. `ERR_INVALID_AMOUNT`) ;
+ * `userMessage` est le seul texte destiné au frontend : jamais le corps brut
+ * du prestataire, jamais un détail technique.
+ */
+export class PaymentRejectedByProvider extends PaymentProviderError {
+  constructor(
+    providerCode: string,
+    readonly code: string,
+    readonly userMessage: string,
+    cause?: unknown,
+  ) {
+    super(
+      `Le prestataire « ${providerCode} » a refusé la demande (${code}).`,
+      providerCode,
+      cause,
+    );
+    this.name = 'PaymentRejectedByProvider';
+  }
+}
+
+/**
+ * Vrai lorsque l'issue d'une initiation est **incertaine** : le prestataire a
+ * pu accepter la demande sans que nous l'ayons su. Le paiement local ne doit
+ * alors surtout pas être marqué en échec ni relancé à l'aveugle.
+ */
+export function isUncertainProviderError(error: unknown): boolean {
+  return (
+    error instanceof ProviderTimeout ||
+    error instanceof ProviderUnavailable ||
+    error instanceof InvalidProviderResponse
+  );
+}

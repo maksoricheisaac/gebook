@@ -23,6 +23,22 @@ export async function GET(
   context: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await context.params;
+
+  // Une page d'aperçu ne se télécharge pas : elle n'est servie que comme image
+  // intégrée à la page du site (`<img>`). Ouvrir directement son adresse dans
+  // un onglet, ou l'intégrer depuis un autre site, est refusé — les
+  // navigateurs indiquent cette destination dans `Sec-Fetch-*`.
+  const isPage = path.includes("pages");
+  if (isPage) {
+    const dest = request.headers.get("sec-fetch-dest");
+    const site = request.headers.get("sec-fetch-site");
+    if (
+      (dest !== null && dest !== "image") ||
+      (site !== null && site !== "same-origin")
+    ) {
+      return new NextResponse("Non disponible au téléchargement.", { status: 403 });
+    }
+  }
   const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
 
   const response = await fetch(
@@ -51,6 +67,8 @@ export async function GET(
     }
   }
   headers.set("cache-control", "private, no-store");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-disposition", "inline");
 
   return new Response(response.body, { status: 200, headers });
 }

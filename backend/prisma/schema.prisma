@@ -1199,7 +1199,12 @@ model Payout {
   beneficiaryAccount String @map("beneficiary_account") @db.VarChar(190)
 
   payoutProviderId  String?             @map("payout_provider_id") @db.Uuid
-  providerReference String?             @map("provider_reference") @db.VarChar(190)
+  /// Unique dès qu'elle est renseignée (comme `Payment.providerTransactionId`
+  /// côté pay-in) : empêche qu'une même référence prestataire ne soit
+  /// attribuée à deux retraits distincts (audit FeexPay — écart HAUTE
+  /// corrigé). Plusieurs `NULL` restent autorisés (comportement standard
+  /// Postgres), donc aucun impact sur les retraits pas encore marqués payés.
+  providerReference String?             @unique(map: "uq_payouts_provider_reference") @map("provider_reference") @db.VarChar(190)
   status            PayoutRequestStatus @default(pending)
 
   /// Validation manuelle (brief §23 : « commence par une architecture permettant

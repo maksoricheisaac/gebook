@@ -58,7 +58,7 @@ describe('FeexPayPaymentDriver', () => {
         currency: 'XOF',
         customerEmail: 'lecteur@example.test',
         returnUrl: 'https://gebook.test/paiement/GB-20260813-ABCDEF',
-        customerPhone: '242676600000000',
+        customerPhone: '242061234567',
         channel: 'mtn_cg',
       });
 
@@ -74,7 +74,7 @@ describe('FeexPayPaymentDriver', () => {
       );
       const body = JSON.parse(init.body as string) as Record<string, unknown>;
       expect(body.amount).toBe(100);
-      expect(body.phoneNumber).toBe('242676600000000');
+      expect(body.phoneNumber).toBe('242061234567');
       expect(body.shop).toBe('shop-de-test');
       expect((init.headers as Record<string, string>).Authorization).toBe(
         'Bearer apikey-de-test',
@@ -94,7 +94,7 @@ describe('FeexPayPaymentDriver', () => {
           currency: 'XOF',
           customerEmail: 'a@example.test',
           returnUrl: 'https://gebook.test/x',
-          customerPhone: '242676600000000',
+          customerPhone: '242061234567',
           channel: 'mtn_cg',
         }),
       ).rejects.toThrow();

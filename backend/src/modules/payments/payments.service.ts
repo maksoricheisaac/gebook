@@ -53,6 +53,10 @@ import type {
   WebhookParseResult,
 } from './payment-driver';
 import { PaymentDriverRegistry } from './payment-driver.registry';
+import {
+  isUncertainProviderError,
+  PaymentRejectedByProvider,
+} from './provider-errors';
 
 /** Statuts de commande depuis lesquels une tentative de paiement est recevable. */
 const PAYABLE_ORDER_STATUSES: readonly OrderStatus[] = [
@@ -65,6 +69,29 @@ const PAYABLE_ORDER_STATUSES: readonly OrderStatus[] = [
 const IN_FLIGHT_PAYMENT_STATUSES: readonly PaymentStatus[] = [
   PaymentStatus.initialized,
   PaymentStatus.pending,
+];
+
+/**
+ * Une tentative restée `initialized` sans référence du prestataire (timeout à
+ * l'initiation) reste protégée pendant ce délai : c'est la fenêtre où la
+ * demande USSD envoyée au lecteur peut encore aboutir. Passé ce délai, elle est
+ * abandonnée pour permettre une nouvelle tentative.
+ */
+const UNREFERENCED_ATTEMPT_TTL_MS = 10 * 60 * 1000;
+
+/** Refus définitifs imputables à la saisie du lecteur (400) — les autres, qui
+ * relèvent de la configuration du prestataire, sont présentés en 503. */
+const READER_FIXABLE_REJECTIONS = new Set([
+  'ERR_INVALID_AMOUNT',
+  'ERR_INVALID_PHONE_NUMBER',
+  'ERR_INSUFFICIENT_BALANCE',
+]);
+
+const FINAL_PAYMENT_STATUSES: readonly PaymentStatus[] = [
+  PaymentStatus.successful,
+  PaymentStatus.failed,
+  PaymentStatus.cancelled,
+  PaymentStatus.refunded,
 ];
 
 /** Traduction de l'issue annoncée par le pilote vers le statut stocké. */
@@ -157,22 +184,66 @@ export class PaymentsService {
       }),
     );
 
-    if (inFlight) {
+    if (inFlight && !this.isAbandonedAttempt(inFlight)) {
       return toPaymentResponse(inFlight, provider.code);
     }
 
-    const payment = await this.prisma.withRlsContext(ctx, (tx) =>
-      tx.payment.create({
-        data: {
-          orderId: order.id,
-          paymentProviderId: provider.id,
-          idempotencyKey: randomUUID(),
-          expectedAmount: order.totalAmount,
-          currency: order.currency,
-          status: PaymentStatus.initialized,
-        },
-      }),
-    );
+    if (inFlight) {
+      // Aucune référence reçue depuis trop longtemps : la demande USSD a expiré
+      // côté lecteur. On libère l'emplacement (voir l'index unique partiel
+      // `uq_payments_in_flight`) avant d'en ouvrir une autre.
+      await this.prisma.withRlsContext(ctx, (tx) =>
+        tx.payment.update({
+          where: { id: inFlight.id },
+          data: { status: PaymentStatus.failed },
+        }),
+      );
+      this.logger.warn(
+        JSON.stringify({
+          event: 'payment.attempt_abandoned',
+          provider: provider.code,
+          paymentId: inFlight.id,
+        }),
+      );
+    }
+
+    // Course entre deux requêtes simultanées : la lecture ci-dessus ne suffit
+    // pas, seul l'index unique partiel `uq_payments_in_flight` (un seul paiement
+    // `initialized`/`pending` par commande et prestataire) est atomique. Le
+    // perdant de la course reçoit la tentative du gagnant, jamais un doublon.
+    let payment: Payment;
+    try {
+      payment = await this.prisma.withRlsContext(ctx, (tx) =>
+        tx.payment.create({
+          data: {
+            orderId: order.id,
+            paymentProviderId: provider.id,
+            idempotencyKey: randomUUID(),
+            expectedAmount: order.totalAmount,
+            currency: order.currency,
+            status: PaymentStatus.initialized,
+          },
+        }),
+      );
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const winner = await this.prisma.withRlsContext(ctx, (tx) =>
+          tx.payment.findFirst({
+            where: {
+              orderId: order.id,
+              paymentProviderId: provider.id,
+              status: { in: [...IN_FLIGHT_PAYMENT_STATUSES] },
+            },
+            orderBy: { createdAt: 'desc' },
+          }),
+        );
+        if (winner) return toPaymentResponse(winner, provider.code);
+      }
+      throw error;
+    }
 
     const driver = this.drivers.resolve(provider.code);
 
@@ -189,14 +260,50 @@ export class PaymentsService {
         channel: dto.providerChannel,
       });
     } catch (error) {
-      // La tentative reste en base, marquée en échec : une trace vaut mieux qu'un
-      // trou dans l'historique quand le prestataire tombe.
+      // Timeout ≠ échec : après l'envoi, le prestataire a pu accepter la demande
+      // sans que la réponse nous parvienne. Marquer « failed » puis laisser le
+      // lecteur relancer risquerait un double débit. La tentative reste donc
+      // `initialized` (et protégée contre toute relance, voir ci-dessus) ;
+      // `syncStatus` tranchera dès qu'une référence existera.
+      if (isUncertainProviderError(error)) {
+        this.logger.error(
+          JSON.stringify({
+            event: 'payment.initiation_uncertain',
+            provider: provider.code,
+            paymentId: payment.id,
+            orderNumber: order.orderNumber,
+            error: error instanceof Error ? error.name : 'unknown',
+          }),
+        );
+        throw new ServiceUnavailableException(
+          "Votre demande de paiement est en cours de vérification auprès de l'opérateur. Ne la relancez pas : patientez quelques minutes puis consultez l'état de votre commande.",
+        );
+      }
+
+      // Refus définitif (ou configuration manquante) : la tentative reste en
+      // base, marquée en échec — une trace vaut mieux qu'un trou.
       await this.prisma.withRlsContext(ctx, (tx) =>
         tx.payment.update({
           where: { id: payment.id },
           data: { status: PaymentStatus.failed },
         }),
       );
+
+      if (error instanceof PaymentRejectedByProvider) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'payment.initiation_rejected',
+            provider: provider.code,
+            paymentId: payment.id,
+            errorCode: error.code,
+          }),
+        );
+        if (READER_FIXABLE_REJECTIONS.has(error.code)) {
+          throw new BadRequestException(error.userMessage);
+        }
+        throw new ServiceUnavailableException(error.userMessage);
+      }
+
       this.logger.error(
         `Initialisation refusée par le prestataire « ${provider.code} ».`,
         error instanceof Error ? error.stack : undefined,
@@ -240,6 +347,110 @@ export class PaymentsService {
     );
 
     return toPaymentResponse(updated, provider.code);
+  }
+
+  /**
+   * Interroge le prestataire sur l'état d'une tentative et synchronise la
+   * commande — le pendant « à la demande » du webhook, indispensable tant
+   * qu'aucune notification FeexPay n'est configurée (voir docs/FEEXPAY.md).
+   *
+   * `PENDING` ne change strictement rien : ni livraison, ni commande payée.
+   * Le frontend (ou un job) rappelle cette route à intervalle borné ; il n'y a
+   * volontairement ni boucle ni attente dans la requête HTTP.
+   */
+  async syncStatus(
+    paymentId: string,
+    user: AuthenticatedUser,
+  ): Promise<PaymentResponse> {
+    const ctx = buildRlsContext(user);
+
+    const payment = await this.prisma.withRlsContext(ctx, (tx) =>
+      tx.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+          order: { select: { userId: true } },
+          paymentProvider: { select: { id: true, code: true } },
+        },
+      }),
+    );
+
+    if (!payment || payment.order.userId !== user.id) {
+      throw new NotFoundException("Cette tentative de paiement n'existe pas.");
+    }
+
+    const providerCode = payment.paymentProvider.code;
+
+    // Rien à interroger : issue déjà tranchée, ou aucune référence reçue.
+    if (
+      FINAL_PAYMENT_STATUSES.includes(payment.status) ||
+      !payment.providerTransactionId
+    ) {
+      return toPaymentResponse(payment, providerCode);
+    }
+
+    let verification;
+    try {
+      verification = await this.drivers
+        .resolve(providerCode)
+        .verify(payment.providerTransactionId);
+    } catch (error) {
+      // Erreur d'interrogation ≠ échec du paiement : on ne touche à rien.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'payment.status_check_failed',
+          provider: providerCode,
+          paymentId: payment.id,
+          error: error instanceof Error ? error.name : 'unknown',
+        }),
+      );
+      throw new ServiceUnavailableException(
+        'Impossible de vérifier le paiement pour le moment. Veuillez réessayer dans un instant.',
+      );
+    }
+
+    if (verification.outcome === 'pending') {
+      return toPaymentResponse(payment, providerCode);
+    }
+
+    const outcome = verification.outcome;
+    const accepted: WebhookAccepted = {
+      signatureValid: true,
+      // Unique par vérification : l'idempotence repose sur la garde atomique de
+      // `applyOutcome`, pas sur l'identifiant d'événement, afin qu'une vérification
+      // interrompue en cours de route puisse être rejouée.
+      eventId: `status-check:${payment.providerTransactionId}:${outcome}:${randomUUID()}`,
+      eventType: `payment.${outcome}`,
+      transactionId: payment.providerTransactionId,
+      outcome,
+      paidAmountMinor: verification.paidAmountMinor,
+      feeMinor: verification.feeMinor,
+      paymentMethod: payment.paymentMethod,
+      payload: { source: 'status-check', verification: verification.raw },
+    };
+
+    const event = await this.recordEvent(payment.paymentProvider.id, accepted);
+    if (event) {
+      try {
+        await this.processAccepted(event.id, accepted);
+      } catch (error) {
+        // Montant incohérent, etc. : déjà journalisé et l'événement clos par
+        // `processAccepted`. Le lecteur voit l'état réel, sans détail interne.
+        if (!(error instanceof BadRequestException)) throw error;
+      }
+    }
+
+    const refreshed = await this.prisma.withRlsContext(ctx, (tx) =>
+      tx.payment.findUniqueOrThrow({ where: { id: payment.id } }),
+    );
+    return toPaymentResponse(refreshed, providerCode);
+  }
+
+  private isAbandonedAttempt(payment: Payment): boolean {
+    return (
+      payment.status === PaymentStatus.initialized &&
+      !payment.providerTransactionId &&
+      Date.now() - payment.createdAt.getTime() > UNREFERENCED_ATTEMPT_TTL_MS
+    );
   }
 
   /** Tentatives de paiement d'une commande, pour son propriétaire uniquement. */
@@ -315,6 +526,18 @@ export class PaymentsService {
       throw new BadRequestException('Notification de paiement refusée.');
     }
 
+    return this.processAccepted(event.id, parsed);
+  }
+
+  /**
+   * Traitement métier d'une issue de paiement **authentifiée** (webhook vérifié ou
+   * statut relu chez le prestataire) : même chemin, mêmes garde-fous — montant,
+   * transition de commande, idempotence — quelle que soit l'origine.
+   */
+  private async processAccepted(
+    eventId: string,
+    parsed: WebhookAccepted,
+  ): Promise<{ received: true }> {
     const payment = await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
       tx.payment.findUnique({
         where: { providerTransactionId: parsed.transactionId },
@@ -324,7 +547,7 @@ export class PaymentsService {
 
     if (!payment) {
       await this.closeEvent(
-        event.id,
+        eventId,
         EventProcessingStatus.ignored,
         'Aucune tentative de paiement ne correspond à cette transaction.',
       );
@@ -333,7 +556,7 @@ export class PaymentsService {
 
     await this.prisma.withRlsContext(SYSTEM_CONTEXT, (tx) =>
       tx.paymentEvent.update({
-        where: { id: event.id },
+        where: { id: eventId },
         data: { paymentId: payment.id },
       }),
     );
@@ -343,7 +566,7 @@ export class PaymentsService {
     // si (règle n° 8, vue depuis la transaction plutôt que depuis l'événement).
     if (payment.status === PaymentStatus.successful) {
       await this.closeEvent(
-        event.id,
+        eventId,
         EventProcessingStatus.ignored,
         'Ce paiement est déjà confirmé.',
       );
@@ -356,7 +579,7 @@ export class PaymentsService {
       parsed.paidAmountMinor !== toMinorUnits(payment.expectedAmount)
     ) {
       const message = `Montant notifié (${parsed.paidAmountMinor}) différent du montant attendu (${toMinorUnits(payment.expectedAmount)}).`;
-      await this.closeEvent(event.id, EventProcessingStatus.failed, message);
+      await this.closeEvent(eventId, EventProcessingStatus.failed, message);
       this.logger.error(`Paiement ${payment.id} refusé : ${message}`);
       throw new BadRequestException('Montant de paiement incohérent.');
     }
@@ -368,7 +591,7 @@ export class PaymentsService {
       assertOrderTransitionAllowed(payment.order.status, nextOrderStatus);
     } catch {
       await this.closeEvent(
-        event.id,
+        eventId,
         EventProcessingStatus.ignored,
         `Commande en statut « ${payment.order.status} » : notification sans effet.`,
       );
@@ -378,8 +601,15 @@ export class PaymentsService {
     // 7. Un seul et même engagement pour le paiement, la commande, l'accès du
     // lecteur et l'événement : un paiement confirmé sans droit d'accès est un
     // client mécontent (règle n° 11).
-    await this.applyOutcome(event.id, payment, payment.order, parsed);
-    await this.notifyPaymentOutcome(payment.order.id, parsed.outcome);
+    const applied = await this.applyOutcome(
+      eventId,
+      payment,
+      payment.order,
+      parsed,
+    );
+    if (applied) {
+      await this.notifyPaymentOutcome(payment.order.id, parsed.outcome);
+    }
 
     return { received: true };
   }
@@ -689,16 +919,25 @@ export class PaymentsService {
     payment: Payment,
     order: OrderWithItems,
     parsed: WebhookAccepted,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const succeeded = parsed.outcome === 'successful';
     const now = new Date();
 
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // Traitement système déclenché par un webhook vérifié par signature :
       // aucun utilisateur authentifié, contexte platform_admin (SYSTEM_CONTEXT).
       await this.prisma.applyRlsContext(tx, SYSTEM_CONTEXT);
-      await tx.payment.update({
-        where: { id: payment.id },
+      // Garde atomique : deux traitements simultanés du même paiement (webhook
+      // + vérification manuelle, ou deux webhooks) lisent tous deux « pending »
+      // avant d'écrire. Seul celui dont l'UPDATE conditionnel touche la ligne
+      // poursuit ; l'autre ne livre rien une seconde fois.
+      const claimed = await tx.payment.updateMany({
+        where: {
+          id: payment.id,
+          status: {
+            notIn: [PaymentStatus.successful, PaymentStatus.refunded],
+          },
+        },
         data: {
           status: OUTCOME_TO_PAYMENT_STATUS[parsed.outcome],
           paidAmount: succeeded
@@ -710,6 +949,18 @@ export class PaymentsService {
           rawResponse: parsed.payload as Prisma.InputJsonValue,
         },
       });
+
+      if (claimed.count === 0) {
+        await tx.paymentEvent.update({
+          where: { id: eventId },
+          data: {
+            processingStatus: EventProcessingStatus.ignored,
+            errorMessage: 'Ce paiement a déjà été traité.',
+            processedAt: new Date(),
+          },
+        });
+        return false;
+      }
 
       await tx.order.update({
         where: { id: order.id },
@@ -758,6 +1009,7 @@ export class PaymentsService {
           processedAt: new Date(),
         },
       });
+      return true;
     });
   }
 
